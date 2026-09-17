@@ -1,0 +1,38 @@
+.env
+build/
+logs/
+out/
+*.iml
+.idea/
+.vscode/
+.DS_Store
+coverage/
+*/coverage/
+captures/
+.nyc_output/
+
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ / IDE
+.idea/
+*.iml
+out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# Logs
+*.log
+
+# Variables de entorno
+.env
+
+# Windows
+Thumbs.db
+Desktop.ini

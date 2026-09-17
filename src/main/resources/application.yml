@@ -1,0 +1,128 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: mesa-ayuda-backend
+
+  # ============================ BASE DE DATOS ============================
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_DATABASE:mesa_ayuda_coac}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    hikari:
+      pool-name: MesaAyudaHikariCP
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          time_zone: America/Guayaquil
+
+  # Ejecuta schema.sql + data.sql al levantar (idempotente: IF NOT EXISTS / ON CONFLICT)
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+
+  # ============================ CORREO (SMTP Office 365) ============================
+  mail:
+    host: ${MAIL_HOST:smtp.office365.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+  thymeleaf:
+    prefix: classpath:/templates/email/
+    suffix: .html
+    cache: false
+
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 50MB
+
+# ============================ APP (Schedulers, JWT, Uploads, CORS) ============================
+app:
+  mail:
+    enabled: ${MAIL_ENABLED:true}
+  scheduler:
+    sla:
+      cron: 0 */15 * * * MON-FRI
+    notifications:
+      cron: 0 */5 * * * *
+    evaluation:
+      cron: 0 0 6 1 * *
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration-ms: ${JWT_EXPIRATION:900000}
+    refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION:2592000000}
+  uploads:
+    dir: ${UPLOAD_DIR:./src/main/resources/static/uploads}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
+
+# ============================ MICROSOFT GRAPH (Outlook) ============================
+microsoft:
+  graph:
+    client-id: ${MS_CLIENT_ID:}
+    client-secret: ${MS_CLIENT_SECRET:}
+    tenant-id: ${MS_TENANT_ID:}
+    from-address: ${MAIL_FROM:}
+
+# ============================ JASPER REPORTS ============================
+jasper:
+  reports-dir: classpath:/reports
+
+# ============================ SWAGGER ============================
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: method
+  api-docs:
+    path: /v3/api-docs
+
+# ============================ LOGGING ============================
+logging:
+  level:
+    root: INFO
+    com.mesaayuda: DEBUG
+    org.hibernate.SQL: WARN
+    org.springframework.security: INFO
+  file:
+    name: logs/mesa-ayuda.log
+    max-size: 10MB
+    max-history: 10
+
+# ============================ MANAGEMENT ============================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never

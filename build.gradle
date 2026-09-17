@@ -1,0 +1,114 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.0'
+    id 'io.spring.dependency-management' version '1.1.4'
+    id 'io.freefair.lombok' version '8.6'
+    id 'jacoco'
+}
+
+group = 'com.mesaayuda'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = '17'
+    targetCompatibility = '17'
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    mapstructVersion = '1.5.5.Final'
+    jasperVersion = '6.21.3'
+    jjwtVersion = '0.11.5'
+    springdocVersion = '2.5.0'
+    msGraphVersion = '5.56.0'
+}
+
+dependencies {
+    // ===== Core Spring Boot =====
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // ===== Base de datos =====
+    runtimeOnly 'org.postgresql:postgresql:42.6.0'
+    implementation 'com.zaxxer:HikariCP:5.0.1'
+
+    // ===== Seguridad JWT =====
+    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
+    // ===== Mapeo DTO =====
+    implementation "org.mapstruct:mapstruct:${mapstructVersion}"
+    annotationProcessor "org.mapstruct:mapstruct-processor:${mapstructVersion}"
+
+    // ===== Reportes =====
+    implementation("net.sf.jasperreports:jasperreports:${jasperVersion}") {
+        exclude group: 'com.github.librepdf', module: 'openpdf'
+    }
+    implementation "net.sf.jasperreports:jasperreports-fonts:6.21.3"
+    implementation "net.sf.jasperreports:jasperreports-functions:6.21.3"
+    implementation 'com.github.librepdf:openpdf:1.3.43'
+    implementation 'commons-beanutils:commons-beanutils:1.9.4'
+
+    // ===== Email Outlook =====
+    implementation "com.microsoft.graph:microsoft-graph:${msGraphVersion}"
+
+    // ===== Documentacion API =====
+    implementation "org.springdoc:springdoc-openapi-starter-webmvc-ui:${springdocVersion}"
+
+    // ===== Utilidades =====
+    implementation 'org.apache.commons:commons-lang3:3.14.0'
+    implementation 'org.apache.commons:commons-text:1.11.0'
+
+    // ===== Lombok / MapStruct config =====
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    annotationProcessor "org.mapstruct:mapstruct-processor:${mapstructVersion}"
+
+    // ===== Testing =====
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'org.mockito:mockito-core:5.7.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// Carga backend/.env en bootRun, para no depender de variables del sistema.
+// Formato: LINEAS CLAVE=VALOR; se ignoran comentarios (#) y lineas vacias.
+def loadDotEnv = { task ->
+    def envFile = file('.env')
+    if (envFile.exists()) {
+        envFile.readLines().each { raw ->
+            def line = raw.trim()
+            if (line && !line.startsWith('#') && line.contains('=')) {
+                def idx = line.indexOf('=')
+                def key = line.substring(0, idx).trim()
+                def val = line.substring(idx + 1).trim()
+                if (key) {
+                    task.environment(key, val)
+                }
+            }
+        }
+    } else {
+        logger.lifecycle("AVISO: no se encontro backend/.env. Copia backend/.env.example a .env")
+    }
+}
+
+tasks.named('bootRun') { loadDotEnv(it) }

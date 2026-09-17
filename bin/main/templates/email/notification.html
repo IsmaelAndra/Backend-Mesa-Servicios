@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mesa de Ayuda COAC</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f3f4f6;font-family:'Segoe UI',Arial,sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f3f4f6;padding:32px 16px;">
+        <tr>
+            <td align="center">
+                <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+                    <!-- Encabezado -->
+                    <tr>
+                        <td style="background:linear-gradient(135deg,#1e3a8a,#3b82f6);padding:28px 32px;">
+                            <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;">
+                                Mesa de Ayuda COAC
+                            </h1>
+                        </td>
+                    </tr>
+
+                    <!-- Cuerpo -->
+                    <tr>
+                        <td style="padding:32px;">
+                            <p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;">
+                                <th:block th:text="${mensaje ?: 'Notificación del sistema.'}"></th:block>
+                            </p>
+
+                            <table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+                                <tr>
+                                    <td style="padding:16px 20px;">
+                                        <p style="margin:0;color:#64748b;font-size:13px;line-height:1.8;">
+                                            <strong th:text="'Ticket #' + ${id} ?: ''"></strong><br />
+                                            <span th:text="${title}" style="color:#1e293b;"></span><br />
+                                            <span th:text="${status}"></span>
+                                            <th:block th:if="${priority}"> · <span th:text="${priority}"></span></th:block>
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin:0 0 8px;color:#374151;font-size:14px;">
+                                Si necesita ayuda, responda este correo o ingrese al portal
+                                <a href="#" style="color:#2563eb;text-decoration:none;font-weight:600;">Mesa de Ayuda</a>.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Pie -->
+                    <tr>
+                        <td style="background:#f1f5f9;padding:16px 32px;">
+                            <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center;">
+                                © 2026 Mesa de Ayuda COAC · Este es un correo automático, por favor no responder.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
