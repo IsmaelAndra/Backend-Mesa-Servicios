@@ -74,7 +74,7 @@ public class QuickReplyService {
     private QuickReply editable(UUID id, User actual) {
         QuickReply q = repository.findById(id)
                 .filter(r -> !Boolean.TRUE.equals(r.getDeletedQuickReply()))
-                .orElseThrow(() -> new ResourceNotFoundException("La respuesta rápida no existe"));
+                .orElseThrow(() -> new ResourceNotFoundException("Respuesta rápida", "id", id));
         if (!puedeEditar(q, actual)) {
             throw new AccessDeniedException("Solo puedes cambiar tus propias respuestas rápidas");
         }

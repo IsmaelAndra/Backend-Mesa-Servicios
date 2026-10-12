@@ -835,7 +835,7 @@ for (User admin : userRepository.findByRoleName(rol)) {
         Answer answer = answerRepository.findById(answerId)
                 .filter(a -> !Boolean.TRUE.equals(a.getDeletedAnswer()))
                 .filter(a -> a.getTicketAnswer().getIdTicket().equals(ticketId))
-                .orElseThrow(() -> new ResourceNotFoundException("La respuesta no existe"));
+                .orElseThrow(() -> new ResourceNotFoundException("Respuesta", "id", answerId));
         if (!answer.getUserAnswer().getIdUser().equals(current.getIdUser())) {
             throw new AccessDeniedException("Solo quien escribió el mensaje puede cambiarlo");
         }

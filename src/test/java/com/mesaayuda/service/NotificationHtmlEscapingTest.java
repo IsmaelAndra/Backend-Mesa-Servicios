@@ -33,6 +33,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
@@ -69,6 +70,7 @@ class NotificationHtmlEscapingTest {
     @Mock private NotificationRepository notificationRepository;
     @Mock private NotificationTemplateRepository templateRepository;
     @Mock private GraphMailSender graphMailSender;
+    @Mock private MailOutboxService mailOutboxService;
     @Mock private SseEventBroker sseEventBroker;
     @Mock private MicrosoftGraphConfigService graphConfigService;
     @Mock private UserRepository userRepository;
@@ -120,7 +122,8 @@ class NotificationHtmlEscapingTest {
     /** Cuerpo HTML con el que se despacha el correo. */
     private String cuerpoEnviado() {
         ArgumentCaptor<String> cap = ArgumentCaptor.forClass(String.class);
-        verify(graphMailSender).enviarEnSegundoPlano(anyString(), anyString(), cap.capture());
+        // Desde la cola de correo (V10) el correo se encola en vez de enviarse en el acto.
+        verify(mailOutboxService).encolar(anyString(), anyString(), cap.capture(), any(), anyInt(), any(), any());
         return cap.getValue();
     }
 

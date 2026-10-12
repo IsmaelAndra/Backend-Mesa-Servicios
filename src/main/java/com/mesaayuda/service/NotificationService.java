@@ -1,5 +1,6 @@
 package com.mesaayuda.service;
 
+import com.mesaayuda.entity.MailOutbox;
 import com.mesaayuda.dto.MicrosoftGraphConfigResponse;
 import com.mesaayuda.exception.MailDeliveryException;
 import com.mesaayuda.entity.*;
@@ -47,6 +48,9 @@ public class NotificationService {
      */
     @Autowired
     private GraphMailSender graphMailSender;
+
+    @Autowired
+    private MailOutboxService mailOutboxService;
 
     @Autowired
     private BrandingConfigRepository brandingConfigRepository;
@@ -301,7 +305,9 @@ public class NotificationService {
                 "Credenciales de acceso - Mesa de Servicios");
         String body = bodyTemplate("CREACION_USUARIO", variables,
                 defaultAccountBody("Bienvenido/a a Mesa de Servicios", user, generatedPassword));
-        graphMailSender.enviarEnSegundoPlano(user.getCorporateEmailUser(), subject, body);
+        // Urgente: la persona está esperando sus credenciales para entrar.
+        mailOutboxService.encolar(user.getCorporateEmailUser(), subject, body, "CREACION_USUARIO",
+                MailOutbox.PRIORIDAD_URGENTE, null, null);
     }
 
     /**
@@ -319,7 +325,8 @@ public class NotificationService {
                 "Restablecimiento de contraseña - Mesa de Servicios");
         String body = bodyTemplate("RESET_PASSWORD", variables,
                 defaultResetBody(user, urlReset));
-        graphMailSender.enviarEnSegundoPlano(user.getCorporateEmailUser(), subject, body);
+        mailOutboxService.encolar(user.getCorporateEmailUser(), subject, body, "RESET_PASSWORD",
+                MailOutbox.PRIORIDAD_URGENTE, null, null);
     }
 
     /**
@@ -407,7 +414,7 @@ public class NotificationService {
      * se muestre en todas las plantillas de correo. Si el contenido ya trae su
      * propio armazón (plantillas de cuenta), no se envuelve de nuevo.
      */
-    private String wrapEmailBody(String content) {
+    public String wrapEmailBody(String content) {
         if (content == null || content.isBlank()) return content;
         if (content.contains("max-width:620px")) return content;
         String footer = "<div style=\"background:#062e86;padding:20px 32px;text-align:center;font-family:Arial,Helvetica,sans-serif;\">"
@@ -478,10 +485,16 @@ public class NotificationService {
                 ticket == null ? null : ticket.getIdTicket());
 
         if (!isMailConfigured()) {
+            // Sin correo no hay nada pendiente de entregar: solo la campana.
+            notification.setStatusNotification("SENT");
+            notificationRepository.save(notification);
             return;
         }
+        // A la cola de correo, en la misma transacción que la notificación. Sale
+        // al ritmo que permite el buzón; en un pico, se agrupa por persona.
         for (String email : emailRecipients(ticket, receiver, type)) {
-            graphMailSender.enviarEnSegundoPlano(email, subject, wrapEmailBody(body));
+            mailOutboxService.encolar(email, subject, wrapEmailBody(body), type, MailOutbox.PRIORIDAD_NORMAL,
+                    notification.getIdNotification(), ticket == null ? null : ticket.getIdTicket());
         }
     }
 
@@ -489,7 +502,8 @@ public class NotificationService {
      * Envía un correo del sistema con el armazón HTML estándar (logo + pie institucional).
      */
     public void sendSystemEmail(String to, String subject, String content) {
-        graphMailSender.enviarEnSegundoPlano(to, subject, wrapEmailBody(content));
+        mailOutboxService.encolar(to, subject, wrapEmailBody(content), "SISTEMA", MailOutbox.PRIORIDAD_NORMAL,
+                null, null);
     }
 
     /**
@@ -505,36 +519,6 @@ public class NotificationService {
         } catch (Exception e) {
             log.error("Error enviando email a {}: {}", to, e.getMessage(), e);
             throw new MailDeliveryException("No se pudo enviar el correo a " + to, e);
-        }
-    }
-
-    public void processPendingNotifications() {
-        List<Notification> pending = notificationRepository
-                .findByStatusNotificationOrderByCreatedAtNotificationAsc("PENDING");
-        for (Notification n : pending) {
-            if (n.getUser() == null) continue;
-            try {
-                boolean entregado = sendEmail(n.getUser().getCorporateEmailUser(),
-                        n.getSubjectNotification(), wrapEmailBody(n.getMessageNotification()));
-                if (entregado) {
-                    n.setStatusNotification("SENT");
-                    n.setSentAt(OffsetDateTime.now());
-                } else {
-                    // No es un fallo: el correo esta deshabilitado en la
-                    // configuracion de Graph. Se cierra la notificacion para no
-                    // reintentarla cada cinco minutos indefinidamente, pero
-                    // dejando constancia de que nunca llegó a enviarse.
-                    n.setStatusNotification("SENT");
-                    n.setSentAt(OffsetDateTime.now());
-                    log.warn("Notificación #{} marcada como procesada sin envío: "
-                            + "el correo está deshabilitado en la configuración de Graph.",
-                            n.getIdNotification());
-                }
-            } catch (Exception ex) {
-                n.setStatusNotification("FAILED");
-                log.error("Fallo al procesar notificación #{}", n.getIdNotification(), ex);
-            }
-            notificationRepository.save(n);
         }
     }
 

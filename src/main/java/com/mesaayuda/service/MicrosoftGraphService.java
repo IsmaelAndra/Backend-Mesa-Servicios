@@ -221,6 +221,11 @@ public class MicrosoftGraphService {
             int status = e.getStatusCode().value();
             log.warn("Fallo al enviar email por Graph para {}: HTTP {}", to, status);
             result.put("success", false);
+            // La cola de correo usa el código y el Retry-After para saber si
+            // Microsoft pide esperar (429) en vez de tratarlo como un fallo.
+            result.put("status", status);
+            result.put("retryAfter", e.getResponseHeaders() == null ? null
+                    : e.getResponseHeaders().getFirst("Retry-After"));
             if (status == 404) {
                 result.put("message", "Microsoft Graph no encontró la cuenta remitente '"
                         + fromAccount.trim() + "'. Debe ser un usuario con buzón habilitado en el mismo "
@@ -234,6 +239,15 @@ public class MicrosoftGraphService {
             } else {
                 result.put("message", "Error HTTP " + status + ": " + e.getResponseBodyAsString());
             }
+        } catch (org.springframework.web.client.HttpServerErrorException e) {
+            // 503/504: Graph saturado o en mantenimiento. Pasajero, no un fallo del correo.
+            int status = e.getStatusCode().value();
+            log.warn("Graph no disponible al enviar a {}: HTTP {}", to, status);
+            result.put("success", false);
+            result.put("status", status);
+            result.put("retryAfter", e.getResponseHeaders() == null ? null
+                    : e.getResponseHeaders().getFirst("Retry-After"));
+            result.put("message", "Microsoft Graph no disponible (HTTP " + status + ")");
         } catch (Exception e) {
             log.warn("No se pudo enviar el correo por Graph: {}", rootMessage(e));
             result.put("success", false);

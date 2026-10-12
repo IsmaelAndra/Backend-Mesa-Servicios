@@ -40,6 +40,7 @@ class SqlScriptsValidationTest {
             "db/migration/V7__textos_error_con_tildes.sql",
             "db/migration/V8__chat_edicion_y_respuestas_rapidas.sql",
             "db/migration/V9__paginas_aviso_configurables.sql",
+            "db/migration/V10__cola_de_correo.sql",
             "db/migration/R__datos_base.sql",
             "db/dev/R__datos_dev.sql"};
 

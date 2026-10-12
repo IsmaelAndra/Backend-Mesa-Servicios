@@ -59,6 +59,48 @@ public class GraphMailSender {
      * registrar el estado real. Si el correo no está habilitado devuelve
      * {@code false} sin lanzar: no es un fallo, simplemente no hay a quién enviar.
      */
+    /**
+     * Resultado de un envío para la cola de correo: además de si salió, dice si
+     * Microsoft pidió esperar (429/503/504) y cuánto.
+     */
+    public record ResultadoEnvio(boolean enviado, boolean deshabilitado, int status,
+                                 Long reintentarEnSegundos, String mensaje) {
+        public boolean saturado() {
+            return status == 429 || status == 503 || status == 504;
+        }
+    }
+
+    /** Envío síncrono que nunca lanza: devuelve el detalle para que la cola decida. */
+    public ResultadoEnvio enviarConDetalle(String to, String subject, String bodyHtml) {
+        MicrosoftGraphConfigResponse config;
+        try {
+            config = graphConfigService.getConfig();
+        } catch (Exception e) {
+            return new ResultadoEnvio(false, true, 0, null, "Sin configuración de Microsoft Graph");
+        }
+        if (!config.enabled() || !config.mailEnabled()
+                || config.mailFromAccount() == null || config.mailFromAccount().isBlank()) {
+            return new ResultadoEnvio(false, true, 0, null, "El envío de correo está deshabilitado");
+        }
+        try {
+            Map<String, Object> r = graphService.sendMail(config.mailFromAccount(), to, subject, bodyHtml);
+            boolean ok = Boolean.TRUE.equals(r.get("success"));
+            int status = r.get("status") instanceof Number n ? n.intValue() : 0;
+            Long espera = null;
+            Object ra = r.get("retryAfter");
+            if (ra != null) {
+                try {
+                    espera = Long.parseLong(String.valueOf(ra).trim());
+                } catch (NumberFormatException ignorado) {
+                    espera = null;
+                }
+            }
+            return new ResultadoEnvio(ok, false, status, espera, String.valueOf(r.get("message")));
+        } catch (Exception e) {
+            return new ResultadoEnvio(false, false, 0, null, e.getMessage());
+        }
+    }
+
     public boolean enviar(String to, String subject, String bodyHtml) throws Exception {
         MicrosoftGraphConfigResponse config = graphConfigService.getConfig();
         if (!config.enabled() || !config.mailEnabled()

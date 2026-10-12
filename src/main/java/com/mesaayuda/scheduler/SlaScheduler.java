@@ -31,10 +31,8 @@ public class SlaScheduler {
         slaService.checkSlaWarnings();
     }
 
-    /** Procesa notificaciones pendientes cada 5 minutos. */
-    @Scheduled(cron = "${app.scheduler.notifications.cron:0 */5 * * * *}")
-    @SchedulerLock(name = "reintentoNotificaciones", lockAtMostFor = "PT4M", lockAtLeastFor = "PT30S")
-    public void retryPendingNotifications() {
-        notificationService.processPendingNotifications();
-    }
+    // El antiguo "reintento de notificaciones" cada 5 minutos se retiró: volvía
+    // a enviar por correo todas las notificaciones PENDING, que nunca se
+    // marcaban como enviadas, así que cada aviso llegaba dos veces. Ahora el
+    // envío y sus reintentos los lleva la cola de correo (ColaCorreoScheduler).
 }

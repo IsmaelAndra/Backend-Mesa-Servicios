@@ -165,6 +165,17 @@ management:
     # que no venga por HTTPS, y sin esto no se podría iniciar sesión en desarrollo.
     secure-cookie: "${APP_SECURE_COOKIE:false}"
 
+  mail:
+    outbox:
+      # Cola de correo (V10). Exchange Online limita cada buzón a unos 30
+      # mensajes por minuto: se deja margen. Subirlo provoca 429 de Graph.
+      max-por-minuto: 25
+      lote: 20
+      # Desde cuántos avisos pendientes para una misma persona se mandan juntos.
+      agrupar-desde: 4
+      max-intentos: 6
+      intervalo-ms: 5000
+      retencion-dias: 30
   workflow:
     # Motor de workflows. Los limites se REVISTEN antes de produccion: son la
     # unica red de seguridad contra automatizaciones que se realimentan.

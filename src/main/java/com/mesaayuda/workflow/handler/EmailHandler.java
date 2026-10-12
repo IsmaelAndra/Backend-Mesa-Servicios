@@ -1,6 +1,7 @@
 package com.mesaayuda.workflow.handler;
 
-import com.mesaayuda.service.GraphMailSender;
+import com.mesaayuda.entity.MailOutbox;
+import com.mesaayuda.service.MailOutboxService;
 import com.mesaayuda.workflow.WorkflowContext;
 import com.mesaayuda.workflow.WorkflowNodeDef;
 import com.mesaayuda.workflow.WorkflowNodeHandler;
@@ -33,10 +34,10 @@ public class EmailHandler implements WorkflowNodeHandler {
     private static final Pattern CORREO_VALIDO =
             Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
 
-    private final GraphMailSender mailSender;
+    private final MailOutboxService outbox;
 
-    public EmailHandler(GraphMailSender mailSender) {
-        this.mailSender = mailSender;
+    public EmailHandler(MailOutboxService outbox) {
+        this.outbox = outbox;
     }
 
     @Override
@@ -69,19 +70,21 @@ public class EmailHandler implements WorkflowNodeHandler {
             return WorkflowResult.fallar("El nodo EMAIL '" + nodo.id() + "' necesita asunto y cuerpo.");
         }
 
+        // A la cola de correo, como el resto: así un workflow masivo tampoco
+        // supera el límite del buzón. El envío y sus reintentos se ven en el
+        // panel de la cola; el nodo da por hecho su trabajo al encolarlo.
+        if (!outbox.correoHabilitado()) {
+            return WorkflowResult.fallar("El nodo EMAIL '" + nodo.id() + "' no puede enviar: el correo está "
+                    + "deshabilitado en la configuración de Microsoft Graph.");
+        }
         try {
-            boolean enviado = mailSender.enviar(para, asunto, cuerpo);
-            if (!enviado) {
-                // El envío falla sin excepción en varios casos de Graph. Queda
-                // registrado en la traza del nodo para poder reenviar a mano.
-                log.warn("Graph no confirmó el envío del nodo EMAIL '{}' a {}", nodo.id(), para);
-                return WorkflowResult.fallarReintentable("Microsoft Graph no confirmó el envío a " + para + ".");
-            }
-            log.info("El nodo EMAIL '{}' envió correo a {}", nodo.id(), para);
+            outbox.encolar(para, asunto, cuerpo, "WORKFLOW", MailOutbox.PRIORIDAD_NORMAL, null, null);
+            log.info("El nodo EMAIL '{}' encoló un correo para {}", nodo.id(), para);
             contexto.resultado(nodo, "para", para);
+            contexto.resultado(nodo, "estado", "ENCOLADO");
             return WorkflowResult.avanzar();
         } catch (Exception e) {
-            return WorkflowResult.fallarReintentable("No se pudo enviar el correo a " + para + ": " + e.getMessage());
+            return WorkflowResult.fallarReintentable("No se pudo encolar el correo a " + para + ": " + e.getMessage());
         }
     }
 
