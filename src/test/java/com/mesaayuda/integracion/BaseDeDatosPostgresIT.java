@@ -7,6 +7,7 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
@@ -17,6 +18,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -85,8 +87,22 @@ class BaseDeDatosPostgresIT {
         // Es lo que pasa en una base que existía antes de Flyway: se marca en la
         // versión 0 y V1 se aplica encima de lo que ya hay. Si V1 dejara de ser
         // idempotente, esas bases no arrancarían.
-        try (Connection c = dataSource.getConnection()) {
-            ScriptUtils.executeSqlScript(c, new ClassPathResource("db/migration/V1__esquema_base.sql"));
+        //
+        // Se prueba en un esquema aparte y vacío, aplicando V1 dos veces: esa base
+        // antigua tiene el esquema de V1, no el de V10. Reaplicar V1 sobre "public"
+        // (que ya pasó por V3, ids uuid) no puede funcionar y no es un caso real.
+        Resource v1 = new ClassPathResource("db/migration/V1__esquema_base.sql");
+        try (Connection c = dataSource.getConnection(); Statement st = c.createStatement()) {
+            st.execute("CREATE SCHEMA reaplicar");
+            try {
+                st.execute("SET search_path TO reaplicar, public");
+                ScriptUtils.executeSqlScript(c, v1);
+                ScriptUtils.executeSqlScript(c, v1);
+            } finally {
+                // La conexión vuelve al pool: que no se lleve el search_path.
+                st.execute("SET search_path TO public");
+                st.execute("DROP SCHEMA reaplicar CASCADE");
+            }
         }
     }
 
