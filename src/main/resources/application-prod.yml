@@ -1,0 +1,103 @@
+# ==============================================================================
+# PERFIL DE PRODUCCIÓN
+# ==============================================================================
+# Se activa con SPRING_PROFILES_ACTIVE=prod en el .env.
+#
+# Todo lo de aquí tiene un motivo y no es "endurecer por endurecer": cada punto
+# tapa algo que en desarrollo no importa y en producción sí.
+#
+# Este archivo NO sustituye al despliegue: sigue siendo necesario que el backend nunca quede
+# exponerse a internet directamente. Va detrás de un proxy que termine TLS.
+#
+spring:
+  # En producción no hay donde ver un stack trace, así que no se muestran.
+  mvc:
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: true
+  servlet:
+    multipart:
+      # 20 MB por fichero y 50 MB por petición. Son los valores de
+      # aplicación.yml y aquí se repiten a propósito: si alguien los sube en el
+      # perfil general, este los deja en su sitio.
+      max-file-size: 20MB
+      max-request-size: 50MB
+
+server:
+  # El backend va detrás de un proxy. Decirlo hace que Spring configure el
+  # RemoteIpValve para X-Forwarded-For y X-Forwarded-Proto, que es lo que
+  # hace que getRemoteAddr() y los enlaceshttp/https sean correctos.
+  # OJO: el proxy tiene que SOBRESCRIBIR estas cabeceras. Si las reenvía tal
+  # cual, cualquiera puede declararse de cualquier IP y saltarse los límites.
+  forward-headers-strategy: framework
+  error:
+    # Sin mensaje ni traza en las respuestas de error. Un 500 con el stack
+    # completo del servidor es una guía gratis para quien lo ataca.
+    include-message: never
+    include-stacktrace: never
+    include-exception: false
+    include-binding-errors: never
+  servlet:
+    session:
+      # La API es stateless; ninguna petición debe crear sesión en el servidor.
+      # Con esto, el JSESSIONID que se veía en las respuestas desaparece.
+      tracking-modes: cookie
+      timeout: 1m
+  tomcat:
+    # Cuerpos de petición grandes: se acepta hasta 50 MB por las cargas de
+    # adjuntos, pero el resto de parámetros debe ser razonable.
+    max-swallow-size: 50MB
+    max-http-form-post-size: 2MB
+    # Peticiones sin destino: reject antes de llegar a la aplicacion.
+    reject-illegal-header: true
+
+# Swagger se apaga. La interfaz es útil al desarrollar y es un mapa completo de
+# la API a la vista de cualquiera que llegue a /swagger-ui.html. El grupo de
+# seguridad lo deja en permitAll, de modo que activarlo por error publica todo.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    root: INFO
+    # En producción, DEBUG de la aplicacion significa volcar datos de negocio en
+    # el log, y ese log acaba en copias de seguridad que nadie revisa.
+    com.mesaayuda: INFO
+    org.springframework.security: INFO
+  file:
+    name: logs/mesa-ayuda.log
+    max-size: 50MB
+    max-history: 30
+
+# Cabeceras de seguridad que el backend debe poner el mismo.
+# El CSP lo pone PublicUploadHeadersFilter para la zona publica; esto es lo que
+# se devuelve en el resto de respuestas.
+app:
+  auth:
+    # En producción la cookie del refresh token va siempre con Secure. Antes
+    # dependía solo de APP_SECURE_COOKIE, y si se olvidaba la variable la cookie
+    # de sesión viajaba también por HTTP. Se puede apagar explícitamente con la
+    # variable, pero el valor por defecto de este perfil es el seguro.
+    secure-cookie: "${APP_SECURE_COOKIE:true}"
+  security:
+    headers:
+      enabled: true
+      # La app es Angular servida por otro servidor, asi que aqui no se sirve
+      # HTML: 'none' es lo correcto y lo mas restrictivo.
+      content-security-policy: "default-src 'none'; frame-ancestors 'none'"
+      hsts-max-age: 31536000
+      referrer-policy: no-referrer
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      show-components: never

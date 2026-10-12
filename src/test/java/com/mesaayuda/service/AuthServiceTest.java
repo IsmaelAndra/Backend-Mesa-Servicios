@@ -1,5 +1,8 @@
 package com.mesaayuda.service;
 
+import java.util.UUID;
+import static com.mesaayuda.IdsPrueba.id;
+import com.mesaayuda.entity.PasswordResetToken;
 import com.mesaayuda.dto.AuthRequest;
 import com.mesaayuda.dto.AuthResponse;
 import com.mesaayuda.dto.RegisterRequest;
@@ -44,7 +47,9 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -57,10 +62,14 @@ class AuthServiceTest {
     @Mock private AreaRepository areaRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private NotificationService notificationService;
-    @Mock private LoginAttemptRepository loginAttemptRepository;
+    @Mock private LoginAttemptService loginAttemptService;
     @Mock private RefreshTokenRepository refreshTokenRepository;
+    @Mock private com.mesaayuda.repository.PasswordResetTokenRepository passwordResetTokenRepository;
     @Mock private UserDetailsService userDetailsService;
     @Mock private SystemAuditService systemAuditService;
+    @Mock private MicrosoftGraphUserSyncService microsoftGraphUserSyncService;
+    @Mock private SessionConfigService sessionConfigService;
+    @Mock private RateLimitService rateLimitService;
 
     @InjectMocks private AuthService authService;
 
@@ -73,9 +82,16 @@ class AuthServiceTest {
         Area area = new Area();
         area.setNameArea("TI");
         user = new User();
-        user.setIdUser(1L);
+        user.setIdUser(id(1));
         user.setCorporateEmailUser("admin@coacmagisterio.fin.ec");
         user.setPasswordUser("hash-viejo");
+
+        // La duracion de la sesion sale de la configuracion, no del yml. Se deja
+        // un valor fijo para que las pruebas no dependan de la base.
+        lenient().when(sessionConfigService.duracion()).thenReturn(java.time.Duration.ofMinutes(15));
+        lenient().when(sessionConfigService.warningMinutos()).thenReturn(5);
+        lenient().when(sessionConfigService.autoRenew()).thenReturn(true);
+        lenient().when(tokenProvider.segundosRestantes(anyString())).thenReturn(900L);
         user.setMustChangePassword(true);
         user.setRolUser(role);
         user.setArea(area);
@@ -88,78 +104,235 @@ class AuthServiceTest {
 
     @Test
     void changePassword_success_encodesAndClearsFlag() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findById(id(1))).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("vieja", "hash-viejo")).thenReturn(true);
         when(passwordEncoder.encode("nueva")).thenReturn("hash-nueva");
 
-        authService.changePassword(1L, "vieja", "nueva");
+        authService.changePassword(id(1), "vieja", "nueva");
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertEquals("hash-nueva", captor.getValue().getPasswordUser());
         assertFalse(captor.getValue().getMustChangePassword());
         assertNull(captor.getValue().getTemporalPasswordExpiresAt());
+        // El cambio corta también los tokens de acceso ya emitidos, no solo los de refresco.
+        assertNotNull(captor.getValue().getTokensValidAfter());
+        verify(refreshTokenRepository).revokeAllByUser(id(1));
+    }
+
+    @Test
+    void logout_revocaElRefreshYCortaLosTokensDeAcceso() {
+        RefreshToken rt = new RefreshToken();
+        rt.setUserId(id(5));
+        rt.setRevoked(false);
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(rt));
+
+        authService.logout("token-en-claro");
+
+        assertTrue(rt.getRevoked());
+        verify(userRepository).invalidarTokensDeAcceso(eq(id(5)), any());
+        verify(systemAuditService).record("LOGOUT", "User", id(5));
+    }
+
+    @Test
+    void logout_conTokenDesconocidoNoTocaANadie() {
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
+
+        authService.logout("inventado");
+
+        verify(userRepository, never()).invalidarTokensDeAcceso(any(java.util.UUID.class), any());
     }
 
     @Test
     void changePassword_wrongCurrent_throws() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findById(id(1))).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("mal", "hash-viejo")).thenReturn(false);
 
-        assertThrows(BadRequestException.class, () -> authService.changePassword(1L, "mal", "nueva"));
+        assertThrows(BadRequestException.class, () -> authService.changePassword(id(1), "mal", "nueva"));
         verify(userRepository, never()).save(any());
     }
 
     @Test
     void changePassword_samePassword_throws() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findById(id(1))).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("misma", "hash-viejo")).thenReturn(true);
 
-        assertThrows(BadRequestException.class, () -> authService.changePassword(1L, "misma", "misma"));
+        assertThrows(BadRequestException.class, () -> authService.changePassword(id(1), "misma", "misma"));
         verify(userRepository, never()).save(any());
     }
 
     @Test
     void changePassword_userNotFound_throws() {
-        when(userRepository.findById(99L)).thenReturn(Optional.empty());
-        assertThrows(BadRequestException.class, () -> authService.changePassword(99L, "x", "y"));
+        when(userRepository.findById(id(99))).thenReturn(Optional.empty());
+        assertThrows(BadRequestException.class, () -> authService.changePassword(id(99), "x", "y"));
     }
 
-    @Test
-    void forgotPassword_generatesRandomAndNotifies() {
+    /**
+     * El cambio de fondo de 1D.2: pedir el restablecimiento ya NO toca la
+     * contraseña. Antes la generaba, la guardaba y la mandaba en el mismo
+     * instante, así que cualquiera que conociera el correo de un compañero
+     * (en este dominio son consecutivos) le tumbaba la sesión.
+     */
+@Test
+    void forgotPassword_noCambiaLaContrasena_soloEmiteEnlace() {
         user.setStatusUser("ACTIVE");
         user.setDeletedUser(false);
         when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
 
-        ArgumentCaptor<String> encoded = ArgumentCaptor.forClass(String.class);
-        when(passwordEncoder.encode(encoded.capture())).thenAnswer(inv -> "HASH");
+        // El fixture deja mustChangePassword en true, asi que lo que importa es
+        // que forgotPassword no lo toque, no su valor absoluto.
+        boolean mustAntes = user.getMustChangePassword();
+        OffsetDateTime venceAntes = user.getTemporalPasswordExpiresAt();
 
         authService.forgotPassword(user.getCorporateEmailUser());
 
-        ArgumentCaptor<String> tempPwd = ArgumentCaptor.forClass(String.class);
-        verify(notificationService).notifyPasswordReset(eq(user), tempPwd.capture());
+        // Lo importante: ni se encripta ni se guarda una contraseña nueva.
+        verify(passwordEncoder, never()).encode(anyString());
+        verify(userRepository, never()).save(any());
+        assertEquals(mustAntes, user.getMustChangePassword(),
+                "no debe marcarse cambio pendiente todavia");
+        assertEquals(venceAntes, user.getTemporalPasswordExpiresAt(),
+                "no debe fijarse caducidad de contraseña temporal");
 
-        String raw = tempPwd.getValue();
-        assertNotNull(raw);
-        assertTrue(raw.length() >= 8);
-        assertEquals(raw, encoded.getValue(), "la clave enviada debe ser la misma que se encripta");
-        verify(userRepository).save(user);
-        assertTrue(user.getMustChangePassword());
-        assertNotNull(user.getTemporalPasswordExpiresAt());
-        assertTrue(user.getTemporalPasswordExpiresAt().isAfter(OffsetDateTime.now()));
+        // Y se emite un enlace de un solo uso para ese usuario.
+        ArgumentCaptor<PasswordResetToken> enlace = ArgumentCaptor.forClass(PasswordResetToken.class);
+        verify(passwordResetTokenRepository).save(enlace.capture());
+        assertEquals(user, enlace.getValue().getUser());
+        assertNotNull(enlace.getValue().getTokenHash());
+        assertTrue(enlace.getValue().getExpiresAt().isAfter(OffsetDateTime.now()));
+
+        // Lo guardado es el hash, no el token. Se comprueba contra el token real
+        // que salió por correo: si se guardara en claro, leer la tabla bastaría
+        // para resetsar la cuenta de cualquiera.
+        ArgumentCaptor<String> url = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).notifyPasswordReset(eq(user), url.capture());
+        String tokenCrudo = url.getValue().substring(url.getValue().indexOf("token=") + 6);
+        assertNotEquals(tokenCrudo, enlace.getValue().getTokenHash());
+        assertEquals(sha256De(tokenCrudo), enlace.getValue().getTokenHash());
+
+        verify(passwordResetTokenRepository).invalidarPendientes(user.getIdUser());
+    }
+
+    /** Replica el hash que hace AuthService.hashToken, para poder compararlo. */
+    private String sha256De(String raw) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(
+                    md.digest(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** El correo lleva el enlace, no una contraseña que copiar. */
+    @Test
+    void forgotPassword_mandaElEnlaceYNoLaClave() {
+        user.setStatusUser("ACTIVE");
+        user.setDeletedUser(false);
+        when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
+
+        authService.forgotPassword(user.getCorporateEmailUser());
+
+        ArgumentCaptor<String> url = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).notifyPasswordReset(eq(user), url.capture());
+        assertTrue(url.getValue().contains("token="),
+                "debe ser un enlace con token: " + url.getValue());
+        assertTrue(url.getValue().contains("/restablecer"));
+    }
+
+    /** Confirmar el enlace: cambia la clave, limpia la marca y tira las sesiones. */
+    @Test
+    void confirmarRestablecimiento_cambiaClaveYRevocaSesiones() {
+        PasswordResetToken enlace = enlaceVivo(user);
+        when(passwordResetTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(enlace));
+        when(passwordEncoder.encode(anyString())).thenReturn("NUEVO_HASH");
+
+        authService.confirmarRestablecimiento("token-de-prueba", "NuevaClave123!");
+
+        assertEquals("NUEVO_HASH", user.getPasswordUser());
+        assertFalse(user.getMustChangePassword());
+        assertNull(user.getTemporalPasswordExpiresAt());
+        assertTrue(enlace.isUsed(), "el enlace debe quedar consumido");
+        // Lo esencial: un refresh token robado deja de servir.
+        verify(refreshTokenRepository).revokeAllByUser(user.getIdUser());
+    }
+
+    /** Un enlace es un cambio. Reutilizarlo no debe volver a cambiar la clave. */
+    @Test
+    void confirmarRestablecimiento_enlaceYaUsado_seRechaza() {
+        PasswordResetToken enlace = enlaceVivo(user);
+        enlace.setUsed(true);
+        when(passwordResetTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(enlace));
+
+        assertThrows(BadRequestException.class,
+                () -> authService.confirmarRestablecimiento("token", "NuevaClave123!"));
+        verify(passwordEncoder, never()).encode(anyString());
+        verify(refreshTokenRepository, never()).revokeAllByUser(any());
     }
 
     @Test
-    void forgotPassword_inactiveOrDeleted_throws() {
+    void confirmarRestablecimiento_enlaceCaducado_seRechaza() {
+        PasswordResetToken enlace = enlaceVivo(user);
+        enlace.setExpiresAt(OffsetDateTime.now().minusMinutes(1));
+        when(passwordResetTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(enlace));
+
+        assertThrows(BadRequestException.class,
+                () -> authService.confirmarRestablecimiento("token", "NuevaClave123!"));
+        verify(passwordEncoder, never()).encode(anyString());
+    }
+
+    @Test
+    void confirmarRestablecimiento_tokenInventado_seRechaza() {
+        when(passwordResetTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
+
+        assertThrows(BadRequestException.class,
+                () -> authService.confirmarRestablecimiento("inventado", "NuevaClave123!"));
+        verify(passwordEncoder, never()).encode(anyString());
+    }
+
+    /** Un enlace no puede resucitar una cuenta desactivada. */
+    @Test
+    void confirmarRestablecimiento_cuentaInactiva_seRechaza() {
+        user.setStatusUser("INACTIVE");
+        user.setDeletedUser(false);
+        when(passwordResetTokenRepository.findByTokenHash(anyString()))
+                .thenReturn(Optional.of(enlaceVivo(user)));
+
+        assertThrows(BadRequestException.class,
+                () -> authService.confirmarRestablecimiento("token", "NuevaClave123!"));
+        verify(passwordEncoder, never()).encode(anyString());
+    }
+
+    private PasswordResetToken enlaceVivo(User u) {
+        PasswordResetToken enlace = new PasswordResetToken();
+        enlace.setUser(u);
+        enlace.setTokenHash("hash");
+        enlace.setExpiresAt(OffsetDateTime.now().plusHours(1));
+        enlace.setUsed(false);
+        return enlace;
+    }
+
+    /**
+     * Antes este caso lanzaba BadRequestException diciendo que no existía la
+     * cuenta. Eso permetia enumerar los correos de la organización con una
+     * simple diferencia en la respuesta, así que ahora devuelve en silencio y
+     * el controlador responde siempre lo mismo.
+     */
+    @Test
+    void forgotPassword_inactiveOrDeleted_noRespondeNiNotifica() {
         user.setStatusUser("INACTIVE");
         when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
-        assertThrows(BadRequestException.class, () -> authService.forgotPassword(user.getCorporateEmailUser()));
+
+        authService.forgotPassword(user.getCorporateEmailUser());
+
+        verify(notificationService, never()).notifyPasswordReset(any(), anyString());
+        verify(userRepository, never()).save(any());
     }
 
     @Test
     void register_rejectsNonCorporateDomain() {
         RegisterRequest req = new RegisterRequest("1723", "x@gmail.com", "Temporal123!",
-                null, "USER", 1L);
+                null, "USER", id(1), null);
         assertThrows(BadRequestException.class, () -> authService.register(req));
         verify(userRepository, never()).save(any());
     }
@@ -168,7 +341,7 @@ class AuthServiceTest {
     void login_success_returnsAuthResponse() {
         Authentication auth = authWithAuthority("ROLE_ADMIN");
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class))).thenReturn(auth);
-        when(tokenProvider.generateToken(any())).thenReturn("TOKEN");
+        when(tokenProvider.generateToken(any(), anyLong())).thenReturn("TOKEN");
         when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
 
         AuthResponse res = authService.login(new AuthRequest(user.getCorporateEmailUser(), "cosa"));
@@ -185,7 +358,7 @@ class AuthServiceTest {
     void login_temporalPasswordExpired_forcesChange() {
         Authentication auth = authWithAuthority("ROLE_ADMIN");
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class))).thenReturn(auth);
-        when(tokenProvider.generateToken(any())).thenReturn("TOKEN");
+        when(tokenProvider.generateToken(any(), anyLong())).thenReturn("TOKEN");
         user.setTemporalPasswordExpiresAt(OffsetDateTime.now().minusHours(1));
         user.setMustChangePassword(false);
         when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
@@ -200,7 +373,7 @@ class AuthServiceTest {
     void login_temporalPasswordStillValid_doesNotForceChange() {
         Authentication auth = authWithAuthority("ROLE_ADMIN");
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class))).thenReturn(auth);
-        when(tokenProvider.generateToken(any())).thenReturn("TOKEN");
+        when(tokenProvider.generateToken(any(), anyLong())).thenReturn("TOKEN");
         user.setTemporalPasswordExpiresAt(OffsetDateTime.now().plusMinutes(60));
         user.setMustChangePassword(false);
         when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
@@ -211,70 +384,66 @@ class AuthServiceTest {
         verify(userRepository, never()).save(any());
     }
 
-    @Test
-    void login_locksAfterMaxFailures() {
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenThrow(BadCredentialsException.class);
-        LoginAttempt attempt = new LoginAttempt();
-        attempt.setUserKey(user.getCorporateEmailUser());
-        when(loginAttemptRepository.findByUserKey(user.getCorporateEmailUser())).thenAnswer(inv -> Optional.of(attempt));
+@Test
+      void login_registraElFalloEnCadaIntentoFallido() {
+          // El contador y el bloqueo viven en LoginAttemptService, en su propia
+          // transaccion. Aqui solo se comprueba que AuthService avise cada vez.
+          when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+                  .thenThrow(BadCredentialsException.class);
+          lenient().when(loginAttemptService.buscar(anyString())).thenReturn(null);
 
-        for (int i = 0; i < 5; i++) {
-            assertThrows(BadCredentialsException.class,
-                    () -> authService.login(new AuthRequest(user.getCorporateEmailUser(), "mal")));
-        }
+          for (int i = 0; i < 5; i++) {
+              assertThrows(BadCredentialsException.class,
+                      () -> authService.login(new AuthRequest(user.getCorporateEmailUser(), "mal")));
+          }
 
-        assertEquals(0, attempt.getFailedCount());
-        assertNotNull(attempt.getLockedUntil());
-        assertTrue(attempt.getLockedUntil().isAfter(OffsetDateTime.now()));
-        verify(loginAttemptRepository, times(5)).save(attempt);
-    }
+          verify(loginAttemptService, times(5)).registrarFallo(user.getCorporateEmailUser());
+      }
 
-    @Test
-    void login_blockedWhileLocked() {
-        LoginAttempt locked = new LoginAttempt();
-        locked.setUserKey(user.getCorporateEmailUser());
-        locked.setLockedUntil(OffsetDateTime.now().plusMinutes(10));
-        when(loginAttemptRepository.findByUserKey(user.getCorporateEmailUser())).thenReturn(Optional.of(locked));
+      @Test
+      void login_blockedWhileLocked() {
+          LoginAttempt locked = new LoginAttempt();
+          locked.setUserKey(user.getCorporateEmailUser());
+          locked.setLockedUntil(OffsetDateTime.now().plusMinutes(10));
+          when(loginAttemptService.buscar(user.getCorporateEmailUser())).thenReturn(locked);
+          when(loginAttemptService.estaBloqueada(locked)).thenReturn(true);
+          when(loginAttemptService.minutosRestantes(locked)).thenReturn(10L);
 
-        BadRequestException ex = assertThrows(BadRequestException.class,
-                () -> authService.login(new AuthRequest(user.getCorporateEmailUser(), "x")));
-        assertTrue(ex.getMessage().contains("minuto"));
-        verify(authenticationManager, never()).authenticate(any());
-    }
+          BadRequestException ex = assertThrows(BadRequestException.class,
+                  () -> authService.login(new AuthRequest(user.getCorporateEmailUser(), "x")));
+          assertTrue(ex.getMessage().contains("minuto"));
+          verify(authenticationManager, never()).authenticate(any());
+          // Con la cuenta bloqueada no se llega a comprobar la contraseña.
+          verify(loginAttemptService, never()).registrarFallo(anyString());
+      }
 
-    @Test
-    void login_success_clearsAttempts() {
-        LoginAttempt attempt = new LoginAttempt();
-        attempt.setUserKey(user.getCorporateEmailUser());
-        attempt.setFailedCount(3);
-        when(loginAttemptRepository.findByUserKey(user.getCorporateEmailUser())).thenReturn(Optional.of(attempt));
+      @Test
+      void login_success_clearsAttempts() {
+          Authentication auth = authWithAuthority("ROLE_ADMIN");
+          when(loginAttemptService.buscar(user.getCorporateEmailUser())).thenReturn(null);
+          when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class))).thenReturn(auth);
+          when(tokenProvider.generateToken(any(), anyLong())).thenReturn("TOKEN");
+          when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
 
-        Authentication auth = authWithAuthority("ROLE_ADMIN");
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class))).thenReturn(auth);
-        when(tokenProvider.generateToken(any())).thenReturn("TOKEN");
-        when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
+          authService.login(new AuthRequest(user.getCorporateEmailUser(), "correcta"));
 
-        authService.login(new AuthRequest(user.getCorporateEmailUser(), "correcta"));
-
-        verify(loginAttemptRepository).delete(attempt);
-        verify(loginAttemptRepository, never()).save(any());
-    }
+          verify(loginAttemptService).limpiar(user.getCorporateEmailUser());
+      }
 
     @Test
     void refresh_rotatesAndReturnsNewPair() {
         RefreshToken stored = new RefreshToken();
-        stored.setUserId(1L);
+        stored.setUserId(id(1));
         stored.setTokenHash("hash-viejo");
         stored.setExpiresAt(OffsetDateTime.now().plusDays(1));
         stored.setRevoked(false);
         when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(stored));
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findById(id(1))).thenReturn(Optional.of(user));
 
         UserDetails details = new org.springframework.security.core.userdetails.User(
                 user.getCorporateEmailUser(), "pw", List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         when(userDetailsService.loadUserByUsername(user.getCorporateEmailUser())).thenReturn(details);
-        when(tokenProvider.generateToken(any())).thenReturn("NEW-ACCESS");
+        when(tokenProvider.generateToken(any(), anyLong())).thenReturn("NEW-ACCESS");
 
         AuthResponse res = authService.refresh("token-viejo");
 
@@ -286,21 +455,109 @@ class AuthServiceTest {
         verify(refreshTokenRepository, times(2)).save(any(RefreshToken.class));
     }
 
-    @Test
+@Test
     void refresh_revoked_throws() {
         RefreshToken stored = new RefreshToken();
-        stored.setUserId(1L);
+        stored.setUserId(id(1));
         stored.setExpiresAt(OffsetDateTime.now().plusDays(1));
         stored.setRevoked(true);
         when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(stored));
-
+  
         assertThrows(BadRequestException.class, () -> authService.refresh("token"));
+    }
+
+    /**
+     * La rotación normal encadena el token viejo con el nuevo.
+     *
+     * <p>Sin ese encadenamiento no se puede detectar el robo: al reutilizar un
+     * token viejo solo se vería que está revocado, igual que un token inventado.
+     */
+    @Test
+    void refresh_rotaYEncadenaElTokenViejoConElNuevo() {
+        RefreshToken stored = new RefreshToken();
+        stored.setUserId(id(1));
+        stored.setTokenHash("hash-viejo");
+        stored.setExpiresAt(OffsetDateTime.now().plusDays(1));
+        stored.setRevoked(false);
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(stored));
+        when(userRepository.findById(id(1))).thenReturn(Optional.of(user));
+        UserDetails details = new org.springframework.security.core.userdetails.User(
+                user.getCorporateEmailUser(), "pw", List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        when(userDetailsService.loadUserByUsername(user.getCorporateEmailUser())).thenReturn(details);
+        when(tokenProvider.generateToken(any(), anyLong())).thenReturn("ACCESO");
+
+        AuthResponse res = authService.refresh("token-viejo");
+
+        assertTrue(stored.getRevoked());
+        assertNotNull(stored.getReplacedByHash(), "el viejo debe apuntar al sustituto");
+        assertNotEquals(stored.getTokenHash(), stored.getReplacedByHash(),
+                "el sustituto no puede ser el mismo token");
+        assertNull(stored.getReuseDetectedAt(),
+                "una rotación normal no es reutilización: no debe marcarse");
+        assertNotNull(res.refreshToken());
+    }
+
+    /**
+     * Reutilizar un token ya rotado significa que hay dos manos con el mismo
+     * token: el titular ya tiene el par nuevo. Se cierran todas las sesiones.
+     */
+    @Test
+    void refresh_tokenRobado_reutilizado_revocaTodasLasSesiones() {
+        RefreshToken robado = new RefreshToken();
+        robado.setUserId(id(1));
+        robado.setTokenHash("hash-robado");
+        robado.setExpiresAt(OffsetDateTime.now().plusDays(1));
+        robado.setRevoked(true);
+        robado.setReplacedByHash("hash-del-sustituto");
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(robado));
+
+        assertThrows(BadRequestException.class, () -> authService.refresh("token-robado"));
+
+        verify(refreshTokenRepository).revokeAllByUser(id(1));
+        assertNotNull(robado.getReuseDetectedAt(), "debe constar cuándo se detectó");
+        verify(systemAuditService).record(eq("REFRESH_TOKEN_REUSE"), eq("User"), eq(id(1)),
+                eq(null), anyString());
+    }
+
+    /**
+     * El ladrón va a seguir insistiendo con el mismo token. Cada intento debe
+     * seguir rechazándose, pero sin ensuciar el log con una línea por intento.
+     */
+    @Test
+    void refresh_reutilizadoVariasVeces_rechazaSiemprePeroAvisaUna() {
+        RefreshToken robado = new RefreshToken();
+        robado.setUserId(id(1));
+        robado.setExpiresAt(OffsetDateTime.now().plusDays(1));
+        robado.setRevoked(true);
+        robado.setReuseDetectedAt(OffsetDateTime.now());
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(robado));
+
+assertThrows(BadRequestException.class, () -> authService.refresh("token"));
+        assertThrows(BadRequestException.class, () -> authService.refresh("token"));
+  
+        // Sin nuevo aviso, que es lo que se queria evitar. Las sesiones ya estaban
+        // revocadas por la deteccion anterior, asi que no hay nada que repetir.
+        verify(refreshTokenRepository, never()).revokeAllByUser(any());
+        verify(systemAuditService, never()).record(eq("REFRESH_TOKEN_REUSE"), any(), any(), any(), anyString());
+        verify(systemAuditService, never()).record(eq("REFRESH_TOKEN_REUSE"), any(), any(), anyString());
+    }
+
+    /** Un token inexistente se rechaza sin tocar sesiones ajenas. */
+    @Test
+    void refresh_tokenInexistente_noDisparaLaDeteccion() {
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
+
+        assertThrows(BadRequestException.class, () -> authService.refresh("inventado"));
+
+        verify(refreshTokenRepository, never()).revokeAllByUser(any());
+verify(systemAuditService, never()).record(eq("REFRESH_TOKEN_REUSE"), any(), any(), any(), anyString());
+        verify(systemAuditService, never()).record(eq("REFRESH_TOKEN_REUSE"), any(), any(), anyString());
     }
 
     @Test
     void refresh_expired_throws() {
         RefreshToken stored = new RefreshToken();
-        stored.setUserId(1L);
+        stored.setUserId(id(1));
         stored.setExpiresAt(OffsetDateTime.now().minusDays(1));
         stored.setRevoked(false);
         when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(stored));

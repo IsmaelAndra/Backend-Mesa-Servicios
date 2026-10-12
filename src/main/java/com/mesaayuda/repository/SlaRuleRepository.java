@@ -1,5 +1,7 @@
 package com.mesaayuda.repository;
 
+import java.util.UUID;
+
 import com.mesaayuda.entity.SlaRule;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -8,22 +10,22 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface SlaRuleRepository extends JpaRepository<SlaRule, Long> {
+public interface SlaRuleRepository extends JpaRepository<SlaRule, UUID> {
 
     Optional<SlaRule> findByAreaIdAreaAndPriorityIdPriorityAndCategoryIdCategoryAndTypeIdTicketTypeAndActiveSlaRuleTrue(
-            Long areaId, Long priorityId, Long categoryId, Long typeId);
+            UUID areaId, UUID priorityId, UUID categoryId, UUID typeId);
 
     Optional<SlaRule> findByAreaIdAreaAndPriorityIdPriorityAndCategoryIdCategoryAndTypeIsNullAndActiveSlaRuleTrue(
-            Long areaId, Long priorityId, Long categoryId);
+            UUID areaId, UUID priorityId, UUID categoryId);
 
     Optional<SlaRule> findByAreaIdAreaAndPriorityIdPriorityAndCategoryIsNullAndTypeIdTicketTypeAndActiveSlaRuleTrue(
-            Long areaId, Long priorityId, Long typeId);
+            UUID areaId, UUID priorityId, UUID typeId);
 
     Optional<SlaRule> findByAreaIdAreaAndPriorityIdPriorityAndCategoryIsNullAndTypeIsNullAndActiveSlaRuleTrue(
-            Long areaId, Long priorityId);
+            UUID areaId, UUID priorityId);
 
     List<SlaRule> findByAreaIdAreaAndPriorityIdPriorityAndActiveSlaRuleTrue(
-            Long areaId, Long priorityId);
+            UUID areaId, UUID priorityId);
 
     List<SlaRule> findByActiveSlaRuleTrue();
 }

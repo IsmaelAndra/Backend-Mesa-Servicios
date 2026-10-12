@@ -38,13 +38,18 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-security'
-    implementation 'org.springframework.boot:spring-boot-starter-mail'
-    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
     // ===== Base de datos =====
     runtimeOnly 'org.postgresql:postgresql:42.6.0'
     implementation 'com.zaxxer:HikariCP:5.0.1'
+    // Migraciones versionadas (db/migration). Sustituye a schema.sql + data.sql.
+    implementation 'org.flywaydb:flyway-core'
+
+    // ===== Tareas programadas con varias instancias =====
+    // Un solo servidor ejecuta cada @Scheduled aunque haya varios levantados.
+    implementation 'net.javacrumbs.shedlock:shedlock-spring:5.16.0'
+    implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:5.16.0'
 
     // ===== Seguridad JWT =====
     implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
@@ -83,6 +88,10 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
     testImplementation 'org.mockito:mockito-core:5.7.0'
+    // PostgreSQL real en Docker para las pruebas *IT (se saltan si no hay Docker).
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:postgresql'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

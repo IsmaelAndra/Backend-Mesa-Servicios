@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,10 +20,9 @@ import java.time.OffsetDateTime;
 public class Role {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_role", updatable = false)
-    private Long idRole;
-
+    private UUID idRole;
     @Column(name = "name_role", nullable = false, unique = true, length = 100)
     private String nameRole;
 

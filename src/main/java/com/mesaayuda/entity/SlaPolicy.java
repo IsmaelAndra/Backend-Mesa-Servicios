@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,10 +20,9 @@ import java.time.OffsetDateTime;
 public class SlaPolicy {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_sla_policy", updatable = false)
-    private Long idSlaPolicy;
-
+    private UUID idSlaPolicy;
     @Column(name = "name_sla_policy", nullable = false, unique = true, length = 100)
     private String nameSlaPolicy;
 
@@ -37,6 +37,12 @@ public class SlaPolicy {
 
     @Column(name = "active_sla_policy", nullable = false)
     private Boolean activeSlaPolicy = true;
+
+    @Column(name = "icon_sla_policy", length = 100)
+    private String iconSlaPolicy;
+
+    @Column(name = "color_sla_policy", length = 30)
+    private String colorSlaPolicy;
 
     @CreationTimestamp
     @Column(name = "created_at_sla_policy", nullable = false, updatable = false)

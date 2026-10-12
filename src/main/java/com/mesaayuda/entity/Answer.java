@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,10 +20,9 @@ import java.time.OffsetDateTime;
 public class Answer {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_answer", updatable = false)
-    private Long idAnswer;
-
+    private UUID idAnswer;
     @Column(name = "message_answer", nullable = false, columnDefinition = "text")
     private String messageAnswer;
 
@@ -39,6 +39,10 @@ public class Answer {
 
     @Column(name = "deleted_answer", nullable = false)
     private Boolean deletedAnswer = false;
+
+    /** Última edición del texto, o null si nunca se editó. */
+    @Column(name = "edited_at_answer")
+    private OffsetDateTime editedAtAnswer;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ticket_answer", nullable = false)

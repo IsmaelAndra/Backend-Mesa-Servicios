@@ -13,5 +13,7 @@ public interface UserMapper {
 
     @Mapping(target = "role", source = "rolUser.nameRole")
     @Mapping(target = "area", source = "area.nameArea")
+    @Mapping(target = "sucursal", source = "sucursal.nameSucursal")
+    @Mapping(target = "sucursalId", source = "sucursal.idSucursal")
     UserResponse toResponse(User user);
 }

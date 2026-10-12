@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/tasks")
@@ -33,7 +34,7 @@ public class TaskController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Obtener tarea por id")
-    public ResponseEntity<TaskResponse> findById(@PathVariable Long id) {
+    public ResponseEntity<TaskResponse> findById(@PathVariable UUID id) {
         return ResponseEntity.ok(taskService.findById(id));
     }
 
@@ -45,21 +46,21 @@ public class TaskController {
 
     @PutMapping("/{id}")
     @Operation(summary = "Actualizar tarea")
-    public ResponseEntity<TaskResponse> update(@PathVariable Long id,
+    public ResponseEntity<TaskResponse> update(@PathVariable UUID id,
                                                @Valid @RequestBody TaskRequest request) {
         return ResponseEntity.ok(taskService.update(id, request));
     }
 
     @PatchMapping("/{id}/status")
     @Operation(summary = "Cambiar estado de la tarea (PENDIENTE/EN_CURSO/EN_REVISION/HECHO)")
-    public ResponseEntity<TaskResponse> changeStatus(@PathVariable Long id,
+    public ResponseEntity<TaskResponse> changeStatus(@PathVariable UUID id,
                                                      @RequestBody StatusChangeRequest request) {
         return ResponseEntity.ok(taskService.changeStatus(id, request.statusName()));
     }
 
     @DeleteMapping("/{id}")
     @Operation(summary = "Eliminar (soft delete) tarea")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
         taskService.delete(id);
         return ResponseEntity.noContent().build();
     }

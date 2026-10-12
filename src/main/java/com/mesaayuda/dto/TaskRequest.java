@@ -1,10 +1,13 @@
 package com.mesaayuda.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import java.util.UUID;
 import jakarta.validation.constraints.NotNull;
 
+import java.util.UUID;
 import java.time.OffsetDateTime;
 
+import java.util.UUID;
 public record TaskRequest(
         @NotBlank(message = "El título es obligatorio")
         String title,
@@ -14,7 +17,7 @@ public record TaskRequest(
         String status,
 
         @NotNull(message = "El usuario asignado es obligatorio")
-        Long assignedUserId,
+        UUID assignedUserId,
 
         OffsetDateTime start,
 

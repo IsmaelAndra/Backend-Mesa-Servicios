@@ -13,7 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.URI;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -47,8 +49,8 @@ public class MicrosoftGraphService {
     }
 
     public GraphUser getUser(String upnOrEmail) {
-        String url = GRAPH_BASE + "/users/" + encode(upnOrEmail)
-                + "?$select=id,displayName,givenName,surname,mail,userPrincipalName,accountEnabled";
+        URI url = graphUri("/users/" + upnOrEmail
+                + "?$select=id,displayName,givenName,surname,mail,userPrincipalName,accountEnabled");
         try {
             ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
                     url, HttpMethod.GET, authorizedEntity(null), mapType());
@@ -75,7 +77,7 @@ public class MicrosoftGraphService {
     }
 
     public GraphPhoto getPhoto(String upnOrEmail, String currentETag) {
-        String url = GRAPH_BASE + "/users/" + encode(upnOrEmail) + "/photo/$value";
+        URI url = graphUri("/users/" + upnOrEmail + "/photo/$value");
         try {
             HttpHeaders headers = new HttpHeaders();
             String token = tokenService.getAccessToken();
@@ -102,6 +104,52 @@ public class MicrosoftGraphService {
         }
     }
 
+    /**
+     * Verifica que una cuenta exista como usuario habilitado en el tenant.
+     * No lanza excepción; devuelve {@code userFound=false} si la cuenta no existe
+     * o está deshabilitada. Si la verificación falla por permisos, {@code userFound}
+     * queda ausente para no bloquear el envío.
+     */
+    public Map<String, Object> validateMailAccount(String upnOrEmail) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (upnOrEmail == null || upnOrEmail.isBlank()) {
+            result.put("userFound", false);
+            result.put("success", false);
+            result.put("message", "No hay cuenta remitente configurada");
+            return result;
+        }
+        String account = upnOrEmail.trim();
+        try {
+            GraphUser user = getUser(account);
+            if (user == null) {
+                result.put("userFound", false);
+                result.put("success", false);
+                result.put("message", "La cuenta remitente '" + account + "' no existe en Microsoft Graph. "
+                        + "Debe ser un usuario con buzón del mismo tenant del App Registration "
+                        + "(verifique el UPN/correo en Entra ID).");
+                return result;
+            }
+            if (Boolean.FALSE.equals(user.accountEnabled())) {
+                result.put("userFound", false);
+                result.put("success", false);
+                result.put("message", "La cuenta remitente '" + account + "' está deshabilitada en Microsoft 365.");
+                return result;
+            }
+            String mailbox = user.mail() != null && !user.mail().isBlank()
+                    ? user.mail() : user.userPrincipalName();
+            result.put("userFound", true);
+            result.put("success", true);
+            result.put("mailbox", mailbox);
+            result.put("message", "Cuenta remitente válida: "
+                    + (user.displayName() != null ? user.displayName() : mailbox));
+            return result;
+        } catch (Exception e) {
+            log.warn("No se pudo verificar la cuenta remitente {}: {}", account, rootMessage(e));
+            result.put("message", "No se pudo verificar la cuenta en Microsoft Graph: " + rootMessage(e));
+            return result;
+        }
+    }
+
     /** Prueba de conexión: solicita un token y consulta un recurso mínimo. */
     public Map<String, Object> testConnection() {
         Map<String, Object> result = new LinkedHashMap<>();
@@ -109,7 +157,7 @@ public class MicrosoftGraphService {
             String token = tokenService.getAccessToken();
             HttpHeaders headers = new HttpHeaders();
             headers.setBearerAuth(token);
-            restTemplate.exchange(GRAPH_BASE + "/users?$top=1", HttpMethod.GET,
+            restTemplate.exchange(graphUri("/users?$top=1"), HttpMethod.GET,
                     new HttpEntity<>(headers), mapType());
             result.put("success", true);
             result.put("message", "Conexión con Microsoft Graph exitosa");
@@ -117,6 +165,79 @@ public class MicrosoftGraphService {
             log.warn("Prueba de conexión con Microsoft Graph falló: {}", rootMessage(e));
             result.put("success", false);
             result.put("message", "No se pudo conectar con Microsoft Graph: " + rootMessage(e));
+        }
+        return result;
+    }
+
+    /**
+     * Envía un correo usando la API sendMail de Microsoft Graph
+     * (POST /users/{remitente}/sendMail). El éxito se determina cuando Graph
+     * responde con HTTP 202 Accepted (o cualquier 2xx).
+     */
+    public Map<String, Object> sendMail(String fromAccount, String to, String subject, String bodyHtml) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (fromAccount == null || fromAccount.isBlank()) {
+            result.put("success", false);
+            result.put("message", "No hay cuenta remitente configurada para el envío de correos");
+            return result;
+        }
+        if (to == null || to.isBlank()) {
+            result.put("success", false);
+            result.put("message", "El destinatario no puede estar vacío");
+            return result;
+        }
+        URI url = graphUri("/users/" + fromAccount.trim() + "/sendMail");
+
+        Map<String, Object> messageBody = Map.of("contentType", "HTML", "content", bodyHtml);
+        Map<String, Object> recipient = Map.of("emailAddress", Map.of("address", to.trim()));
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("subject", subject);
+        message.put("body", messageBody);
+        message.put("toRecipients", List.of(recipient));
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("message", message);
+        payload.put("saveToSentItems", true);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(tokenService.getAccessToken());
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(
+                    url, HttpMethod.POST, new HttpEntity<>(payload, headers), String.class);
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("Email aceptado por Microsoft Graph (HTTP {}) para {}", 
+                        response.getStatusCode().value(), to);
+                result.put("success", true);
+                result.put("status", response.getStatusCode().value());
+                result.put("message", "Correo aceptado por Microsoft Graph (HTTP "
+                        + response.getStatusCode().value() + ")");
+            } else {
+                result.put("success", false);
+                result.put("message", "Microsoft devolvió HTTP " + response.getStatusCode().value());
+            }
+        } catch (HttpClientErrorException e) {
+            int status = e.getStatusCode().value();
+            log.warn("Fallo al enviar email por Graph para {}: HTTP {}", to, status);
+            result.put("success", false);
+            if (status == 404) {
+                result.put("message", "Microsoft Graph no encontró la cuenta remitente '"
+                        + fromAccount.trim() + "'. Debe ser un usuario con buzón habilitado en el mismo "
+                        + "tenant del App Registration (verifique el UPN/correo en Entra ID).");
+            } else if (status == 403) {
+                result.put("message", "La aplicación no tiene permiso para enviar correo (Mail.Send). "
+                        + "Conceda el permiso y el consentimiento de administrador en Azure AD.");
+            } else if (status == 401) {
+                result.put("message", "Token de Microsoft Graph inválido o expirado. "
+                        + "Verifique Tenant ID / Client ID / Client Secret.");
+            } else {
+                result.put("message", "Error HTTP " + status + ": " + e.getResponseBodyAsString());
+            }
+        } catch (Exception e) {
+            log.warn("No se pudo enviar el correo por Graph: {}", rootMessage(e));
+            result.put("success", false);
+            result.put("message", "No se pudo enviar el correo: " + rootMessage(e));
         }
         return result;
     }
@@ -136,8 +257,13 @@ public class MicrosoftGraphService {
         };
     }
 
-    private String encode(String value) {
-        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
+    /**
+     * Construye la URI absoluta sin pre-codificar: RestTemplate no debe volver a
+     * codificar el {@code @} del UPN (evita el doble encoding que Graph rechaza
+     * como ErrorInvalidUser).
+     */
+    private URI graphUri(String path) {
+        return URI.create(GRAPH_BASE + path);
     }
 
     private String asString(Object value) {

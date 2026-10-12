@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -26,10 +27,9 @@ import java.time.OffsetDateTime;
 public class MonthlyEvaluation {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_evaluation", updatable = false)
-    private Long idEvaluation;
-
+    private UUID idEvaluation;
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "agent_id", nullable = false)
     private User agent;

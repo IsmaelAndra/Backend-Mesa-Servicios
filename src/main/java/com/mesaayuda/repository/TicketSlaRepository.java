@@ -1,5 +1,7 @@
 package com.mesaayuda.repository;
 
+import java.util.UUID;
+
 import com.mesaayuda.entity.TicketSla;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -11,9 +13,12 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface TicketSlaRepository extends JpaRepository<TicketSla, Long> {
+public interface TicketSlaRepository extends JpaRepository<TicketSla, UUID> {
 
-    Optional<TicketSla> findByTicketIdTicket(Long ticketId);
+    Optional<TicketSla> findByTicketIdTicket(UUID ticketId);
+
+    /** SLA de varios tickets en una sola consulta (el tablero lo pedía ticket a ticket). */
+    List<TicketSla> findByTicketIdTicketIn(java.util.Collection<UUID> ticketIds);
 
     @Query("SELECT t FROM TicketSla t WHERE t.ticket.deletedTicket = false " +
            "AND t.ticket.statusTicket.nameStatus NOT IN ('RESUELTO','CERRADO') " +

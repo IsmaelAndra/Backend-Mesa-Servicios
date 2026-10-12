@@ -14,6 +14,9 @@ public interface AnswerMapper {
     AnswerMapper INSTANCE = Mappers.getMapper(AnswerMapper.class);
 
     @Mapping(target = "user", source = "userAnswer.corporateEmailUser")
+    @Mapping(target = "userDisplayName", source = "userAnswer.displayName")
+    @Mapping(target = "userPhotoUrl", source = "userAnswer.photoUrl")
+    @Mapping(target = "unreadOnOpen", ignore = true)
     AnswerResponse toResponse(Answer answer);
 
     List<AnswerResponse> toResponse(List<Answer> answers);

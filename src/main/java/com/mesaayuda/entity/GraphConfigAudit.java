@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -18,16 +19,14 @@ import java.time.OffsetDateTime;
 public class GraphConfigAudit {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_graph_audit", updatable = false)
-    private Long idGraphAudit;
-
+    private UUID idGraphAudit;
     @Column(name = "config_id")
-    private Long configId;
+    private UUID configId;
 
     @Column(name = "changed_by")
-    private Long changedBy;
-
+    private UUID changedBy;
     @Column(name = "changed_by_email", length = 150)
     private String changedByEmail;
 

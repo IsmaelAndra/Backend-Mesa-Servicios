@@ -2,9 +2,10 @@ package com.mesaayuda.dto;
 
 import java.time.OffsetDateTime;
 
+import java.util.UUID;
 public record GraphAuditResponse(
-        Long id,
-        Long changedBy,
+        UUID id,
+        UUID changedBy,
         String changedByEmail,
         String action,
         String details,

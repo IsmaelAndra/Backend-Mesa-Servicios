@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,10 +20,9 @@ import java.time.OffsetDateTime;
 public class AiConfig {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_ai_config", updatable = false)
-    private Long idAiConfig;
-
+    private UUID idAiConfig;
     @Column(name = "enabled", nullable = false)
     private Boolean enabled = false;
 
@@ -35,12 +35,33 @@ public class AiConfig {
     @Column(name = "api_key", length = 500)
     private String apiKey;
 
+    /**
+     * Si la clave ya esta cifrada. Solo lo usa la migracion de arranque para no
+     * reintentar en cada inicio.
+     */
+    @Column(name = "api_key_encrypted", nullable = false)
+    private Boolean apiKeyEncrypted = false;
+
     @Column(name = "base_url", length = 500)
     private String baseUrl;
 
-    @Column(name = "updated_by")
-    private Long updatedBy;
+    @Column(name = "provider_icon", length = 500)
+    private String providerIcon;
 
+    /**
+     * Reglas y comportamiento esperado del asistente, escritas por la
+     * institucion: tono, limites, pasos obligatorios y que no debe contestar.
+     * Se anteponen a las instrucciones de cada accion.
+     */
+    @Column(name = "rules_text", columnDefinition = "text")
+    private String rulesText;
+
+    /** Acciones habilitadas, separadas por comas: SUMMARY, SUGGEST, CHAT. */
+    @Column(name = "enabled_actions", nullable = false, length = 200)
+    private String enabledActions = "SUMMARY,ANSWER";
+
+    @Column(name = "updated_by")
+    private UUID updatedBy;
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,10 +20,9 @@ import java.time.OffsetDateTime;
 public class Category {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_category", updatable = false)
-    private Long idCategory;
-
+    private UUID idCategory;
     @Column(name = "name_category", nullable = false, unique = true, length = 100)
     private String nameCategory;
 

@@ -13,10 +13,16 @@ public interface TicketMapper {
 
     TicketMapper INSTANCE = Mappers.getMapper(TicketMapper.class);
 
-    @Mapping(target = "user", source = "userTicket.corporateEmailUser")
+@Mapping(target = "user", source = "userTicket.corporateEmailUser")
+    @Mapping(target = "userId", source = "userTicket.idUser")
+    @Mapping(target = "userDisplayName", expression = "java(ticket.getUserTicket() != null ? ticket.getUserTicket().getFullName() : null)")
+    @Mapping(target = "userPhotoUrl", source = "userTicket.photoUrl")
+    @Mapping(target = "userStatus", source = "userTicket.statusUser")
     @Mapping(target = "agent", source = "agentTicket.corporateEmailUser")
     @Mapping(target = "team", source = "teamTicket.nameTeam")
     @Mapping(target = "area", source = "areaTicket.nameArea")
+    @Mapping(target = "sucursal", source = "sucursalTicket.nameSucursal")
+    @Mapping(target = "sucursalId", source = "sucursalTicket.idSucursal")
     @Mapping(target = "category", source = "categoryTicket.nameCategory")
     @Mapping(target = "type", source = "typeTicket.nameTicketType")
     @Mapping(target = "status", source = "statusTicket.nameStatus")

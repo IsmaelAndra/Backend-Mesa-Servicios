@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,15 +20,20 @@ import java.time.OffsetDateTime;
 public class TicketType {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_ticket_type", updatable = false)
-    private Long idTicketType;
-
+    private UUID idTicketType;
     @Column(name = "name_ticket_type", nullable = false, unique = true, length = 100)
     private String nameTicketType;
 
     @Column(name = "description_ticket_type", length = 255)
     private String descriptionTicketType;
+
+    @Column(name = "icon_ticket_type", length = 100)
+    private String iconTicketType;
+
+    @Column(name = "color_ticket_type", length = 30)
+    private String colorTicketType;
 
     @CreationTimestamp
     @Column(name = "created_at_ticket_type", nullable = false, updatable = false)

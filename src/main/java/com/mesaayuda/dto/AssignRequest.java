@@ -2,7 +2,8 @@ package com.mesaayuda.dto;
 
 import jakarta.validation.constraints.NotNull;
 
+import java.util.UUID;
 public record AssignRequest(
-        Long agentId,
-        Long teamId
+        UUID agentId,
+        UUID teamId
 ) {}

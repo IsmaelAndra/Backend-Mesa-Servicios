@@ -32,7 +32,7 @@ public class MicrosoftGraphTokenService {
     private MicrosoftGraphConfigRepository configRepository;
 
     @Autowired
-    private GraphCryptoService cryptoService;
+    private SecretCryptoService cryptoService;
 
     private final RestTemplate restTemplate = GraphHttpClient.create();
 

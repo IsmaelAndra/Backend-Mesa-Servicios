@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,10 +20,9 @@ import java.time.OffsetDateTime;
 public class User {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_user", updatable = false)
-    private Long idUser;
-
+    private UUID idUser;
     @Column(name = "identification_user", nullable = false, unique = true, length = 30)
     private String identificationUser;
 
@@ -45,6 +45,14 @@ public class User {
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "area_id", nullable = false)
     private Area area;
+
+    /**
+     * Sede fisica donde trabaja la persona. Opcional a proposito: las cuentas
+     * antigas y las que se dan de alta sin sede siguen siendo validas.
+     */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "sucursal_id")
+    private Sucursal sucursal;
 
     @Column(name = "must_change_password", nullable = false)
     private Boolean mustChangePassword = false;
@@ -91,6 +99,10 @@ public class User {
 
     @Column(name = "last_sync")
     private OffsetDateTime lastSync;
+
+    /** Los tokens de acceso emitidos antes de este instante ya no valen. */
+    @Column(name = "tokens_valid_after")
+    private OffsetDateTime tokensValidAfter;
 
     public String getFullName() {
         if (displayName != null && !displayName.isBlank()) {

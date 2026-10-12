@@ -4,6 +4,24 @@
 spring:
   jpa:
     show-sql: true
+  flyway:
+    # db/dev/R__datos_dev.sql contiene los usuarios de prueba (agente / usuario)
+    # y solo debe existir en una base local de desarrollo, nunca en produccion.
+    locations: classpath:db/migration,classpath:db/dev
+
+app:
+  admin-seed:
+    # Sin valor por defecto, tampoco en desarrollo: la clave que hubiera aqui
+    # estaria publicada en el repositorio, y basta con arrancar por error con el
+    # perfil dev para que las cuentas administrativas nazcan con ella. Se define
+    # en el .env local (ADMIN_SEED_PASSWORD).
+    password: ${ADMIN_SEED_PASSWORD:}
+
+springdoc:
+  swagger-ui:
+    enabled: true
+  api-docs:
+    enabled: true
 
 management:
   endpoint:

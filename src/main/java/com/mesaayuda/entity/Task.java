@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -28,10 +29,9 @@ public class Task {
     public static final String STATUS_HECHO = "HECHO";
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_task", updatable = false)
-    private Long idTask;
-
+    private UUID idTask;
     @Column(name = "title_task", nullable = false, length = 255)
     private String titleTask;
 

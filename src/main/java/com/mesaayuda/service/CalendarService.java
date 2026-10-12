@@ -40,13 +40,31 @@ public class CalendarService {
         List<CalendarEventResponse> result = new ArrayList<>();
 
         // ===== TAREAS =====
+        // Se listan todas (sin filtrar por fecha en BD): muchas tareas no tienen
+        // fecha de inicio y con un BETWEEN directo desaparecían del calendario.
         List<Task> tasks = isAdmin
-                ? taskRepository.findByDeletedTaskFalseAndUpdatedAtTaskBetween(start, end)
-                : taskRepository.findByAssignedUserIdUserAndStartTaskBetweenAndDeletedTaskFalse(
-                        current.getIdUser(), start, end);
+                ? taskRepository.findByDeletedTaskFalseOrderByStartTaskAscCreatedAtTaskDesc()
+                : taskRepository.findByAssignedUserIdUserAndDeletedTaskFalseOrderByStartTaskAscCreatedAtTaskDesc(
+                        current.getIdUser());
         for (Task t : tasks) {
-            OffsetDateTime evStart = t.getStartTask() != null ? t.getStartTask() : t.getCreatedAtTask();
-            OffsetDateTime evEnd = endForDates(t.getStartTask(), t.getDueTask(), t.getCreatedAtTask());
+            boolean allDay = t.getStartTask() == null && t.getDueTask() == null;
+            OffsetDateTime evStart;
+            OffsetDateTime evEnd;
+            if (allDay) {
+                // Una tarea sin fechas ocupa el día entero. Antes se usaba la
+                // hora de creación como inicio y creación + 2 h como fin, con lo
+                // que el evento salía de 00:00 a 02:00 en vez de cubrir el día.
+                evStart = inicioDelDia(t.getCreatedAtTask());
+                evEnd = finDelDia(t.getCreatedAtTask());
+            } else {
+                evStart = t.getStartTask();
+                evEnd = endForDates(t.getStartTask(), t.getDueTask(), t.getCreatedAtTask());
+            }
+            // Las tareas de todo el día (sin fechas) siempre se muestran;
+            // el resto solo si su ventana coincide con el rango visible.
+            if (!allDay && (evEnd.isBefore(start) || evStart.isAfter(end))) {
+                continue;
+            }
             result.add(new CalendarEventResponse(
                     "TASK-" + t.getIdTask(),
                     "TASK",
@@ -56,7 +74,9 @@ public class CalendarService {
                     t.getStatusTask(),
                     t.getColorTask(),
                     t.getIdTask(),
-                    t.getStartTask() == null && t.getDueTask() == null));
+                    null,
+                    allDay,
+                    t.getCreatedAtTask()));
         }
 
         // ===== TICKETS ASIGNADOS =====
@@ -70,17 +90,27 @@ public class CalendarService {
             OffsetDateTime evEnd = sla != null && sla.getResolutionDueAt() != null
                     ? sla.getResolutionDueAt()
                     : tk.getCreatedAtTicket().plusDays(1);
+            // Un ticket con el SLA ya vencido (creado hace dias con politica
+            // corta) devuelve un fin anterior al inicio, y el calendario lo
+            // pinta como una barra de ancho cero: se veia "19:34 -> 19:34". Si
+            // el plazo ya paso, se muestra una jornada de trabajo desde la
+            // creacion, que es lo que el usuario quiere ver.
+            if (!evEnd.isAfter(evStart)) {
+                evEnd = evStart.plusDays(1);
+            }
             if (evEnd.isBefore(start) || evStart.isAfter(end)) continue;
             result.add(new CalendarEventResponse(
                     "TICKET-" + tk.getIdTicket(),
                     "TICKET",
-                    "#" + tk.getIdTicket() + " " + tk.getTitleTicket(),
+                    "#" + tk.getNumberTicket() + " " + tk.getTitleTicket(),
                     evStart,
                     evEnd,
                     tk.getStatusTicket().getNameStatus(),
                     tk.getPriorityTicket().getColorPriority(),
                     tk.getIdTicket(),
-                    false));
+                    tk.getNumberTicket(),
+                    false,
+                    tk.getCreatedAtTicket()));
         }
 
         return result;
@@ -90,5 +120,17 @@ public class CalendarService {
         if (due != null) return due;
         if (start != null) return start;
         return created.plusHours(2);
+    }
+
+    /** 00:00:00 del día indicado. */
+    private OffsetDateTime inicioDelDia(OffsetDateTime momento) {
+        OffsetDateTime base = momento != null ? momento : OffsetDateTime.now();
+        return base.withHour(0).withMinute(0).withSecond(0).withNano(0);
+    }
+
+    /** 23:59:59 del día indicado. */
+    private OffsetDateTime finDelDia(OffsetDateTime momento) {
+        OffsetDateTime base = momento != null ? momento : OffsetDateTime.now();
+        return base.withHour(23).withMinute(59).withSecond(59).withNano(0);
     }
 }

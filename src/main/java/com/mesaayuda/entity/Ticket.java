@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -24,10 +25,18 @@ import java.time.OffsetDateTime;
 public class Ticket {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_ticket", updatable = false)
-    private Long idTicket;
+    private UUID idTicket;
 
+    /**
+     * Número correlativo para las personas ("ticket 43"). Lo asigna la base con
+     * su secuencia al insertar (V4__numero_ticket.sql); Hibernate no lo escribe y
+     * lo relee tras el INSERT. La clave sigue siendo idTicket.
+     */
+    @Column(name = "number_ticket", insertable = false, updatable = false)
+    @org.hibernate.annotations.Generated(event = org.hibernate.generator.EventType.INSERT)
+    private Long numberTicket;
     @Column(name = "title_ticket", nullable = false, length = 255)
     private String titleTicket;
 
@@ -49,6 +58,14 @@ public class Ticket {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "area_ticket", nullable = false)
     private Area areaTicket;
+
+    /**
+     * Sede a la que corresponde el caso. No es la del solicitante: alguien de
+     * Quito puede abrir un ticket que hay que resolver en Guayaquil.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "sucursal_id")
+    private Sucursal sucursalTicket;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_ticket", nullable = false)

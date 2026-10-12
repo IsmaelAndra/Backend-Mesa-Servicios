@@ -2,12 +2,13 @@ package com.mesaayuda.dto;
 
 import java.time.OffsetDateTime;
 
+import java.util.UUID;
 public record AuditEventResponse(
-        Long idAudit,
+        UUID idAudit,
         String username,
         String action,
         String entity,
-        Long entityId,
+        UUID entityId,
         String ipAddress,
         OffsetDateTime createdAt
 ) {}

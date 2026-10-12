@@ -17,6 +17,12 @@ captures/
 build/
 !gradle/wrapper/gradle-wrapper.jar
 
+# Archivos subidos por los usuarios
+# Los adjuntos de ticket son privados y se sirven por endpoint autenticado; los
+# de la zona publica (logos, fondos, avatares) se sirven por /uploads/publico.
+# Ninguno debe subirse al repositorio: son datos de los usuarios.
+uploads/
+
 # IntelliJ / IDE
 .idea/
 *.iml
@@ -36,3 +42,5 @@ out/
 # Windows
 Thumbs.db
 Desktop.ini
+# Salida de compilacion de Eclipse / VS Code (Java Language Server)
+bin/

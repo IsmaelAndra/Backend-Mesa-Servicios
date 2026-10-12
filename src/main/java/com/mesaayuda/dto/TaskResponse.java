@@ -2,14 +2,15 @@ package com.mesaayuda.dto;
 
 import java.time.OffsetDateTime;
 
+import java.util.UUID;
 public record TaskResponse(
-        Long id,
+        UUID id,
         String title,
         String description,
         String status,
-        Long assignedUserId,
+        UUID assignedUserId,
         String assignedUserEmail,
-        Long createdByUserId,
+        UUID createdByUserId,
         String createdByEmail,
         OffsetDateTime start,
         OffsetDateTime due,

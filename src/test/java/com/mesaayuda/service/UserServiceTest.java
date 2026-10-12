@@ -1,5 +1,6 @@
 package com.mesaayuda.service;
 
+import static com.mesaayuda.IdsPrueba.id;
 import com.mesaayuda.dto.RegisterRequest;
 import com.mesaayuda.entity.Area;
 import com.mesaayuda.entity.Role;
@@ -35,6 +36,9 @@ class UserServiceTest {
     @Mock private NotificationService notificationService;
     @Mock private SystemAuditService systemAuditService;
 
+    @org.mockito.Mock private com.mesaayuda.workflow.WorkflowEventPublisher workflowEventPublisher;
+
+
     @InjectMocks private UserService userService;
 
     private Role role;
@@ -45,13 +49,13 @@ class UserServiceTest {
         role = new Role();
         role.setNameRole("AGENT");
         area = new Area();
-        area.setIdArea(1L);
+        area.setIdArea(id(1));
         area.setNameArea("TI");
     }
 
     private RegisterRequest request(String password) {
         return new RegisterRequest("1723", "agente@coacmagisterio.fin.ec",
-                password, "0999", "AGENT", 1L);
+                password, "0999", "AGENT", id(1), null);
     }
 
     @Test
@@ -59,7 +63,7 @@ class UserServiceTest {
         when(userRepository.existsByCorporateEmailUser(any())).thenReturn(false);
         when(userRepository.existsByIdentificationUser(any())).thenReturn(false);
         when(roleRepository.findByNameRole("AGENT")).thenReturn(Optional.of(role));
-        when(areaRepository.findById(1L)).thenReturn(Optional.of(area));
+        when(areaRepository.findById(id(1))).thenReturn(Optional.of(area));
 
         ArgumentCaptor<String> encoded = ArgumentCaptor.forClass(String.class);
         when(passwordEncoder.encode(encoded.capture())).thenAnswer(inv -> "HASH-" + inv.getArgument(0));
@@ -84,7 +88,7 @@ class UserServiceTest {
         when(userRepository.existsByCorporateEmailUser(any())).thenReturn(false);
         when(userRepository.existsByIdentificationUser(any())).thenReturn(false);
         when(roleRepository.findByNameRole("AGENT")).thenReturn(Optional.of(role));
-        when(areaRepository.findById(1L)).thenReturn(Optional.of(area));
+        when(areaRepository.findById(id(1))).thenReturn(Optional.of(area));
         when(passwordEncoder.encode("MiClave123")).thenReturn("HASH-MiClave123");
 
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
@@ -106,7 +110,7 @@ class UserServiceTest {
     @Test
     void update_blankPassword_doesNotChange() {
         User existing = new User();
-        existing.setIdUser(1L);
+        existing.setIdUser(id(1));
         existing.setCorporateEmailUser("agente@coacmagisterio.fin.ec");
         existing.setIdentificationUser("1723");
         existing.setPasswordUser("hash-que-no-toca");
@@ -114,11 +118,11 @@ class UserServiceTest {
         existing.setRolUser(role);
         existing.setArea(area);
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(userRepository.findById(id(1))).thenReturn(Optional.of(existing));
         when(roleRepository.findByNameRole("AGENT")).thenReturn(Optional.of(role));
-        when(areaRepository.findById(1L)).thenReturn(Optional.of(area));
+        when(areaRepository.findById(id(1))).thenReturn(Optional.of(area));
 
-        userService.update(1L, request("   "));
+        userService.update(id(1), request("   "));
 
         verify(passwordEncoder, never()).encode(any());
         assertEquals("hash-que-no-toca", existing.getPasswordUser());
@@ -129,7 +133,7 @@ class UserServiceTest {
     @Test
     void update_withPassword_encodesAndSetsMustChange() {
         User existing = new User();
-        existing.setIdUser(1L);
+        existing.setIdUser(id(1));
         existing.setCorporateEmailUser("agente@coacmagisterio.fin.ec");
         existing.setIdentificationUser("1723");
         existing.setPasswordUser("hash-viejo");
@@ -138,12 +142,12 @@ class UserServiceTest {
         existing.setRolUser(role);
         existing.setArea(area);
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(userRepository.findById(id(1))).thenReturn(Optional.of(existing));
         when(roleRepository.findByNameRole("AGENT")).thenReturn(Optional.of(role));
-        when(areaRepository.findById(1L)).thenReturn(Optional.of(area));
+        when(areaRepository.findById(id(1))).thenReturn(Optional.of(area));
         when(passwordEncoder.encode("Nueva123!")).thenReturn("HASH-NUEVA");
 
-        userService.update(1L, request("Nueva123!"));
+        userService.update(id(1), request("Nueva123!"));
 
         assertEquals("HASH-NUEVA", existing.getPasswordUser());
         assertTrue(existing.getMustChangePassword());

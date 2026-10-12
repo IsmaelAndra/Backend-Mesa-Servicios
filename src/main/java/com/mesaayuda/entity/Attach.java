@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -18,10 +19,9 @@ import java.time.OffsetDateTime;
 public class Attach {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_attach", updatable = false)
-    private Long idAttach;
-
+    private UUID idAttach;
     @Column(name = "file_name_attach", nullable = false, length = 255)
     private String fileNameAttach;
 

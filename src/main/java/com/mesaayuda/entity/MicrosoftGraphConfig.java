@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,10 +20,9 @@ import java.time.OffsetDateTime;
 public class MicrosoftGraphConfig {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_graph_config", updatable = false)
-    private Long idGraphConfig;
-
+    private UUID idGraphConfig;
     @Column(name = "tenant_id", length = 150)
     private String tenantId;
 
@@ -48,12 +48,19 @@ public class MicrosoftGraphConfig {
     @Column(name = "sync_interval_minutes", nullable = false)
     private Integer syncIntervalMinutes = 1440;
 
+    /** Habilita el envío de notificaciones por correo usando Graph sendMail. */
+    @Column(name = "mail_enabled", nullable = false)
+    private Boolean mailEnabled = false;
+
+    /** Cuenta de Microsoft 365 que actúa como remitente de los correos (sendmail de Graph). */
+    @Column(name = "mail_from_account", length = 255)
+    private String mailFromAccount;
+
     @Column(name = "last_sync_at")
     private OffsetDateTime lastSyncAt;
 
     @Column(name = "updated_by")
-    private Long updatedBy;
-
+    private UUID updatedBy;
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

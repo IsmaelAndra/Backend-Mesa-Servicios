@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @Transactional
@@ -83,11 +84,11 @@ public class TaskService {
     }
 
     @Transactional(readOnly = true)
-    public TaskResponse findById(Long id) {
+    public TaskResponse findById(UUID id) {
         return toResponse(getOwnedOrAdminTask(id));
     }
 
-    public TaskResponse update(Long id, TaskRequest request) {
+    public TaskResponse update(UUID id, TaskRequest request) {
         Task task = getOwnedOrAdminTask(id);
         User assigned = userRepository.findById(request.assignedUserId())
                 .filter(u -> !u.getDeletedUser())
@@ -109,20 +110,20 @@ public class TaskService {
         return toResponse(task);
     }
 
-    public TaskResponse changeStatus(Long id, String status) {
+    public TaskResponse changeStatus(UUID id, String status) {
         Task task = getOwnedOrAdminTask(id);
         task.setStatusTask(normalizeStatus(status));
         task = taskRepository.save(task);
         return toResponse(task);
     }
 
-    public void delete(Long id) {
+    public void delete(UUID id) {
         Task task = getOwnedOrAdminTask(id);
         task.setDeletedTask(true);
         taskRepository.save(task);
     }
 
-    private Task getOwnedOrAdminTask(Long id) {
+    private Task getOwnedOrAdminTask(UUID id) {
         User current = userService.getCurrentUser();
         Task task = taskRepository.findById(id)
                 .filter(t -> !t.getDeletedTask())

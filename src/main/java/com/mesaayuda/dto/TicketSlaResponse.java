@@ -2,8 +2,9 @@ package com.mesaayuda.dto;
 
 import java.time.OffsetDateTime;
 
+import java.util.UUID;
 public record TicketSlaResponse(
-        Long idTicketSla,
+        UUID idTicketSla,
         String slaPolicy,
         OffsetDateTime responseDueAt,
         OffsetDateTime resolutionDueAt,

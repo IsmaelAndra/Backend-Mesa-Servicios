@@ -30,10 +30,12 @@ public class CustomUserDetailsService implements UserDetailsService {
             throw new UsernameNotFoundException("Usuario inactivo: " + corporateEmail);
         }
 
-        return new org.springframework.security.core.userdetails.User(
+        return new MesaUserDetails(
                 user.getCorporateEmailUser(),
                 user.getPasswordUser(),
-                List.of(new SimpleGrantedAuthority("ROLE_" + user.getRolUser().getNameRole()))
+                List.of(new SimpleGrantedAuthority("ROLE_" + user.getRolUser().getNameRole())),
+                Boolean.TRUE.equals(user.getMustChangePassword()),
+                user.getTokensValidAfter() == null ? null : user.getTokensValidAfter().toInstant()
         );
     }
 

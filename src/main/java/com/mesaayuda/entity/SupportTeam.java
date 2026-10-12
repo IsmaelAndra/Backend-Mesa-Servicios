@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,10 +20,9 @@ import java.time.OffsetDateTime;
 public class SupportTeam {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_team", updatable = false)
-    private Long idTeam;
-
+    private UUID idTeam;
     @Column(name = "name_team", nullable = false, unique = true, length = 100)
     private String nameTeam;
 
@@ -31,6 +31,12 @@ public class SupportTeam {
 
     @Column(name = "assignment_method", nullable = false, length = 30)
     private String assignmentMethod = "ROUND_ROBIN";
+
+    @Column(name = "icon_team", length = 100)
+    private String iconTeam;
+
+    @Column(name = "color_team", length = 30)
+    private String colorTeam;
 
     @Column(name = "active_team", nullable = false)
     private Boolean activeTeam = true;

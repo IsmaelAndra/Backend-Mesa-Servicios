@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,10 +20,9 @@ import java.time.OffsetDateTime;
 public class LoginAttempt {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_login_attempt", updatable = false)
-    private Long idLoginAttempt;
-
+    private UUID idLoginAttempt;
     @Column(name = "user_key", nullable = false, unique = true, length = 150)
     private String userKey;
 

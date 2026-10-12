@@ -1,12 +1,15 @@
 package com.mesaayuda.dto;
 
 import jakarta.validation.constraints.Email;
+import java.util.UUID;
 import jakarta.validation.constraints.NotBlank;
+import java.util.UUID;
 import jakarta.validation.constraints.NotNull;
+import java.util.UUID;
 import jakarta.validation.constraints.Size;
 
+import java.util.UUID;
 public record RegisterRequest(
-        @NotBlank(message = "La identificación es obligatoria")
         @Size(min = 6, max = 30, message = "La identificación debe tener entre 6 y 30 caracteres")
         String identification,
 
@@ -23,5 +26,12 @@ public record RegisterRequest(
         String roleName,
 
         @NotNull(message = "El área es obligatoria")
-        Long areaId
+        UUID areaId,
+
+        /**
+         * Sede fisica de la persona. Opcional: las cuentas que ya existen y las
+         * que se den de alta sin sede siguen siendo validas, y obligarla
+         * impediria dar de alta a alguien antes de tener el catalogo cargado.
+         */
+        UUID sucursalId
 ) {}

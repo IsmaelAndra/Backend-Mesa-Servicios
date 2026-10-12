@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 @Service
 @Transactional
@@ -35,11 +36,14 @@ public class RatingService {
     @Autowired
     private AuditService auditService;
 
+    @Autowired
+    private TicketAccessPolicy accessPolicy;
+
     /**
      * Calificación de tickets: solo el usuario propietario y cuando el ticket
      * está RESUELTO o CERRADO. Un ticket solo puede calificarse una vez.
      */
-    public RatingResponse rate(Long ticketId, RatingRequest request) {
+    public RatingResponse rate(UUID ticketId, RatingRequest request) {
         User current = userService.getCurrentUser();
         Ticket ticket = ticketRepository.findById(ticketId)
                 .filter(t -> !t.getDeletedTicket())
@@ -81,7 +85,17 @@ public class RatingService {
     }
 
     @Transactional(readOnly = true)
-    public RatingResponse getByTicket(Long ticketId) {
+    public RatingResponse getByTicket(UUID ticketId) {
+        // Antes no comprobaba nada: con tener sesion iniciada bastaba para leer
+        // la calificacion y los comentarios de un ticket ajeno. La calificacion
+        // es una opinion sobre la persona que atendio, asi que no es un dato
+        // menor. Se reutiliza la misma regla que aplica el resto del sistema
+        // sobre un ticket: titular o personal.
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .filter(t -> !t.getDeletedTicket())
+                .orElseThrow(() -> new ResourceNotFoundException("Ticket", "id", ticketId));
+        accessPolicy.exigirLectura(ticket, "ver la calificación", ticketId);
+
         return ratingRepository.findByTicketIdTicket(ticketId).map(this::toResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Calificación", "ticket", ticketId));
     }

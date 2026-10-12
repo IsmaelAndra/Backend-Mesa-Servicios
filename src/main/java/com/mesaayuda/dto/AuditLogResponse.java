@@ -2,8 +2,9 @@ package com.mesaayuda.dto;
 
 import java.time.OffsetDateTime;
 
+import java.util.UUID;
 public record AuditLogResponse(
-        Long idAudit,
+        UUID idAudit,
         String actionType,
         String user,
         String oldValue,

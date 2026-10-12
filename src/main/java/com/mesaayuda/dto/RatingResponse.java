@@ -2,9 +2,10 @@ package com.mesaayuda.dto;
 
 import java.time.OffsetDateTime;
 
+import java.util.UUID;
 public record RatingResponse(
-        Long idRating,
-        Long ticketId,
+        UUID idRating,
+        UUID ticketId,
         Integer requirementsMet,
         Boolean allRequirementsMet,
         Integer responseTimeRating,

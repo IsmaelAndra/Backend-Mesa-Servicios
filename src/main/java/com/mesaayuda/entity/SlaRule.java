@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,10 +20,9 @@ import java.time.OffsetDateTime;
 public class SlaRule {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_sla_rule", updatable = false)
-    private Long idSlaRule;
-
+    private UUID idSlaRule;
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "sla_policy_id", nullable = false)
     private SlaPolicy slaPolicy;

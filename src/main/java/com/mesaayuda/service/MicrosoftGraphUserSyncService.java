@@ -13,12 +13,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import com.mesaayuda.config.UploadZones;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Sincroniza los datos básicos de Microsoft 365 hacia la entidad {@link User}.
@@ -44,7 +46,7 @@ public class MicrosoftGraphUserSyncService {
 
     /** Se invoca desde el login; no bloquea ni rompe la autenticación. */
     @Async
-    public void syncOnLogin(Long userId) {
+    public void syncOnLogin(UUID userId) {
         try {
             syncUser(userId, true);
         } catch (Exception e) {
@@ -83,7 +85,7 @@ public class MicrosoftGraphUserSyncService {
      * @return 1 si se actualizó el usuario, 0 si no aplicó.
      */
     @Transactional
-    public int syncUser(Long userId, boolean force) {
+    public int syncUser(UUID userId, boolean force) {
         MicrosoftGraphConfig config = enabledConfigOrNull();
         if (config == null) {
             return 0;
@@ -137,14 +139,16 @@ public class MicrosoftGraphUserSyncService {
             return;
         }
         try {
-            Path dir = Paths.get(uploadDir, "avatars").toAbsolutePath().normalize();
+            // Los avatares van a la zona publica: se muestran junto al nombre del autor
+            // de un mensaje y en las listas, sin que haga falta pedir permisos.
+            Path dir = Paths.get(uploadDir, UploadZones.PUBLICO, "avatars").toAbsolutePath().normalize();
             Files.createDirectories(dir);
             String ext = detectExtension(content);
             String fileName = "user_" + user.getIdUser() + "." + ext;
             Path target = dir.resolve(fileName);
             Files.copy(new java.io.ByteArrayInputStream(content), target, StandardCopyOption.REPLACE_EXISTING);
 
-            user.setPhotoUrl("/uploads/avatars/" + fileName);
+            user.setPhotoUrl("/uploads/" + UploadZones.PUBLICO + "/avatars/" + fileName);
             user.setMicrosoftPhotoEtag(photo.eTag());
         } catch (IOException e) {
             throw new IllegalStateException("No se pudo guardar la foto: " + e.getMessage(), e);
@@ -184,3 +188,4 @@ public class MicrosoftGraphUserSyncService {
         return config;
     }
 }
+

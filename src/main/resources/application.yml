@@ -19,6 +19,10 @@ spring:
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
+      # Si otra sesion (por ejemplo un DBeaver con una transaccion abierta)
+      # tiene tomado un lock sobre una tabla, no esperar indefinidamente:
+      # se falla rapido para que el arranque termine con un error claro.
+      connection-init-sql: SET lock_timeout = '10s'
 
   jpa:
     hibernate:
@@ -32,32 +36,30 @@ spring:
         jdbc:
           time_zone: America/Guayaquil
 
-  # Ejecuta schema.sql + data.sql al levantar (idempotente: IF NOT EXISTS / ON CONFLICT)
+  # El esquema lo gestiona Flyway (db/migration). Spring ya no ejecuta scripts.
   sql:
     init:
-      mode: always
-      encoding: UTF-8
+      mode: never
 
-  # ============================ CORREO (SMTP Office 365) ============================
-  mail:
-    host: ${MAIL_HOST:smtp.office365.com}
-    port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-          connectiontimeout: 5000
-          timeout: 5000
-          writetimeout: 5000
-
-  thymeleaf:
-    prefix: classpath:/templates/email/
-    suffix: .html
-    cache: false
+  # ============================ MIGRACIONES (Flyway) ============================
+  # V1__esquema_base.sql es el antiguo schema.sql (idempotente) y R__datos_base.sql
+  # el antiguo data.sql (se reaplica cuando cambia su contenido).
+  #
+  # baseline-version 0: en una base que ya existía sin historial, Flyway la marca
+  # en la versión 0 y aplica igualmente V1. Como V1 es idempotente, completa lo
+  # que le falte sin tocar lo que ya hay. Con baseline 1 se saltaría V1 y una
+  # base desfasada se quedaría sin los últimos cambios.
+  #
+  # Los cambios de esquema nuevos van en V2__..., V3__...: una migración ya
+  # aplicada NO se edita (Flyway valida su checksum y no arrancaría).
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+    baseline-description: Base existente antes de Flyway
+    validate-on-migrate: true
+    encoding: UTF-8
 
   servlet:
     multipart:
@@ -66,8 +68,6 @@ spring:
 
 # ============================ APP (Schedulers, JWT, Uploads, CORS) ============================
 app:
-  mail:
-    enabled: ${MAIL_ENABLED:true}
   scheduler:
     sla:
       cron: 0 */15 * * * MON-FRI
@@ -75,14 +75,35 @@ app:
       cron: 0 */5 * * * *
     evaluation:
       cron: 0 0 6 1 * *
+    graph-sync:
+      fixed-delay: 600000
+    daily-summary:
+      cron: 0 0 8 * * *
+  daily-summary:
+    # Lista separada por comas; vacío = enviar a ADMIN y SUPER_ADMIN activos
+    recipients: ${DAILY_SUMMARY_RECIPIENTS:}
   jwt:
     secret: ${JWT_SECRET}
     expiration-ms: ${JWT_EXPIRATION:900000}
     refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION:2592000000}
+  # ============================ CUENTAS ADMINISTRATIVAS INICIALES ============================
+  # Si ADMIN_SEED_PASSWORD viene vacia NO se crea ninguna cuenta administrativa.
+  # En produccion hay que definirla en el primer arranque (o dar de alta al
+  # SUPER_ADMIN a mano). Las cuentas nacen con mustChangePassword=TRUE, asi que
+  # el unico uso de esa clave es obligar a cambiarla.
+  admin-seed:
+    password: ${ADMIN_SEED_PASSWORD:}
+    superadmin-email: ${ADMIN_SEED_EMAIL:superadmin@coacmagisterio.fin.ec}
+    admin-email: ${ADMIN_SEED_ADMIN_EMAIL:admin@coacmagisterio.fin.ec}
   uploads:
-    dir: ${UPLOAD_DIR:./src/main/resources/static/uploads}
+    dir: ${UPLOAD_DIR:./uploads}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
+  # Base de la API; se usa para construir URLs de archivos y del logo.
+  public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:8080/api}
+  # Base del frontend; es la que deben usar los enlaces de los correos, porque
+  # public-base-url apunta a la API y un usuario no puede usarla para navegar.
+  frontend-base-url: ${APP_FRONTEND_BASE_URL:http://localhost:4200}
 
 # ============================ MICROSOFT GRAPH (Outlook) ============================
 microsoft:
@@ -90,19 +111,23 @@ microsoft:
     client-id: ${MS_CLIENT_ID:}
     client-secret: ${MS_CLIENT_SECRET:}
     tenant-id: ${MS_TENANT_ID:}
-    from-address: ${MAIL_FROM:}
 
 # ============================ JASPER REPORTS ============================
 jasper:
   reports-dir: classpath:/reports
 
 # ============================ SWAGGER ============================
+# Apagado por defecto: si se arranca sin perfil, o con un perfil que no sea
+# "prod", no debe quedar el mapa completo de la API publicado. Lo enciende el
+# perfil "dev" o la variable SWAGGER_ENABLED=true.
 springdoc:
   swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: method
   api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
     path: /v3/api-docs
 
 # ============================ LOGGING ============================
@@ -126,3 +151,33 @@ management:
   endpoint:
     health:
       show-details: never
+
+  proxy:
+    # Hay que ponerlo a true SOLO si todas las peticiones llegan por un proxy
+    # (Nginx, IIS, balanceador). Con false se ignora X-Forwarded-For y la IP de los
+    # limites es la conexion directa, que es lo correcto en desarrollo.
+    # Con true y el backend expuesto a internet, cualquiera puede inventarse la IP.
+    trust-forwarded-headers: "${APP_TRUST_FORWARDED_HEADERS:false}"
+
+  auth:
+    # La cookie de sesión (refresh token) debe llevar Secure en producción con HTTPS.
+    # En false solo funciona en http://localhost: el navegador rechaza una cookie Secure
+    # que no venga por HTTPS, y sin esto no se podría iniciar sesión en desarrollo.
+    secure-cookie: "${APP_SECURE_COOKIE:false}"
+
+  workflow:
+    # Motor de workflows. Los limites se REVISTEN antes de produccion: son la
+    # unica red de seguridad contra automatizaciones que se realimentan.
+    enabled: true
+    max-pasos: 200
+    max-profundidad: 5
+    max-horas-ejecucion: 168
+    max-ejecuciones-hora: 60
+    max-ejecuciones-simultaneas: 5
+    max-ejecuciones-concurrentes: 10
+    threads: 2
+    max-reintentos: 1
+    minutos-ejecucion-abandonada: 30
+    minutos-deduplicacion: 1440
+    dias-retencion-ejecuciones: 90
+    intervalo-worker: 1000

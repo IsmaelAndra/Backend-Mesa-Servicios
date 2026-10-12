@@ -11,5 +11,7 @@ public record MicrosoftGraphConfigRequest(
         String grantType,
         OffsetDateTime secretExpiresAt,
         Boolean enabled,
-        Integer syncIntervalMinutes
+        Integer syncIntervalMinutes,
+        Boolean mailEnabled,
+        String mailFromAccount
 ) {}

@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -20,10 +21,9 @@ import java.time.OffsetDateTime;
 public class Notification {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_notification", updatable = false)
-    private Long idNotification;
-
+    private UUID idNotification;
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ticket_id")
     private Ticket ticket;
@@ -43,6 +43,16 @@ public class Notification {
 
     @Column(name = "status_notification", nullable = false, length = 30)
     private String statusNotification = "PENDING";
+
+    /**
+     * Si el usuario ya abrió la notificación. Es independiente del estado de
+     * envío: marcar como leída no debe alterar si el correo se entrega o no.
+     */
+    @Column(name = "read_notification", nullable = false)
+    private Boolean readNotification = false;
+
+    @Column(name = "read_at_notification")
+    private OffsetDateTime readAtNotification;
 
     @Column(name = "sent_at")
     private OffsetDateTime sentAt;

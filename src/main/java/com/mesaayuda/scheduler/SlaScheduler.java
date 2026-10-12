@@ -1,5 +1,6 @@
 package com.mesaayuda.scheduler;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import com.mesaayuda.service.NotificationService;
 import com.mesaayuda.service.SlaService;
 import org.slf4j.Logger;
@@ -21,6 +22,7 @@ public class SlaScheduler {
 
     /** Verifica vencimientos SLA cada 15 minutos (días hábiles). */
     @Scheduled(cron = "${app.scheduler.sla.cron:0 */15 * * * MON-FRI}")
+    @SchedulerLock(name = "revisionSla", lockAtMostFor = "PT14M", lockAtLeastFor = "PT30S")
     public void checkSla() {
         int violations = slaService.checkSlaViolations().size();
         if (violations > 0) {
@@ -31,6 +33,7 @@ public class SlaScheduler {
 
     /** Procesa notificaciones pendientes cada 5 minutos. */
     @Scheduled(cron = "${app.scheduler.notifications.cron:0 */5 * * * *}")
+    @SchedulerLock(name = "reintentoNotificaciones", lockAtMostFor = "PT4M", lockAtLeastFor = "PT30S")
     public void retryPendingNotifications() {
         notificationService.processPendingNotifications();
     }

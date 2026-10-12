@@ -1,0 +1,9 @@
+-- Tabla de ShedLock: una fila por tarea programada bloqueada (ver SchedulerLockConfig).
+-- Las columnas las fija la librería; no se renombran con el sufijo del proyecto.
+CREATE TABLE IF NOT EXISTS shedlock (
+    name       VARCHAR(64)  NOT NULL,
+    lock_until TIMESTAMP    NOT NULL,
+    locked_at  TIMESTAMP    NOT NULL,
+    locked_by  VARCHAR(255) NOT NULL,
+    CONSTRAINT pk_shedlock PRIMARY KEY (name)
+);

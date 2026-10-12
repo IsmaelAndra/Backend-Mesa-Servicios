@@ -13,7 +13,10 @@ import com.mesaayuda.repository.MonthlyEvaluationRepository;
 import com.mesaayuda.repository.TicketRatingRepository;
 import com.mesaayuda.repository.TicketRepository;
 import com.mesaayuda.repository.TicketSlaRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,10 +25,18 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Service
 @Transactional
 public class EvaluationService {
+
+    private static final Logger log = LoggerFactory.getLogger(EvaluationService.class);
+
+    private User usuarioActual() {
+        return userService.getCurrentUser();
+    }
 
     @Autowired
     private MonthlyEvaluationRepository evaluationRepository;
@@ -48,11 +59,14 @@ public class EvaluationService {
     @Autowired
     private NotificationService notificationService;
 
+    @Autowired
+    private PresenceService presenceService;
+
     /**
      * Generación de la evaluación mensual de desempeño por agente.
      * Se invoca el día 1 de cada mes (programado) o manualmente.
      */
-    public MonthlyEvaluation generateForAgent(Long agentId, LocalDate month) {
+    public MonthlyEvaluation generateForAgent(UUID agentId, LocalDate month) {
         var agentEntity = userRepo.findById(agentId)
                 .filter(u -> !u.getDeletedUser())
                 .orElseThrow(() -> new ResourceNotFoundException("Agente", "id", agentId));
@@ -149,7 +163,7 @@ public class EvaluationService {
     }
 
     public List<MonthlyEvaluationResponse> generateAllForMonth(LocalDate month) {
-        return userService.findAgentEmails().stream().map(email -> {
+        List<MonthlyEvaluation> generadas = userService.findAgentEmails().stream().map(email -> {
             try {
                 User agent = userRepo.findByCorporateEmailUser(email).orElseThrow();
                 MonthlyEvaluation ev = generateForAgent(agent.getIdUser(), month);
@@ -158,27 +172,55 @@ public class EvaluationService {
                     ev.setStatus("COMPLETED");
                     evaluationRepository.save(ev);
                 }
-                return toResponse(ev);
+                return ev;
             } catch (Exception ex) {
                 return null;
             }
         }).filter(java.util.Objects::nonNull).toList();
+
+        Map<UUID, String> estados = estadosDe(generadas);
+        return generadas.stream()
+                .map(ev -> toResponse(ev, estados.get(ev.getAgent().getIdUser())))
+                .toList();
     }
 
     @Transactional(readOnly = true)
-    public List<MonthlyEvaluationResponse> findByAgent(Long agentId) {
-        return evaluationRepository.findByAgentIdUserOrderByEvaluationMonthDesc(agentId)
-                .stream().map(this::toResponse).toList();
+    public List<MonthlyEvaluationResponse> findByAgent(UUID agentId) {
+        List<MonthlyEvaluation> evals =
+                evaluationRepository.findByAgentIdUserOrderByEvaluationMonthDesc(agentId);
+        Map<UUID, String> estados = estadosDe(evals);
+        return evals.stream()
+                .map(ev -> toResponse(ev, estados.get(ev.getAgent().getIdUser())))
+                .toList();
     }
 
     @Transactional(readOnly = true)
+    /**
+     * Evaluación de un mes para todos los agentes. Contiene puntuaciones de
+     * desempeño, valoración del supervisor y sus comentarios, así que no es
+     * información que deba ver cualquier usuario con sesión iniciada.
+     */
     public List<MonthlyEvaluationResponse> findByMonth(LocalDate month) {
-        return evaluationRepository.findByEvaluationMonthOrderBySatisfactionScoreDesc(month)
-                .stream().map(this::toResponse).toList();
+        String rol = usuarioActual().getRolUser() == null
+                ? null : usuarioActual().getRolUser().getNameRole();
+        if (!"ADMIN".equals(rol) && !"SUPER_ADMIN".equals(rol)) {
+            log.warn("Intento de leer las evaluaciones de {} sin ser administrador.", month);
+            throw new AccessDeniedException("Solo un administrador puede ver las evaluaciones de todos los agentes");
+        }
+        return listarPorMes(month);
     }
 
-    public MonthlyEvaluationResponse review(Long evaluationId, SupervisorEvaluationRequest request,
-                                            Long supervisorId) {
+    private List<MonthlyEvaluationResponse> listarPorMes(LocalDate month) {
+        List<MonthlyEvaluation> evals =
+                evaluationRepository.findByEvaluationMonthOrderBySatisfactionScoreDesc(month);
+        Map<UUID, String> estados = estadosDe(evals);
+        return evals.stream()
+                .map(ev -> toResponse(ev, estados.get(ev.getAgent().getIdUser())))
+                .toList();
+    }
+
+    public MonthlyEvaluationResponse review(UUID evaluationId, SupervisorEvaluationRequest request,
+                                            UUID supervisorId) {
         MonthlyEvaluation ev = evaluationRepository.findById(evaluationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Evaluación", "id", evaluationId));
         if (request.supervisorRating() != null) {
@@ -209,10 +251,35 @@ public class EvaluationService {
     }
 
     private MonthlyEvaluationResponse toResponse(MonthlyEvaluation ev) {
+        return toResponse(ev, presenceService.estadoDe(ev.getAgent().getIdUser()));
+    }
+
+    /**
+     * Estado de sesión de todos los agentes de un lote, en una sola consulta.
+     *
+     * La tabla de evaluaciones va acompañada de un punto de presencia por agente,
+     * y el estado se pide en lote en lugar de uno en uno porque {@code estadoDe}
+     * consulta el registro de conexiones y la última renovación de token: pedirlo
+     * por cada fila convertía la pantalla en una consulta por agente.
+     */
+    private Map<UUID, String> estadosDe(List<MonthlyEvaluation> evaluaciones) {
+        List<UUID> ids = evaluaciones.stream()
+                .filter(ev -> ev.getAgent() != null)
+                .map(ev -> ev.getAgent().getIdUser())
+                .distinct()
+                .toList();
+        return presenceService.estadosDe(ids);
+    }
+
+    private MonthlyEvaluationResponse toResponse(MonthlyEvaluation ev, String estadoSesion) {
+        User agente = ev.getAgent();
         return new MonthlyEvaluationResponse(
                 ev.getIdEvaluation(),
-                ev.getAgent().getIdUser(),
-                ev.getAgent().getCorporateEmailUser(),
+                agente.getIdUser(),
+                agente.getCorporateEmailUser(),
+                NombreVisible.de(agente),
+                agente.getPhotoUrl() == null ? "" : agente.getPhotoUrl(),
+                estadoSesion == null ? PresenceService.DESCONECTADO : estadoSesion,
                 ev.getEvaluationMonth(),
                 ev.getTicketsClosed(),
                 ev.getAvgResponseTimeMinutes(),

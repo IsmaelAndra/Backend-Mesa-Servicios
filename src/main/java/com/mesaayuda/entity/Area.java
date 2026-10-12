@@ -1,4 +1,5 @@
 package com.mesaayuda.entity;
+import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,15 +20,20 @@ import java.time.OffsetDateTime;
 public class Area {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id_area", updatable = false)
-    private Long idArea;
-
+    private UUID idArea;
     @Column(name = "name_area", nullable = false, unique = true, length = 100)
     private String nameArea;
 
     @Column(name = "description_area")
     private String descriptionArea;
+
+    @Column(name = "icon_area", length = 100)
+    private String iconArea;
+
+    @Column(name = "color_area", length = 30)
+    private String colorArea;
 
     @Column(name = "priority_level", nullable = false)
     private Integer priorityLevel = 1;
