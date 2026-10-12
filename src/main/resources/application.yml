@@ -179,7 +179,7 @@ springdoc:
 logging:
   level:
     root: INFO
-    com.mesaayuda: DEBUG
+    com.mesaayuda: INFO
     org.hibernate.SQL: WARN
     org.springframework.security: INFO
   file:
