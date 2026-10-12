@@ -105,6 +105,51 @@ app:
   # public-base-url apunta a la API y un usuario no puede usarla para navegar.
   frontend-base-url: ${APP_FRONTEND_BASE_URL:http://localhost:4200}
 
+  # proxy, auth, mail y workflow estaban sangrados dentro de "management:" y
+  # Spring nunca los leía: app.proxy.trust-forwarded-headers valía siempre false
+  # y, detrás de Nginx, todos los usuarios compartían la IP del proxy en los
+  # límites de intentos.
+  proxy:
+    # Hay que ponerlo a true SOLO si todas las peticiones llegan por un proxy
+    # (Nginx, IIS, balanceador). Con false se ignora X-Forwarded-For y la IP de los
+    # limites es la conexion directa, que es lo correcto en desarrollo.
+    # Con true y el backend expuesto a internet, cualquiera puede inventarse la IP.
+    trust-forwarded-headers: "${APP_TRUST_FORWARDED_HEADERS:false}"
+
+  auth:
+    # La cookie de sesión (refresh token) debe llevar Secure en producción con HTTPS.
+    # En false solo funciona en http://localhost: el navegador rechaza una cookie Secure
+    # que no venga por HTTPS, y sin esto no se podría iniciar sesión en desarrollo.
+    secure-cookie: "${APP_SECURE_COOKIE:false}"
+
+  mail:
+    outbox:
+      # Cola de correo (V10). Exchange Online limita cada buzón a unos 30
+      # mensajes por minuto: se deja margen. Subirlo provoca 429 de Graph.
+      max-por-minuto: 25
+      lote: 20
+      # Desde cuántos avisos pendientes para una misma persona se mandan juntos.
+      agrupar-desde: 4
+      max-intentos: 6
+      intervalo-ms: 5000
+      retencion-dias: 30
+  workflow:
+    # Motor de workflows. Los limites se REVISTEN antes de produccion: son la
+    # unica red de seguridad contra automatizaciones que se realimentan.
+    enabled: true
+    max-pasos: 200
+    max-profundidad: 5
+    max-horas-ejecucion: 168
+    max-ejecuciones-por-hora: 60
+    max-ejecuciones-simultaneas: 5
+    max-ejecuciones-concurrentes: 10
+    threads: 2
+    max-reintentos: 1
+    minutos-ejecucion-abandonada: 30
+    minutos-deduplicacion: 1440
+    dias-retencion-ejecuciones: 90
+    intervalo-worker: 1000
+
 # ============================ MICROSOFT GRAPH (Outlook) ============================
 microsoft:
   graph:
@@ -151,44 +196,3 @@ management:
   endpoint:
     health:
       show-details: never
-
-  proxy:
-    # Hay que ponerlo a true SOLO si todas las peticiones llegan por un proxy
-    # (Nginx, IIS, balanceador). Con false se ignora X-Forwarded-For y la IP de los
-    # limites es la conexion directa, que es lo correcto en desarrollo.
-    # Con true y el backend expuesto a internet, cualquiera puede inventarse la IP.
-    trust-forwarded-headers: "${APP_TRUST_FORWARDED_HEADERS:false}"
-
-  auth:
-    # La cookie de sesión (refresh token) debe llevar Secure en producción con HTTPS.
-    # En false solo funciona en http://localhost: el navegador rechaza una cookie Secure
-    # que no venga por HTTPS, y sin esto no se podría iniciar sesión en desarrollo.
-    secure-cookie: "${APP_SECURE_COOKIE:false}"
-
-  mail:
-    outbox:
-      # Cola de correo (V10). Exchange Online limita cada buzón a unos 30
-      # mensajes por minuto: se deja margen. Subirlo provoca 429 de Graph.
-      max-por-minuto: 25
-      lote: 20
-      # Desde cuántos avisos pendientes para una misma persona se mandan juntos.
-      agrupar-desde: 4
-      max-intentos: 6
-      intervalo-ms: 5000
-      retencion-dias: 30
-  workflow:
-    # Motor de workflows. Los limites se REVISTEN antes de produccion: son la
-    # unica red de seguridad contra automatizaciones que se realimentan.
-    enabled: true
-    max-pasos: 200
-    max-profundidad: 5
-    max-horas-ejecucion: 168
-    max-ejecuciones-hora: 60
-    max-ejecuciones-simultaneas: 5
-    max-ejecuciones-concurrentes: 10
-    threads: 2
-    max-reintentos: 1
-    minutos-ejecucion-abandonada: 30
-    minutos-deduplicacion: 1440
-    dias-retencion-ejecuciones: 90
-    intervalo-worker: 1000

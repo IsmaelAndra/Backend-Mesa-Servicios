@@ -1,0 +1,9 @@
+# Scripts que se ejecutan en Linux (servidor y contenedores): siempre con LF,
+# aunque se clone en Windows con core.autocrlf. Con CRLF fallan con "/bin/sh^M".
+gradlew      text eol=lf
+*.sh         text eol=lf
+Dockerfile   text eol=lf
+*.yml        text eol=lf
+
+*.bat        text eol=crlf
+*.jar        binary

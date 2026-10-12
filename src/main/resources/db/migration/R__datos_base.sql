@@ -374,14 +374,14 @@ UPDATE notification_template SET icon_template = 'fa-solid fa-paper-plane', colo
 WHERE name_template = 'PRUEBA_ENVIO' AND (icon_template IS NULL OR color_template IS NULL);
 
 -- ===== CONFIGURACIÓN DE MARCA (BRANDING) =====
+-- Sin imagen de fondo: el login tiene el suyo propio. Antes se sembraba
+-- /uploads/publico/fondo.jfif, que solo existe en la carpeta uploads de
+-- desarrollo (no está en el repositorio): una instalación nueva pedía una
+-- imagen inexistente. Además un UPDATE lo volvía a poner en cada arranque si
+-- un administrador lo quitaba. La imagen se sube en Admin → Marca → Imágenes.
 INSERT INTO branding_config (logo_url, background_url, primary_color, secondary_color)
-SELECT NULL, '/uploads/publico/fondo.jfif', '#062e86', '#ec9811'
+SELECT NULL, NULL, '#062e86', '#ec9811'
 WHERE NOT EXISTS (SELECT 1 FROM branding_config);
-
--- Usa fondo por defecto si aún no tiene imagen de fondo configurada
-UPDATE branding_config
-SET background_url = '/uploads/publico/fondo.jfif'
-WHERE (background_url IS NULL OR background_url = '');
 -- ============================================================
 -- DATOS DEMO (solo si aún no existen)
 -- ============================================================

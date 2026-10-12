@@ -1,0 +1,95 @@
+# ==============================================================================
+# Mesa de Servicios COAC: producción con Docker Compose
+# ==============================================================================
+# Tres contenedores en una red interna:
+#
+#   navegador ──► frontend (Nginx, puerto HTTP_PORT) ──► backend:8080 ──► db:5432
+#
+# Solo el frontend publica un puerto. El backend y PostgreSQL no se ven desde
+# fuera: todo entra por Nginx, que es quien fija la IP real del cliente.
+#
+# Estructura esperada en el servidor (los dos repos uno al lado del otro):
+#
+#   /opt/mesa-servicios/
+#   ├── Backend-Mesa-Servicios/
+#   │   └── despliegue/   ← aquí: docker-compose.yml + .env
+#   └── Frontend-Mesa-Servicios/
+#
+# Uso (desde esta carpeta):  docker compose up -d --build
+# Guía completa: INSTALACION.md
+# ==============================================================================
+
+name: mesa-servicios
+
+# Los logs de Docker crecen sin límite si no se rotan.
+x-logs: &logs
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-mesa_ayuda_coac}
+      POSTGRES_USER: ${DB_USERNAME:-mesa_ayuda}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD en .env}
+      TZ: America/Guayaquil
+      PGTZ: America/Guayaquil
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [interna]
+    logging: *logs
+
+  backend:
+    build:
+      context: ..
+    image: mesa-servicios-backend:${VERSION:-latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Fijos para este despliegue: no dependen del .env.
+      DB_HOST: db
+      DB_PORT: "5432"
+      SPRING_PROFILES_ACTIVE: prod
+      UPLOAD_DIR: /app/uploads
+      # Todo entra por el Nginx del frontend, que sobrescribe X-Forwarded-For.
+      # El puerto del backend no se publica, así que nadie llega sin pasar por él.
+      APP_TRUST_FORWARDED_HEADERS: "true"
+    volumes:
+      - uploads:/app/uploads
+      - logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [interna]
+    logging: *logs
+
+  frontend:
+    build:
+      context: ${FRONTEND_DIR:-../../Frontend-Mesa-Servicios}
+    image: mesa-servicios-frontend:${VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [interna]
+    logging: *logs
+
+networks:
+  interna:
+
+# Datos persistentes. "docker compose down" NO los borra; "down -v" sí.
+volumes:
+  pgdata:
+  uploads:
+  logs:

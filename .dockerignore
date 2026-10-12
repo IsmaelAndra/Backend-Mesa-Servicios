@@ -1,0 +1,28 @@
+# Lo que NO entra al contexto de build de Docker.
+# Además de acelerar el build, evita que secretos o datos acaben en la imagen.
+
+# Secretos y datos locales
+.env
+.env.*
+!.env.example
+uploads/
+logs/
+*.log
+
+# Salidas de compilación y cachés (la imagen compila desde cero)
+build/
+bin/
+.gradle/
+out/
+
+# Control de versiones, CI, editores
+.git/
+.github/
+.idea/
+.vscode/
+*.iml
+
+# Despliegue: compose, .env de producción y documentación no van en la imagen
+despliegue/
+Dockerfile
+.dockerignore

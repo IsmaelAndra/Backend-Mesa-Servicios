@@ -52,6 +52,8 @@ Reglas:
 
 ## Producción
 
+**Instalación y actualización con Docker:** [`despliegue/INSTALACION.md`](despliegue/INSTALACION.md) (`docker-compose.yml` con PostgreSQL, este backend y el frontend con Nginx; `.env.example` de producción; `respaldo.sh` para copias de seguridad).
+
 - `SPRING_PROFILES_ACTIVE=prod`: apaga Swagger y el DEBUG, fuerza la cookie `Secure` y expone solo `health`.
 - `APP_SECURE_COOKIE=true` detrás de HTTPS.
 - `APP_TRUST_FORWARDED_HEADERS=true` **solo** si todo el tráfico entra por un proxy.
