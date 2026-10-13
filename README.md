@@ -79,3 +79,12 @@ src/main/resources/
 ```
 
 Las convenciones del proyecto (seguridad, motor de workflows, búsqueda, nombres de columnas) están documentadas en el `AGENTS.md` de la carpeta de trabajo. El código, los comentarios y los textos están en español.
+
+## Módulo de Activos de TI
+
+- CRUD de activos con código único, tipo, marca, modelo, serie, estado, fechas, proveedor, costo, garantía.
+- Asignación/desasignación a usuario, área y sede.
+- Historial de cambios (sset_history).
+- Permisos: SUPER_ADMIN|ADMIN|AREA_MANAGER gestionan; SUPER_ADMIN|ADMIN eliminan.
+- Integrado a búsqueda global y catálogos de área/sucursal.
+- Seed de ejemplo solo en perfil dev.

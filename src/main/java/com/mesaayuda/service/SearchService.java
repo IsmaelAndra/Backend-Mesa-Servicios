@@ -2,16 +2,19 @@ package com.mesaayuda.service;
 
 import com.mesaayuda.dto.GlobalSearchResponse;
 import com.mesaayuda.dto.SearchAreaItem;
+import com.mesaayuda.dto.SearchAssetItem;
 import com.mesaayuda.dto.SearchTeamItem;
 import com.mesaayuda.dto.SearchTicketItem;
 import com.mesaayuda.dto.SearchUserItem;
 import com.mesaayuda.dto.SearchWorkflowItem;
 import com.mesaayuda.dto.TicketResponse;
 import com.mesaayuda.entity.Area;
+import com.mesaayuda.entity.Asset;
 import com.mesaayuda.entity.SupportTeam;
 import com.mesaayuda.entity.User;
 import com.mesaayuda.entity.Workflow;
 import com.mesaayuda.repository.AreaRepository;
+import com.mesaayuda.repository.AssetRepository;
 import com.mesaayuda.repository.SupportTeamRepository;
 import com.mesaayuda.repository.WorkflowRepository;
 import jakarta.persistence.criteria.Predicate;
@@ -42,6 +45,9 @@ import java.util.List;
  *       autenticado.
  *   <li><b>Workflows</b>: solo SUPER_ADMIN, el mismo rol que gobierna
  *       {@code /admin/workflows} y el constructor de automatizaciones.
+ *   <li><b>Activos</b>: todos los roles, con el mismo alcance que el listado
+ *       ({@link AssetService#alcanceVisible}): cada uno los suyos, el jefe de área
+ *       los de su área y ADMIN/SUPER_ADMIN todos.
  * </ul>
  *
  * <p>Los términos de los filtros LIKE se escapan antes de construir la consulta
@@ -71,6 +77,12 @@ public class SearchService {
     private SupportTeamRepository supportTeamRepository;
 
     @Autowired
+    private AssetRepository assetRepository;
+
+    @Autowired
+    private AssetService assetService;
+
+    @Autowired
     private WorkflowRepository workflowRepository;
 
     @Transactional(readOnly = true)
@@ -87,6 +99,7 @@ public class SearchService {
         List<SearchUserItem> users = List.of();
         List<SearchUserItem> agents = List.of();
         List<SearchWorkflowItem> workflows = List.of();
+        List<SearchAssetItem> assets = List.of();
 
         if (personal) {
             users = buscarPersonas(termino, "USER", limite);
@@ -95,11 +108,14 @@ public class SearchService {
         if (superAdmin) {
             workflows = buscarWorkflows(termino, limite);
         }
+        if (actual != null) {
+            assets = buscarActivos(actual, termino, limite);
+        }
 
         List<SearchTeamItem> teams = buscarEquipos(termino, limite);
         List<SearchAreaItem> areas = buscarAreas(termino, limite);
 
-        return new GlobalSearchResponse(query.trim(), tickets, users, agents, teams, areas, workflows);
+        return new GlobalSearchResponse(query.trim(), tickets, users, agents, teams, areas, workflows, assets);
     }
 
     /**
@@ -173,6 +189,37 @@ public class SearchService {
         return workflowRepository.buscarPorTexto(termino, limite).stream()
                 .map(w -> new SearchWorkflowItem(w.getIdWorkflow(), w.getNameWorkflow(),
                         w.getStatusWorkflow()))
+                .toList();
+    }
+
+    /**
+     * Activos de TI, con el mismo alcance que el listado de activos: antes no
+     * filtraba nada y cualquier agente veía aquí los activos de todas las áreas.
+     */
+    private List<SearchAssetItem> buscarActivos(User actual, String termino, Pageable limite) {
+        Specification<Asset> coincide = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.or(
+                    cb.like(cb.lower(root.get("codeAsset")), "%" + termino + "%"),
+                    cb.like(cb.lower(root.get("nameAsset")), "%" + termino + "%"),
+                    cb.like(cb.lower(root.get("brandAsset")), "%" + termino + "%"),
+                    cb.like(cb.lower(root.get("modelAsset")), "%" + termino + "%"),
+                    cb.like(cb.lower(root.get("serialNumberAsset")), "%" + termino + "%"),
+                    cb.like(cb.lower(root.get("typeAsset")), "%" + termino + "%")
+            ));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        return assetRepository.findAll(assetService.alcanceVisible(actual).and(coincide), limite).stream()
+                .map(a -> new SearchAssetItem(
+                        a.getIdAsset(),
+                        a.getCodeAsset(),
+                        a.getNameAsset(),
+                        a.getTypeAsset(),
+                        a.getStatusAsset(),
+                        a.getAssignedUser() != null ? a.getAssignedUser().getCorporateEmailUser() : null,
+                        a.getAssignedUser() != null ? a.getAssignedUser().getFullName() : null,
+                        a.getArea() != null ? a.getArea().getNameArea() : null
+                ))
                 .toList();
     }
 

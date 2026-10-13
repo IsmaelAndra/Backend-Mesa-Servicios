@@ -58,6 +58,11 @@ public interface WorkflowWaitRepository extends JpaRepository<WorkflowWait, UUID
             + "ORDER BY w.createdAtWait ASC")
     List<WorkflowWait> aprobacionesPendientes();
 
+    /** Aprobaciones recientes (pendientes y decididas), para "Mis solicitudes". */
+    @Query("SELECT w FROM WorkflowWait w WHERE w.kindWait = 'APPROVAL' "
+            + "ORDER BY w.createdAtWait DESC, w.idWait DESC")
+    List<WorkflowWait> aprobacionesRecientes(Pageable pageable);
+
     /**
      * Cierra una aprobación solo si sigue pendiente. Devuelve 0 si otra persona
      * la decidió antes: dos aprobadores pulsando a la vez no pueden decidir los dos.

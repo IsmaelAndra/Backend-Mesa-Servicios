@@ -1,22 +1,22 @@
 # ==============================================================================
-# Mesa de Servicios COAC: producción con Docker Compose
+# Mesa de Servicios COAC: CONSTRUIR las imágenes (y probarlas) en tu PC
 # ==============================================================================
-# Tres contenedores en una red interna:
+# Construye backend y frontend con el nombre con el que se publican en GitHub
+# Container Registry (GHCR), para luego subirlas con "docker compose push".
+# En el servidor NO se usa este archivo: allí va docker-compose.prod.yml, que
+# descarga esas mismas imágenes.
 #
-#   navegador ──► frontend (Nginx, puerto HTTP_PORT) ──► backend:8080 ──► db:5432
+#   cd Backend-Mesa-Servicios/despliegue
+#   docker compose build                 # construye las dos imágenes
+#   docker compose up -d                 # (opcional) prueba en http://localhost:8088
+#   docker compose push backend frontend # las sube a GHCR
 #
-# Solo el frontend publica un puerto. El backend y PostgreSQL no se ven desde
-# fuera: todo entra por Nginx, que es quien fija la IP real del cliente.
-#
-# Estructura esperada en el servidor (los dos repos uno al lado del otro):
-#
-#   /opt/mesa-servicios/
-#   ├── Backend-Mesa-Servicios/
-#   │   └── despliegue/   ← aquí: docker-compose.yml + .env
+# Los dos repositorios tienen que estar uno al lado del otro:
+#   GitHub/
+#   ├── Backend-Mesa-Servicios/despliegue/   ← aquí: este archivo y su .env
 #   └── Frontend-Mesa-Servicios/
 #
-# Uso (desde esta carpeta):  docker compose up -d --build
-# Guía completa: INSTALACION.md
+# Guía completa: README.md (en esta carpeta).
 # ==============================================================================
 
 name: mesa-servicios
@@ -45,13 +45,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    networks: [interna]
+    networks: [datos]
     logging: *logs
 
   backend:
     build:
       context: ..
-    image: mesa-servicios-backend:${VERSION:-latest}
+      args:
+        VERSION: ${VERSION:-dev}
+    image: ghcr.io/${GHCR_OWNER:-ismaelandra}/mesa-servicios-backend:${VERSION:-dev}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -60,8 +62,7 @@ services:
       DB_PORT: "5432"
       SPRING_PROFILES_ACTIVE: prod
       UPLOAD_DIR: /app/uploads
-      # Todo entra por el Nginx del frontend, que sobrescribe X-Forwarded-For.
-      # El puerto del backend no se publica, así que nadie llega sin pasar por él.
+      # Solo el Nginx del frontend llega al backend, y sobrescribe X-Forwarded-For.
       APP_TRUST_FORWARDED_HEADERS: "true"
     volumes:
       - uploads:/app/uploads
@@ -69,24 +70,35 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    networks: [interna]
+    networks: [datos, app]
     logging: *logs
 
   frontend:
     build:
       context: ${FRONTEND_DIR:-../../Frontend-Mesa-Servicios}
-    image: mesa-servicios-frontend:${VERSION:-latest}
+      args:
+        VERSION: ${VERSION:-dev}
+    image: ghcr.io/${GHCR_OWNER:-ismaelandra}/mesa-servicios-frontend:${VERSION:-dev}
     restart: unless-stopped
+    environment:
+      REAL_IP_FROM: ${REAL_IP_FROM:-172.16.0.0/12}
+    # Solo para probar en tu PC, y solo en 127.0.0.1 (nadie de la red lo ve).
+    # En el servidor no se publica ningún puerto (docker-compose.prod.yml).
     ports:
-      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:8080"
+      - "127.0.0.1:${HTTP_PORT_LOCAL:-8088}:8080"
     depends_on:
       backend:
         condition: service_healthy
-    networks: [interna]
+    networks: [app]
     logging: *logs
 
 networks:
-  interna:
+  # Solo backend y base de datos, sin salida a internet: PostgreSQL no se ve
+  # desde ningún otro sitio.
+  datos:
+    internal: true
+  # Backend y frontend. El backend sale a internet por aquí (Microsoft Graph, IA).
+  app: {}
 
 # Datos persistentes. "docker compose down" NO los borra; "down -v" sí.
 volumes:

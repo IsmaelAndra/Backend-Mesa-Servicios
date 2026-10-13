@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 
 import jakarta.persistence.criteria.Predicate;
@@ -206,7 +207,15 @@ public class UserService {
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
-        return conSesion(userRepository.findAll(spec).stream().map(userMapper::toResponse).toList());
+        // Sin ORDER BY PostgreSQL devuelve las filas en orden fisico, que cambia
+        // cada vez que se actualiza una fila (por ejemplo al subir una foto): en
+        // los desplegables de asignacion se veian los usuarios con foto juntos
+        // delante y el resto detras. Se ordena por nombre y luego por correo,
+        // que es unico, para que el orden sea siempre el mismo.
+        Sort orden = Sort.by(
+                Sort.Order.asc("displayName").nullsLast(),
+                Sort.Order.asc("corporateEmailUser"));
+        return conSesion(userRepository.findAll(spec, orden).stream().map(userMapper::toResponse).toList());
     }
 
     @Transactional(readOnly = true)

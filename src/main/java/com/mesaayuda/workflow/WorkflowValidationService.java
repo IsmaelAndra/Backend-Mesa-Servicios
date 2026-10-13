@@ -196,11 +196,11 @@ public class WorkflowValidationService {
                     }
                 }
                 case APPROVAL -> {
+                    // Solo decide un SUPER_ADMIN. Sin rol se entiende ese.
                     Object rol = valor(n, "rol");
-                    if (rol == null || !Set.of("SUPER_ADMIN", "ADMIN", "AGENT", "USER")
-                            .contains(String.valueOf(rol).trim().toUpperCase(java.util.Locale.ROOT))) {
-                        errores.add("La aprobación '" + nom + "' necesita el rol que aprueba "
-                                + "(SUPER_ADMIN, ADMIN, AGENT o USER).");
+                    if (rol != null && !String.valueOf(rol).isBlank()
+                            && !"SUPER_ADMIN".equals(String.valueOf(rol).trim().toUpperCase(java.util.Locale.ROOT))) {
+                        errores.add("La aprobación '" + nom + "' solo la puede decidir un SUPER_ADMIN.");
                     }
                 }
                 case NEXA -> {

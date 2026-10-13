@@ -86,15 +86,15 @@ app:
     secret: ${JWT_SECRET}
     expiration-ms: ${JWT_EXPIRATION:900000}
     refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION:2592000000}
-  # ============================ CUENTAS ADMINISTRATIVAS INICIALES ============================
+  # ============================ CUENTA INICIAL (SUPER_ADMIN) ============================
+  # Solo se siembra el SUPER_ADMIN; el resto de cuentas las crea el desde la app.
   # Si ADMIN_SEED_PASSWORD viene vacia NO se crea ninguna cuenta administrativa.
   # En produccion hay que definirla en el primer arranque (o dar de alta al
-  # SUPER_ADMIN a mano). Las cuentas nacen con mustChangePassword=TRUE, asi que
+  # SUPER_ADMIN a mano). La cuenta nace con mustChangePassword=TRUE, asi que
   # el unico uso de esa clave es obligar a cambiarla.
   admin-seed:
     password: ${ADMIN_SEED_PASSWORD:}
     superadmin-email: ${ADMIN_SEED_EMAIL:superadmin@coacmagisterio.fin.ec}
-    admin-email: ${ADMIN_SEED_ADMIN_EMAIL:admin@coacmagisterio.fin.ec}
   uploads:
     dir: ${UPLOAD_DIR:./uploads}
   cors:

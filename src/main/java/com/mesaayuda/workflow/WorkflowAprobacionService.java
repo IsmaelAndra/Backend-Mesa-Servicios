@@ -9,6 +9,9 @@ import com.mesaayuda.entity.WorkflowWait;
 import com.mesaayuda.exception.BadRequestException;
 import com.mesaayuda.exception.ResourceNotFoundException;
 import com.mesaayuda.repository.TicketRepository;
+import com.mesaayuda.repository.UserRepository;
+import com.mesaayuda.service.NotificationService;
+import org.springframework.data.domain.PageRequest;
 import com.mesaayuda.repository.WorkflowExecutionRepository;
 import com.mesaayuda.repository.WorkflowRepository;
 import com.mesaayuda.repository.WorkflowWaitRepository;
@@ -35,12 +38,11 @@ import java.util.UUID;
  * existía endpoint, así que toda ejecución con aprobación se quedaba pendiente
  * para siempre.
  *
- * <p><b>Quién decide.</b> Si el nodo indica un aprobador concreto, solo esa
- * persona. Si no, cualquiera con un rol igual o superior al pedido (un ADMIN
- * puede decidir lo que se pide a un AGENT; un AGENT no puede decidir lo que se
- * pide a un ADMIN). La comprobación se hace al decidir, con el rol de ese
- * momento: si a alguien le bajan el rol, pierde la aprobación aunque estuviera
- * en su bandeja.
+ * <p><b>Quién decide.</b> Solo un SUPER_ADMIN: lo que hace un ADMIN espera su
+ * firma, y el ADMIN ve el resultado en "Mis solicitudes" ({@link #misSolicitudes()}).
+ * Si el nodo indica un aprobador concreto, solo esa persona (que también tiene que
+ * ser SUPER_ADMIN). La comprobación se hace al decidir, con el rol de ese momento:
+ * si a alguien le bajan el rol, pierde la aprobación aunque estuviera en su bandeja.
  */
 @Service
 public class WorkflowAprobacionService {
@@ -55,6 +57,11 @@ public class WorkflowAprobacionService {
     private final TicketAccessPolicy accessPolicy;
     private final SystemAuditService systemAuditService;
     private final ObjectMapper objectMapper;
+    private final UserRepository userRepository;
+    private final NotificationService notificationService;
+
+    /** Cuántas solicitudes recientes se revisan para "Mis solicitudes". */
+    private static final int LIMITE_RECIENTES = 200;
 
     public WorkflowAprobacionService(WorkflowWaitRepository waitRepository,
                                      WorkflowExecutionRepository executionRepository,
@@ -63,7 +70,9 @@ public class WorkflowAprobacionService {
                                      UserService userService,
                                      TicketAccessPolicy accessPolicy,
                                      SystemAuditService systemAuditService,
-                                     ObjectMapper objectMapper) {
+                                     ObjectMapper objectMapper,
+                                     UserRepository userRepository,
+                                     NotificationService notificationService) {
         this.waitRepository = waitRepository;
         this.executionRepository = executionRepository;
         this.workflowRepository = workflowRepository;
@@ -72,6 +81,8 @@ public class WorkflowAprobacionService {
         this.accessPolicy = accessPolicy;
         this.systemAuditService = systemAuditService;
         this.objectMapper = objectMapper;
+        this.userRepository = userRepository;
+        this.notificationService = notificationService;
     }
 
     /** Las aprobaciones pendientes que el usuario actual puede decidir. */
@@ -84,11 +95,34 @@ public class WorkflowAprobacionService {
                 .toList();
     }
 
-    /** Cuántas tiene pendientes, para el contador del menú. */
+    /**
+     * Las solicitudes que provocó el usuario actual (pendientes y ya decididas),
+     * para que quien las originó sepa si se aceptaron o no.
+     */
+    @Transactional(readOnly = true)
+    public List<WorkflowAprobacionResponse> misSolicitudes() {
+        User actual = userService.getCurrentUser();
+        String correo = actual.getCorporateEmailUser();
+        return waitRepository.aprobacionesRecientes(PageRequest.of(0, LIMITE_RECIENTES)).stream()
+                .filter(w -> correo != null && correo.equalsIgnoreCase(solicitante(w)))
+                .map(w -> respuesta(w, actual))
+                .toList();
+    }
+
+    /**
+     * Para el contador del menú: al SUPER_ADMIN, las que tiene por decidir; al
+     * resto, sus solicitudes que siguen esperando respuesta.
+     */
     @Transactional(readOnly = true)
     public long contarPendientes() {
         User actual = userService.getCurrentUser();
-        return waitRepository.aprobacionesPendientes().stream().filter(w -> puedeDecidir(actual, w)).count();
+        if (esAprobador(actual)) {
+            return waitRepository.aprobacionesPendientes().stream().filter(w -> puedeDecidir(actual, w)).count();
+        }
+        String correo = actual.getCorporateEmailUser();
+        return waitRepository.aprobacionesPendientes().stream()
+                .filter(w -> correo != null && correo.equalsIgnoreCase(solicitante(w)))
+                .count();
     }
 
     /**
@@ -130,6 +164,7 @@ public class WorkflowAprobacionService {
                     puerto, limpio, actual));
             executionRepository.save(ejecucion);
         }
+        avisarSolicitante(espera, aprobar, limpio, actual);
         systemAuditService.record("WORKFLOW_APPROVAL_DECIDED", "WorkflowExecution",
                 espera.getExecutionExecution(), actual.getCorporateEmailUser(),
                 puerto + " en el nodo '" + espera.getNodeIdWait() + "'" + (limpio == null ? "" : ": " + limpio));
@@ -143,12 +178,52 @@ public class WorkflowAprobacionService {
                 || !"ACTIVE".equalsIgnoreCase(usuario.getStatusUser())) {
             return false;
         }
-        if (espera.getApproverUserWait() != null) {
-            return espera.getApproverUserWait().equals(usuario.getIdUser());
+        if (!esAprobador(usuario)) {
+            return false;
         }
-        String rol = usuario.getRolUser() == null ? null : usuario.getRolUser().getNameRole();
-        int pedido = ApprovalHandler.rango(espera.getApproverRoleWait());
-        return pedido > 0 && ApprovalHandler.rango(rol) >= pedido;
+        return espera.getApproverUserWait() == null || espera.getApproverUserWait().equals(usuario.getIdUser());
+    }
+
+    private static boolean esAprobador(User usuario) {
+        String rol = usuario == null || usuario.getRolUser() == null ? null : usuario.getRolUser().getNameRole();
+        return ApprovalHandler.ROL_APROBADOR.equalsIgnoreCase(rol);
+    }
+
+    /** Correo de quien provocó la ejecución (evento.actorCorreo), o null. */
+    @SuppressWarnings("unchecked")
+    private String solicitante(WorkflowWait espera) {
+        WorkflowExecution ejecucion = executionRepository.findById(espera.getExecutionExecution()).orElse(null);
+        if (ejecucion == null || ejecucion.getVariablesExecution() == null) {
+            return null;
+        }
+        try {
+            Map<String, Object> vars = objectMapper.readValue(ejecucion.getVariablesExecution(), Map.class);
+            Object correo = vars.get("actorCorreo");
+            if (correo == null && vars.get("evento") instanceof Map<?, ?> evento) {
+                correo = evento.get("actorCorreo");
+            }
+            return correo == null ? null : String.valueOf(correo);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Avisa en la campana a quien originó la solicitud de cómo se resolvió. */
+    private void avisarSolicitante(WorkflowWait espera, boolean aprobada, String comentario, User quien) {
+        String correo = solicitante(espera);
+        if (correo == null || correo.equalsIgnoreCase(quien.getCorporateEmailUser())) {
+            return;
+        }
+        userRepository.findByCorporateEmailUser(correo).ifPresent(u -> {
+            try {
+                notificationService.sendNotification(null, u, ApprovalHandler.TIPO_NOTIFICACION,
+                        aprobada ? "Solicitud aprobada" : "Solicitud rechazada",
+                        "Su solicitud fue " + (aprobada ? "aprobada" : "rechazada")
+                                + (comentario == null || comentario.isBlank() ? "." : ": " + comentario));
+            } catch (RuntimeException e) {
+                log.warn("No se pudo avisar a {} de la decisión: {}", correo, e.getMessage());
+            }
+        });
     }
 
     private WorkflowAprobacionResponse respuesta(WorkflowWait espera, User actual) {
@@ -167,9 +242,14 @@ public class WorkflowAprobacionService {
                 etiqueta = "#" + t.getNumberTicket() + " " + t.getTitleTicket();
             }
         }
+        String decididoPor = espera.getDecidedByWait() == null ? null
+                : userRepository.findById(espera.getDecidedByWait())
+                        .map(User::getFullName)
+                        .orElse(null);
         return new WorkflowAprobacionResponse(espera.getIdWait(), espera.getExecutionExecution(), nombreWorkflow,
                 espera.getNodeIdWait(), solicitud, espera.getApproverRoleWait(), tipo, id, etiqueta,
-                espera.getCreatedAtWait(), espera.getResumeAtWait());
+                espera.getCreatedAtWait(), espera.getResumeAtWait(), espera.getStatusWait(),
+                solicitante(espera), decididoPor, espera.getDecidedAtWait(), espera.getCommentWait());
     }
 
     /** El texto que dejó el nodo APPROVAL en nodos.<id>.solicitud. */

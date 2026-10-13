@@ -41,6 +41,8 @@ class SqlScriptsValidationTest {
             "db/migration/V8__chat_edicion_y_respuestas_rapidas.sql",
             "db/migration/V9__paginas_aviso_configurables.sql",
             "db/migration/V10__cola_de_correo.sql",
+            "db/migration/V11__activos.sql",
+            "db/migration/V12__historial_activos.sql",
             "db/migration/R__datos_base.sql",
             "db/dev/R__datos_dev.sql"};
 

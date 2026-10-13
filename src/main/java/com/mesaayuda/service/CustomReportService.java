@@ -67,9 +67,6 @@ public class CustomReportService {
     /** A4 vertical: 595 de ancho menos 20 de margen a cada lado. */
     private static final int ANCHO_PAGINA_VERTICAL = 555;
     private static final int MAX_COLS = 40;
-    private static final int ANCHO_MIN_COL = 60;
-    /** Ancho reservado para la columna de identificador, que va centrada. */
-    private static final int ANCHO_COL_ID = 56;
     private static final Color DEFAULT_PRIMARY = new Color(0x06, 0x2E, 0x86);
 
     /** Formatos que ImageIO (el rasterizador de Jasper) si sabe leer. */
@@ -254,6 +251,42 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
         return render(cfg, normalize(raw), format, nombreUsuario, esVertical(orientacion));
     }
 
+    private static final java.time.ZoneId ZONA = java.time.ZoneId.of("America/Guayaquil");
+    private static final java.time.format.DateTimeFormatter FMT_FECHA_HORA =
+            java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final java.time.format.DateTimeFormatter FMT_FECHA =
+            java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    /**
+     * Texto de una celda. Antes era v.toString(): las fechas salían como
+     * "2026-09-30 14:00:00.123+00" (en UTC) y los booleanos como "true".
+     */
+    static String formatear(Object v) {
+        if (v == null) return "";
+        if (v instanceof java.sql.Timestamp t) {
+            return FMT_FECHA_HORA.format(t.toInstant().atZone(ZONA));
+        }
+        if (v instanceof java.time.OffsetDateTime o) {
+            return FMT_FECHA_HORA.format(o.atZoneSameInstant(ZONA));
+        }
+        if (v instanceof java.time.LocalDateTime l) {
+            return FMT_FECHA_HORA.format(l);
+        }
+        if (v instanceof java.sql.Date d) {
+            return FMT_FECHA.format(d.toLocalDate());
+        }
+        if (v instanceof java.time.LocalDate d) {
+            return FMT_FECHA.format(d);
+        }
+        if (v instanceof Boolean b) {
+            return b ? "Sí" : "No";
+        }
+        if (v instanceof java.math.BigDecimal bd) {
+            return bd.stripTrailingZeros().toPlainString();
+        }
+        return v.toString();
+    }
+
     /** Pasa los resultados a mapas de cadenas con claves de campo seguras (fc0, fc1, ...). */
     private Map<String, Object> normalize(List<Map<String, Object>> raw) {
         List<String> headers = new ArrayList<>();
@@ -264,8 +297,7 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
                 String h = e.getKey();
                 if (!headers.contains(h)) headers.add(h);
                 int idx = headers.indexOf(h);
-                Object v = e.getValue();
-                row.put("fc" + idx, v == null ? "" : v.toString());
+                row.put("fc" + idx, formatear(e.getValue()));
             }
             rows.add(row);
         }
@@ -288,11 +320,11 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
 
         InputStream logo = loadLogoInputStream();
         try {
-            JasperReport report = JasperCompileManager.compileReport(construirDiseno(headers, vertical));
+            JasperReport report = JasperCompileManager.compileReport(construirDiseno(headers, rows, vertical));
 
             Map<String, Object> params = new HashMap<>();
             params.put("TITULO", cfg.getTitleReport());
-            params.put("FECHA", LocalDate.now().toString());
+            params.put("FECHA", FMT_FECHA_HORA.format(java.time.ZonedDateTime.now(ZONA)));
             params.put("TOTAL", rows.size());
             params.put("LOGO", logo);
             params.put("USUARIO", usuario == null || usuario.isBlank() ? "Sistema" : usuario);
@@ -333,38 +365,122 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
     }
 
     /**
-     * Reparte todo el ancho útil entre las columnas para que la tabla llegue de
-     * margen a margen. La primera, si es un identificador, se deja angosta para que
-     * quepan más columnas; el sobrante se reparte entre las demás.
+     * Reparte todo el ancho útil entre las columnas según lo que contienen: antes
+     * todas medían lo mismo, y una columna de nombres largos se cortaba mientras
+     * otra de fechas cortas tenía espacio de sobra. El peso de cada columna es el
+     * largo típico de su texto (cabecera y hasta 200 filas), acotado para que
+     * ninguna se coma la tabla ni quede ilegible. La columna de identificador, si
+     * es la primera, se deja angosta.
      */
-    private int[] anchoColumna(List<String> headers, int n, int anchoUtil) {
-        boolean primeraEsId = esColumnaId(headers.get(0));
-        int anchoId = Math.min(ANCHO_COL_ID, anchoUtil / 3);
-        int primeraNormal = primeraEsId ? 1 : 0;
-        int restantes = n - primeraNormal;
-        if (restantes <= 0) {
+    int[] anchoColumna(List<String> headers, List<Map<String, ?>> rows, int n, int anchoUtil) {
+        if (n == 1) {
             return new int[] { anchoUtil };
         }
-
-        // El ancho de la columna de ID se reserva antes de repartir, o si no la
-        // tabla se pasa del margen derecho.
-        int disponible = anchoUtil - (primeraEsId ? anchoId : 0);
-
-        int[] anchos = new int[n];
-        int usado = primeraEsId ? anchoId : 0;
-        for (int i = primeraNormal; i < n; i++) {
-            anchos[i] = disponible / restantes;
-            usado += anchos[i];
-        }
-        int sobrante = anchoUtil - usado;
-        for (int i = primeraNormal; i < n && sobrante > 0; i++) {
-            anchos[i] += 1;
-            sobrante--;
+        boolean primeraEsId = esColumnaId(headers.get(0));
+        double[] peso = new double[n];
+        int[] minimo = new int[n];
+        int muestra = Math.min(rows.size(), 200);
+        for (int i = 0; i < n; i++) {
+            int largoCabecera = headers.get(i) == null ? 4 : headers.get(i).length();
+            // Mínimo: que la palabra más larga quepa entera (cabecera en negrita y
+            // valores). Sin él, "EN_PROCESO" se partía en "EN_PROCE / SO".
+            int palabra = palabraMasLarga(headers.get(i)) + 1;
+            for (int r = 0; r < muestra; r++) {
+                Object v = rows.get(r).get("fc" + i);
+                palabra = Math.max(palabra, palabraMasLarga(v == null ? null : v.toString()));
+            }
+            minimo[i] = Math.min(150, Math.max(ANCHO_MIN_COL_REAL, (int) Math.ceil(palabra * PUNTOS_POR_LETRA) + 12));
+            // Percentil 90 del largo de los valores: un único texto enorme no
+            // ensancha la columna entera (la fila crece en alto).
+            List<Integer> largos = new ArrayList<>();
+            for (int r = 0; r < muestra; r++) {
+                Object v = rows.get(r).get("fc" + i);
+                largos.add(v == null ? 0 : v.toString().length());
+            }
+            largos.sort(null);
+            int tipico = largos.isEmpty() ? 0 : largos.get((int) Math.floor((largos.size() - 1) * 0.9));
+            peso[i] = Math.max(6, Math.min(48, Math.max(largoCabecera, tipico)));
         }
         if (primeraEsId) {
-            anchos[0] = anchoId;
+            peso[0] = Math.min(peso[0], 8);
+        }
+        double total = 0;
+        for (double p : peso) total += p;
+
+        // Primero cada columna recibe su mínimo; lo que sobra se reparte según el
+        // peso. Si los mínimos no caben (muchas columnas), se escalan.
+        int sumaMinimos = 0;
+        for (int v : minimo) sumaMinimos += v;
+        int[] anchos = new int[n];
+        int usado = 0;
+        if (sumaMinimos >= anchoUtil) {
+            for (int i = 0; i < n; i++) {
+                anchos[i] = Math.max(20, (int) Math.floor((double) anchoUtil * minimo[i] / sumaMinimos));
+                usado += anchos[i];
+            }
+        } else {
+            // El sobrante va a las columnas a las que les falta espacio para su
+            // texto típico (un título largo), no a las que ya caben enteras
+            // (un correo, un estado): así el título no baja a tres líneas.
+            int libre = anchoUtil - sumaMinimos;
+            double[] falta = new double[n];
+            double totalFalta = 0;
+            for (int i = 0; i < n; i++) {
+                falta[i] = Math.max(0, peso[i] * PUNTOS_POR_LETRA + 12 - minimo[i]);
+                totalFalta += falta[i];
+            }
+            for (int i = 0; i < n; i++) {
+                double parte = totalFalta > 0 ? falta[i] / totalFalta : peso[i] / total;
+                anchos[i] = minimo[i] + (int) Math.floor(libre * parte);
+                usado += anchos[i];
+            }
+        }
+        // Ajuste final para llegar exactamente de margen a margen: lo que sobra o
+        // falta se reparte sobre la columna más ancha.
+        int diferencia = anchoUtil - usado;
+        while (diferencia != 0) {
+            int mayor = 0;
+            for (int i = 1; i < n; i++) if (anchos[i] > anchos[mayor]) mayor = i;
+            int paso = diferencia > 0 ? 1 : -1;
+            anchos[mayor] += paso;
+            diferencia -= paso;
         }
         return anchos;
+    }
+
+    /** Ancho mínimo de una columna, en puntos (unas 6 letras a 8 pt con márgenes). */
+    private static final int ANCHO_MIN_COL_REAL = 38;
+
+    /** Ancho medio de una letra a 8 pt en SansSerif (algo holgado para mayúsculas). */
+    private static final double PUNTOS_POR_LETRA = 5.4;
+
+    /** Largo de la palabra más larga (las correos y códigos no se cortan). */
+    private static int palabraMasLarga(String texto) {
+        if (texto == null || texto.isBlank()) return 0;
+        int max = 0;
+        for (String p : texto.trim().split("\\s+")) max = Math.max(max, p.length());
+        return max;
+    }
+
+    /** Columnas cuyos valores (no vacíos) son todos números: van alineadas a la derecha. */
+    boolean[] columnasNumericas(List<Map<String, ?>> rows, int n) {
+        boolean[] numericas = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            boolean alguno = false;
+            boolean todos = true;
+            for (Map<String, ?> fila : rows) {
+                Object v = fila.get("fc" + i);
+                String t = v == null ? "" : v.toString().trim();
+                if (t.isEmpty()) continue;
+                alguno = true;
+                if (!t.matches("-?\\d+([.,]\\d+)?")) {
+                    todos = false;
+                    break;
+                }
+            }
+            numericas[i] = alguno && todos;
+        }
+        return numericas;
     }
 
     /** "V" o "VERTICAL" pide la hoja en vertical; cualquier otro valor la deja apaisada. */
@@ -376,20 +492,36 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
         return o.equals("V") || o.equals("VERTICAL") || o.equals("PORTRAIT");
     }
 
-    /** Reacomoda los textos de la cabecera y el resumen al cambiar el ancho de hoja. */
+    /**
+     * Reacomoda la cabecera, el pie y el resumen al ancho útil de la hoja
+     * (apaisada o vertical). Cada elemento se localiza por su key en el .jrxml.
+     */
     private void ajustarAnchoTitulo(JasperDesign design, int anchoUtil) {
-        int inicioTexto = Math.min(290, Math.max(0, anchoUtil - 312));
-        int anchoTexto = Math.max(80, anchoUtil - inicioTexto);
+        int inicioTexto = 190;
         for (JRElement e : elementsOf(design.getTitle())) {
             var el = (JRDesignElement) e;
-            if (el.getX() >= 250) {
-                el.setX(inicioTexto);
-                el.setWidth(anchoTexto);
+            String key = el.getKey() == null ? "" : el.getKey();
+            switch (key) {
+                case "TITULO", "SUBTITULO" -> {
+                    el.setX(inicioTexto);
+                    el.setWidth(Math.max(120, anchoUtil - inicioTexto));
+                }
+                case "LINEA" -> el.setWidth(anchoUtil);
+                default -> { }
+            }
+        }
+        for (JRElement e : elementsOf(design.getPageFooter())) {
+            var el = (JRDesignElement) e;
+            String key = el.getKey() == null ? "" : el.getKey();
+            switch (key) {
+                case "PIE_TITULO" -> el.setWidth(anchoUtil - 202);
+                case "PIE_PAGINA" -> el.setX(anchoUtil - 202);
+                case "PIE_TOTAL" -> el.setX(anchoUtil - 42);
+                default -> { }
             }
         }
         for (JRElement e : elementsOf(design.getSummary())) {
-            var el = (JRDesignElement) e;
-            el.setWidth(anchoUtil);
+            ((JRDesignElement) e).setWidth(anchoUtil);
         }
     }
 
@@ -404,7 +536,13 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
                 || h.equals("no") || h.equals("nro") || h.equals("numero") || h.equals("número");
     }
 
+    /** Diseño sin datos de muestra: los anchos salen solo de las cabeceras. */
     private JasperDesign construirDiseno(List<String> headers, boolean vertical) throws Exception {
+        return construirDiseno(headers, List.of(), vertical);
+    }
+
+    private JasperDesign construirDiseno(List<String> headers, List<Map<String, ?>> rows, boolean vertical)
+            throws Exception {
         int n = headers.size();
         if (n > MAX_COLS) {
             throw new BadRequestException(
@@ -412,7 +550,7 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
         }
         // La hoja puede ir apaisada (muchas columnas) o vertical (pocas y anchas).
         int anchoUtil = vertical ? ANCHO_PAGINA_VERTICAL : ANCHO_PAGINA;
-        int[] anchos = anchoColumna(headers, n, anchoUtil);
+        int[] anchos = anchoColumna(headers, rows, n, anchoUtil);
 
         JasperDesign design;
         var resource = new ClassPathResource(PLANTILLA);
@@ -428,8 +566,8 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
             design.setPageWidth(595);
             design.setPageHeight(842);
             design.setColumnWidth(anchoUtil);
-            ajustarAnchoTitulo(design, anchoUtil);
         }
+        ajustarAnchoTitulo(design, anchoUtil);
 
         // Un campo por columna; el contenido de la tabla viaja en el mapa de cada fila.
         for (int i = 0; i < n; i++) {
@@ -465,6 +603,7 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
         }
 
         boolean centrarPrimera = esColumnaId(headers.get(0));
+        boolean[] numericas = columnasNumericas(rows, n);
         int x = 0;
         for (int i = 0; i < n; i++) {
             int ancho = anchos[i];
@@ -486,6 +625,10 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
             valor.setExpression(new JRDesignExpression("$F{fc" + i + "}"));
             if (i == 0 && centrarPrimera) {
                 valor.setHorizontalTextAlign(HorizontalTextAlignEnum.CENTER);
+            } else if (numericas[i]) {
+                // Las cantidades se leen mejor alineadas a la derecha.
+                valor.setHorizontalTextAlign(HorizontalTextAlignEnum.RIGHT);
+                cabecera.setHorizontalTextAlign(HorizontalTextAlignEnum.RIGHT);
             }
             bandaDetalle.addElement(valor);
 
@@ -510,7 +653,11 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
             return;
         }
         for (JRElement e : elementsOf(design.getTitle())) {
-            ((JRDesignElement) e).setForecolor(color);
+            var el = (JRDesignElement) e;
+            // Solo el título y la línea: el subtítulo se queda en gris.
+            if ("TITULO".equals(el.getKey()) || "LINEA".equals(el.getKey())) {
+                el.setForecolor(color);
+            }
         }
         for (JRElement e : elementsOf(design.getSummary())) {
             ((JRDesignElement) e).setForecolor(color);

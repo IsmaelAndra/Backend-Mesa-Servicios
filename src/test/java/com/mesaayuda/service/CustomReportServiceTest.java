@@ -378,4 +378,28 @@ class CustomReportServiceTest {
         assertDoesNotThrow(() -> llenar(report, 1, 1, new ByteArrayInputStream(pngBytes())),
                 "con logo la cabecera debe imprimirse sin problema");
     }
+
+    @Test
+    void celdas_lasFechasYLosBooleanosSeLeenComoPersonas() {
+        java.sql.Timestamp t = java.sql.Timestamp.from(java.time.Instant.parse("2026-09-30T14:05:00Z"));
+        assertEquals("30/09/2026 09:05", CustomReportService.formatear(t), "en hora de Ecuador, sin milisegundos");
+        assertEquals("Sí", CustomReportService.formatear(Boolean.TRUE));
+        assertEquals("12.5", CustomReportService.formatear(new java.math.BigDecimal("12.500")));
+        assertEquals("", CustomReportService.formatear(null));
+    }
+
+    @Test
+    void columnas_elAnchoSigueAlContenido() {
+        List<Map<String, ?>> filas = new ArrayList<>();
+        for (int r = 0; r < 5; r++) {
+            Map<String, Object> f = new HashMap<>();
+            f.put("fc0", String.valueOf(r));
+            f.put("fc1", "Descripcion bastante larga del problema numero " + r);
+            f.put("fc2", "BAJA");
+            filas.add(f);
+        }
+        int[] anchos = service.anchoColumna(List.of("Ticket", "Descripción", "Prioridad"), filas, 3, 802);
+        assertEquals(802, anchos[0] + anchos[1] + anchos[2], "de margen a margen");
+        assertTrue(anchos[1] > anchos[2] && anchos[2] > anchos[0], "la descripción, la más ancha; el número, la más angosta");
+    }
 }

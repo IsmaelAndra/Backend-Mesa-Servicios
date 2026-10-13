@@ -1,0 +1,101 @@
+# ==============================================================================
+# Mesa de Servicios COAC: PRODUCCIÓN en el servidor (EC2) con imágenes de GHCR
+# ==============================================================================
+# No construye nada: descarga las imágenes ya publicadas en GitHub Container
+# Registry (ver docker-compose.yml y README.md) y las levanta.
+#
+#   navegador ─HTTPS─► Nginx del servidor (80/443, ya existe)
+#                          │  red de Docker compartida (PROXY_NETWORK)
+#                          ▼
+#                      frontend:8080 (Nginx + Angular) ──/api──► backend:8080 ──► db:5432
+#
+# Ningún contenedor publica puertos en el servidor. El Nginx existente llega al
+# frontend por la red compartida, con el nombre "mesa-servicios-frontend".
+# PostgreSQL está en una red interna sin salida a internet.
+#
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# (Con COMPOSE_FILE=docker-compose.prod.yml en el .env no hace falta el -f.)
+# ==============================================================================
+
+name: mesa-servicios
+
+x-logs: &logs
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-mesa_ayuda_coac}
+      POSTGRES_USER: ${DB_USERNAME:-mesa_ayuda}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD en .env}
+      TZ: America/Guayaquil
+      PGTZ: America/Guayaquil
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [datos]
+    logging: *logs
+
+  backend:
+    image: ghcr.io/${GHCR_OWNER:?Falta GHCR_OWNER en .env}/mesa-servicios-backend:${VERSION:?Falta VERSION en .env}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      SPRING_PROFILES_ACTIVE: prod
+      UPLOAD_DIR: /app/uploads
+      # Solo el Nginx del frontend llega al backend, y sobrescribe X-Forwarded-For.
+      APP_TRUST_FORWARDED_HEADERS: "true"
+    volumes:
+      - uploads:/app/uploads
+      - logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [datos, app]
+    logging: *logs
+
+  frontend:
+    image: ghcr.io/${GHCR_OWNER:?Falta GHCR_OWNER en .env}/mesa-servicios-frontend:${VERSION:?Falta VERSION en .env}
+    restart: unless-stopped
+    environment:
+      # Red desde la que llega el Nginx del servidor: de ahí se acepta
+      # X-Forwarded-For para conocer la IP real del usuario.
+      REAL_IP_FROM: ${REAL_IP_FROM:-172.16.0.0/12}
+    # Sin "ports": el Nginx del servidor llega por la red "proxy".
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      app: {}
+      proxy:
+        # Nombre con el que el Nginx del servidor lo encuentra. Único, para no
+        # chocar con otro "frontend" de otra aplicación en la misma red.
+        aliases: [mesa-servicios-frontend]
+    logging: *logs
+
+networks:
+  datos:
+    internal: true
+  app: {}
+  # Red de Docker donde vive el Nginx del servidor. Ya existe: no se crea aquí.
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:?Falta PROXY_NETWORK en .env}
+
+volumes:
+  pgdata:
+  uploads:
+  logs:

@@ -60,9 +60,11 @@ public class CalendarService {
                 evStart = t.getStartTask();
                 evEnd = endForDates(t.getStartTask(), t.getDueTask(), t.getCreatedAtTask());
             }
-            // Las tareas de todo el día (sin fechas) siempre se muestran;
-            // el resto solo si su ventana coincide con el rango visible.
-            if (!allDay && (evEnd.isBefore(start) || evStart.isAfter(end))) {
+            // Todas, también las de día completo, solo si caen en el rango. Antes
+            // las tareas sin fechas se devolvían siempre: fuera de su día no se
+            // pintaban, pero la leyenda y el contador las sumaban ("4 eventos"
+            // en una semana vacía).
+            if (evEnd.isBefore(start) || evStart.isAfter(end)) {
                 continue;
             }
             result.add(new CalendarEventResponse(
@@ -122,15 +124,20 @@ public class CalendarService {
         return created.plusHours(2);
     }
 
-    /** 00:00:00 del día indicado. */
+    /**
+     * 00:00:00 del día indicado, en hora de Ecuador. La fecha llega en UTC: sin
+     * pasarla a la zona local, las 00:00Z son las 19:00 del día anterior y la
+     * barra de "todo el día" ocupaba dos días en el calendario.
+     */
     private OffsetDateTime inicioDelDia(OffsetDateTime momento) {
         OffsetDateTime base = momento != null ? momento : OffsetDateTime.now();
-        return base.withHour(0).withMinute(0).withSecond(0).withNano(0);
+        return base.atZoneSameInstant(ZONA).toLocalDate().atStartOfDay(ZONA).toOffsetDateTime();
     }
 
-    /** 23:59:59 del día indicado. */
+    /** 23:59:59 del día indicado, en hora de Ecuador. */
     private OffsetDateTime finDelDia(OffsetDateTime momento) {
-        OffsetDateTime base = momento != null ? momento : OffsetDateTime.now();
-        return base.withHour(23).withMinute(59).withSecond(59).withNano(0);
+        return inicioDelDia(momento).plusDays(1).minusSeconds(1);
     }
+
+    private static final java.time.ZoneId ZONA = java.time.ZoneId.of("America/Guayaquil");
 }

@@ -20,10 +20,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.util.List;
-
 /**
- * Crea las cuentas administrativas iniciales al arrancar.
+ * Crea la unica cuenta inicial, el SUPER_ADMIN, al arrancar. El resto de
+ * cuentas (administradores, agentes, jefes de area...) las crea el SUPER_ADMIN
+ * desde la aplicacion.
  * <p>
  * Antes estas cuentas vivian en data.sql con la contrasena {@code Default123!}
  * escrita en el repositorio, lo que hacia que cualquiera con acceso al codigo
@@ -31,7 +31,7 @@ import java.util.List;
  * instalacion. Aqui la clave llega desde {@code ADMIN_SEED_PASSWORD} y, si no
  * viene definida, no se crea ninguna cuenta administrativa.
  * <p>
- * Las cuentas quedan con {@code mustChangePassword = TRUE}: el filtro de
+ * La cuenta queda con {@code mustChangePassword = TRUE}: el filtro de
  * seguridad impide usarlas para nada mas que cambiar la clave.
  */
 @Component
@@ -41,7 +41,6 @@ public class AdminSeedInitializer implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(AdminSeedInitializer.class);
 
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
-    private static final String ADMIN_ROLE = "ADMIN";
     private static final String TI_AREA = "TI";
     private static final String TI_TEAM = "Equipo TI";
 
@@ -54,7 +53,6 @@ public class AdminSeedInitializer implements ApplicationRunner {
 
     private final String seedPassword;
     private final String superAdminEmail;
-    private final String adminEmail;
 
     public AdminSeedInitializer(UserRepository userRepository,
                                 RoleRepository roleRepository,
@@ -63,8 +61,7 @@ public class AdminSeedInitializer implements ApplicationRunner {
                                 TeamUserRepository teamUserRepository,
                                 PasswordEncoder passwordEncoder,
                                 @Value("${app.admin-seed.password}") String seedPassword,
-                                @Value("${app.admin-seed.superadmin-email:superadmin@coacmagisterio.fin.ec}") String superAdminEmail,
-                                @Value("${app.admin-seed.admin-email:admin@coacmagisterio.fin.ec}") String adminEmail) {
+                                @Value("${app.admin-seed.superadmin-email:superadmin@coacmagisterio.fin.ec}") String superAdminEmail) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.areaRepository = areaRepository;
@@ -73,7 +70,6 @@ public class AdminSeedInitializer implements ApplicationRunner {
         this.passwordEncoder = passwordEncoder;
         this.seedPassword = seedPassword;
         this.superAdminEmail = superAdminEmail;
-        this.adminEmail = adminEmail;
     }
 
     @Override
@@ -88,30 +84,19 @@ public class AdminSeedInitializer implements ApplicationRunner {
         Role superAdminRole = roleRepository.findByNameRole(SUPER_ADMIN_ROLE)
                 .orElseThrow(() -> new IllegalStateException(
                         "Falta el rol " + SUPER_ADMIN_ROLE + " en la base. Revisa db/migration/R__datos_base.sql."));
-        Role adminRole = roleRepository.findByNameRole(ADMIN_ROLE)
-                .orElseThrow(() -> new IllegalStateException(
-                        "Falta el rol " + ADMIN_ROLE + " en la base. Revisa db/migration/R__datos_base.sql."));
         Area tiArea = areaRepository.findByNameArea(TI_AREA)
                 .orElseThrow(() -> new IllegalStateException(
                         "Falta el area " + TI_AREA + " en la base. Revisa db/migration/R__datos_base.sql."));
 
-        var creados = new java.util.ArrayList<String>();
-        if (crearSiFalta(superAdminEmail, "1000000001", "0990000001", superAdminRole, tiArea)) {
-            creados.add(superAdminEmail + " (SUPER_ADMIN)");
-        }
-        if (crearSiFalta(adminEmail, "1000000002", "0990000002", adminRole, tiArea)) {
-            creados.add(adminEmail + " (ADMIN)");
-        }
-
-        if (creados.isEmpty()) {
-            log.info("Ya existian las cuentas administrativas: no se modifica ninguna.");
+        if (!crearSiFalta(superAdminEmail, "1000000001", "0990000001", superAdminRole, tiArea)) {
+            log.info("Ya existia la cuenta {}: no se modifica.", superAdminEmail);
             return;
         }
 
         meterEnEquipoTi();
 
-        log.warn("Cuentas administrativas iniciales creadas: {}. "
-                + "Cada una debe cambiar su contrasena en el primer login.", String.join(", ", creados));
+        log.warn("Cuenta inicial creada: {} (SUPER_ADMIN). Debe cambiar su contrasena en el primer login "
+                + "y desde ahi crear el resto de cuentas.", superAdminEmail);
     }
 
     private boolean crearSiFalta(String email, String identification, String phone, Role role, Area area) {
@@ -134,18 +119,15 @@ public class AdminSeedInitializer implements ApplicationRunner {
 
     private void meterEnEquipoTi() {
         supportTeamRepository.findByNameTeam(TI_TEAM).ifPresent(team -> {
-            List<String> emails = List.of(superAdminEmail, adminEmail);
-            for (String email : emails) {
-                userRepository.findByCorporateEmailUser(email).ifPresent(user -> {
-                    if (!teamUserRepository.existsByTeamIdTeamAndUserIdUser(team.getIdTeam(), user.getIdUser())) {
-                        TeamUser link = new TeamUser();
-                        link.setTeam(team);
-                        link.setUser(user);
-                        link.setActiveTeamUser(true);
-                        teamUserRepository.save(link);
-                    }
-                });
-            }
+            userRepository.findByCorporateEmailUser(superAdminEmail).ifPresent(user -> {
+                if (!teamUserRepository.existsByTeamIdTeamAndUserIdUser(team.getIdTeam(), user.getIdUser())) {
+                    TeamUser link = new TeamUser();
+                    link.setTeam(team);
+                    link.setUser(user);
+                    link.setActiveTeamUser(true);
+                    teamUserRepository.save(link);
+                }
+            });
         });
     }
 }

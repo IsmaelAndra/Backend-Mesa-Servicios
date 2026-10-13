@@ -181,6 +181,15 @@ public class WorkflowEventPublisher {
         String clave = tipo.name() + ":" + entidadId + ":" + UUID.randomUUID().toString().substring(0, 13);
         // Se captura ahora: en el afterCommit ya no estamos dentro del nodo.
         WorkflowOrigen.Datos origen = WorkflowOrigen.actual();
+        if (origen == null) {
+            // Quién lo provocó (la sesión de la petición). Se usa, por ejemplo, para
+            // que un ADMIN vea en "Mis solicitudes" las aprobaciones que originó.
+            String actor = correoActual();
+            if (actor != null) {
+                datos = new LinkedHashMap<>(datos);
+                datos.put("actorCorreo", actor);
+            }
+        }
         WorkflowEvento evento = new WorkflowEvento(tipo.name(), clave, datos, entidadTipo, entidadId, origen);
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             disparar(evento);
@@ -192,6 +201,17 @@ public class WorkflowEventPublisher {
                 disparar(evento);
             }
         });
+    }
+
+    /** Correo de la sesión actual, o null si no hay persona autenticada (tareas programadas). */
+    private static String correoActual() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getName() == null
+                || auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
+            return null;
+        }
+        return auth.getName().contains("@") ? auth.getName() : null;
     }
 
     private void disparar(WorkflowEvento evento) {

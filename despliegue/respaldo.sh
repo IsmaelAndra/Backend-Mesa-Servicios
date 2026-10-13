@@ -7,9 +7,9 @@
 #   DIAS=30 ./respaldo.sh         borra las copias de más de 30 días (14 por defecto)
 #
 # Para cron (cada noche a las 02:30):
-#   30 2 * * * cd /opt/mesa-servicios/Backend-Mesa-Servicios/despliegue && ./respaldo.sh >> ~/respaldos/respaldo.log 2>&1
+#   30 2 * * * cd /opt/mesa-servicios && ./respaldo.sh >> ~/respaldos/respaldo.log 2>&1
 #
-# Restaurar: INSTALACION.md, punto 4.2. Copia el destino FUERA de este servidor.
+# Restaurar: README.md, punto 7.2. Copia el destino FUERA de este servidor.
 # ==============================================================================
 set -eu
 

@@ -11,6 +11,7 @@ import com.mesaayuda.entity.SupportTeam;
 import com.mesaayuda.entity.User;
 import com.mesaayuda.entity.Workflow;
 import com.mesaayuda.repository.AreaRepository;
+import com.mesaayuda.repository.AssetRepository;
 import com.mesaayuda.repository.SupportTeamRepository;
 import com.mesaayuda.repository.WorkflowRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -50,9 +52,17 @@ class SearchServiceTest {
     @Mock private TicketAccessPolicy accessPolicy;
     @Mock private AreaRepository areaRepository;
     @Mock private SupportTeamRepository supportTeamRepository;
+    @Mock private AssetRepository assetRepository;
+    @Mock private AssetService assetService;
     @Mock private WorkflowRepository workflowRepository;
 
     @InjectMocks private SearchService searchService;
+
+    /** El alcance de activos lo da AssetService; aquí basta un Specification vacío. */
+    @org.junit.jupiter.api.BeforeEach
+    void alcanceDeActivos() {
+        lenient().when(assetService.alcanceVisible(any())).thenReturn((root, query, cb) -> null);
+    }
 
     private User usuario;
 
@@ -98,6 +108,11 @@ class SearchServiceTest {
         when(areaRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(area)));
 
+        // Los activos se consultan para todos los roles, con el alcance que da
+        // AssetService (aquí un Specification vacío: el repositorio es un mock).
+        lenient().when(assetRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
         when(ticketService.search(any(), any(), any(), any(), any(), any(),
                 any(), any(), any(Integer.class), any(Integer.class)))
                 .thenReturn(new PageImpl<>(List.of(ticketResponse())));
@@ -117,6 +132,8 @@ class SearchServiceTest {
         when(supportTeamRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
         when(areaRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(assetRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
         when(ticketService.search(any(), any(), any(), any(), any(), any(),
                 any(), any(), any(Integer.class), any(Integer.class)))
@@ -153,8 +170,21 @@ class SearchServiceTest {
         assertTrue(r.users().isEmpty());
         assertTrue(r.agents().isEmpty());
         assertTrue(r.workflows().isEmpty());
+        assertTrue(r.assets().isEmpty());
         verify(userService, never()).findAllPorSpec(any(), any());
         verify(workflowRepository, never()).buscarPorTexto(any(), any());
+    }
+
+    @Test
+    void unSolicitanteBuscaSoloEntreSusActivos() {
+        como("USER");
+        when(accessPolicy.esPersonal(usuario)).thenReturn(false);
+        datosDeApoyo();
+
+        searchService.buscar("laptop");
+
+        // El corte lo pone AssetService.alcanceVisible: el mismo que el listado.
+        verify(assetService).alcanceVisible(usuario);
     }
 
     @Test
@@ -229,6 +259,7 @@ class SearchServiceTest {
         assertTrue(r.users().isEmpty());
         assertTrue(r.agents().isEmpty());
         assertTrue(r.workflows().isEmpty());
+        assertTrue(r.assets().isEmpty());
         assertEquals("xyz", r.query());
     }
 

@@ -16,6 +16,7 @@ import java.util.List;
  * @param teams     equipos de soporte activos
  * @param areas     áreas no borradas y activas
  * @param workflows procesos automatizados; solo se sirve a SUPER_ADMIN
+ * @param assets    activos de TI; visible para personal (AGENT, ADMIN, SUPER_ADMIN, AREA_MANAGER)
  */
 public record GlobalSearchResponse(
         String query,
@@ -24,7 +25,8 @@ public record GlobalSearchResponse(
         List<SearchUserItem> agents,
         List<SearchTeamItem> teams,
         List<SearchAreaItem> areas,
-        List<SearchWorkflowItem> workflows) {
+        List<SearchWorkflowItem> workflows,
+        List<SearchAssetItem> assets) {
 
     public GlobalSearchResponse {
         tickets = tickets == null ? List.of() : tickets;
@@ -33,5 +35,6 @@ public record GlobalSearchResponse(
         teams = teams == null ? List.of() : teams;
         areas = areas == null ? List.of() : areas;
         workflows = workflows == null ? List.of() : workflows;
+        assets = assets == null ? List.of() : assets;
     }
 }

@@ -34,7 +34,7 @@ public class AiController {
 
     @PostMapping("/chat")
     @Operation(summary = "Chat libre con el asistente IA (widget flotante)")
-    @PreAuthorize("hasAnyRole('ADMIN','AGENT','SUPER_ADMIN','USER')")
+    @PreAuthorize("hasAnyRole('ADMIN','AGENT','SUPER_ADMIN','USER','AREA_MANAGER')")
     public ResponseEntity<AiAssistResponse> chat(@Valid @RequestBody AiChatRequest request) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String user = auth != null ? auth.getName() : "anonimo";
@@ -46,7 +46,7 @@ public class AiController {
 
     @GetMapping("/config")
     @Operation(summary = "Estado del asistente IA (habilitado, proveedor, modelo e icono)")
-    @PreAuthorize("hasAnyRole('ADMIN','AGENT','SUPER_ADMIN','USER')")
+    @PreAuthorize("hasAnyRole('ADMIN','AGENT','SUPER_ADMIN','USER','AREA_MANAGER')")
     public ResponseEntity<AiStatusResponse> config() {
         return ResponseEntity.ok(aiAssistantService.status());
     }

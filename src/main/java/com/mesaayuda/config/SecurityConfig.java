@@ -136,6 +136,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/users/agents")
                         .hasAnyAuthority("ROLE_AGENT", "ROLE_ADMIN", "ROLE_SUPER_ADMIN")
                 .requestMatchers("/users", "/users/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
+                .requestMatchers("/workflows/aprobaciones", "/workflows/aprobaciones/**")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
                 .requestMatchers("/calendar/**", "/tasks/**", "/quick-replies", "/quick-replies/**")
                         .hasAnyAuthority("ROLE_AGENT", "ROLE_ADMIN", "ROLE_SUPER_ADMIN")
                 .anyRequest().authenticated()

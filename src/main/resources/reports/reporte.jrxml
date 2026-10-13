@@ -1,63 +1,120 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Created with Jaspersoft Studio version 7.0.8.final using JasperReports Library version 5.5.2  -->
-<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd" name="reporte" pageWidth="842" pageHeight="595" orientation="Landscape" whenNoDataType="AllSectionsNoDetail" columnWidth="802" leftMargin="20" rightMargin="20" topMargin="20" bottomMargin="20" uuid="1234307b-f5c4-44ac-a0ae-a6cf29da6762">
+<!--
+  Plantilla única de los reportes personalizados (CustomReportService).
+
+  No es un reporte terminado: el servicio la carga, clona TPL_HEADER y TPL_DETAIL
+  una vez por columna de la consulta, reparte los anchos y pinta con el color de
+  la marca (título, línea, cabecera de la tabla). Los elementos de la cabecera y
+  del pie llevan "key" para que el servicio los reacomode al pasar a vertical.
+
+  Diseño:
+    - Cabecera: logo a la izquierda; título y "generado / descargado por" a la
+      derecha; línea del color de la marca debajo.
+    - Tabla: cabecera opaca con el color de la marca; filas que crecen si el texto
+      no cabe (textAdjust StretchHeight), separador fino y filas pares sombreadas.
+    - Pie: título del reporte y "Página X de Y" en cada hoja.
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd" name="reporte" pageWidth="842" pageHeight="595" orientation="Landscape" whenNoDataType="AllSectionsNoDetail" columnWidth="802" leftMargin="20" rightMargin="20" topMargin="20" bottomMargin="16" uuid="1234307b-f5c4-44ac-a0ae-a6cf29da6762">
+	<style name="Fila" mode="Transparent" fontName="SansSerif" fontSize="8">
+		<conditionalStyle>
+			<conditionExpression><![CDATA[$V{REPORT_COUNT} % 2 == 0]]></conditionExpression>
+			<style mode="Opaque" backcolor="#F3F6FB"/>
+		</conditionalStyle>
+	</style>
 	<parameter name="TITULO" class="java.lang.String" isForPrompting="false"/>
 	<parameter name="FECHA" class="java.lang.String" isForPrompting="false"/>
 	<parameter name="TOTAL" class="java.lang.Integer" isForPrompting="false"/>
 	<parameter name="LOGO" class="java.io.InputStream" isForPrompting="false"/>
 	<parameter name="USUARIO" class="java.lang.String" isForPrompting="false"/>
 	<title>
-		<band height="85">
-			<image>
-				<reportElement positionType="Float" x="30" y="6" width="240" height="56" uuid="1d2cba69-e345-49bb-9140-d445a269a3cf">
+		<band height="72">
+			<image scaleImage="RetainShape" hAlign="Left" vAlign="Middle" onErrorType="Blank">
+				<reportElement key="LOGO" x="0" y="0" width="170" height="52" uuid="1d2cba69-e345-49bb-9140-d445a269a3cf">
 					<printWhenExpression><![CDATA[$P{LOGO} != null]]></printWhenExpression>
 				</reportElement>
 				<imageExpression><![CDATA[$P{LOGO}]]></imageExpression>
 			</image>
-			<textField>
-				<reportElement x="290" y="12" width="512" height="26" forecolor="#062E86" uuid="fa87a8eb-9e45-4045-aac9-bab617def0ab"/>
-				<textElement textAlignment="Center" verticalAlignment="Middle">
-					<font fontName="SansSerif" size="16" isBold="true"/>
+			<textField textAdjust="ScaleFont">
+				<reportElement key="TITULO" x="190" y="4" width="612" height="26" forecolor="#062E86" uuid="fa87a8eb-9e45-4045-aac9-bab617def0ab"/>
+				<textElement textAlignment="Right" verticalAlignment="Middle">
+					<font fontName="SansSerif" size="17" isBold="true"/>
 				</textElement>
 				<textFieldExpression><![CDATA[$P{TITULO}]]></textFieldExpression>
 			</textField>
 			<textField>
-				<reportElement x="290" y="42" width="512" height="16" uuid="9be730aa-4429-491e-8d17-0e767cec00ac"/>
-				<textElement textAlignment="Center" verticalAlignment="Middle">
-					<font fontName="SansSerif" size="10"/>
+				<reportElement key="SUBTITULO" x="190" y="32" width="612" height="16" forecolor="#64748B" uuid="9be730aa-4429-491e-8d17-0e767cec00ac"/>
+				<textElement textAlignment="Right" verticalAlignment="Middle">
+					<font fontName="SansSerif" size="9"/>
 				</textElement>
 				<textFieldExpression><![CDATA["Generado: " + $P{FECHA} + "   ·   Descargado por: " + $P{USUARIO}]]></textFieldExpression>
 			</textField>
+			<line>
+				<reportElement key="LINEA" x="0" y="60" width="802" height="1" forecolor="#062E86" uuid="5b1c0a0e-8b7a-4d61-a3b2-2f6f1e0e4c11"/>
+				<graphicElement>
+					<pen lineWidth="2.0"/>
+				</graphicElement>
+			</line>
 		</band>
 	</title>
 	<columnHeader>
-		<band height="18">
+		<band height="24">
 			<staticText>
-				<reportElement key="TPL_HEADER" mode="Opaque" x="0" y="0" width="120" height="18" forecolor="#FFFFFF" backcolor="#062E86" uuid="45e922e1-c978-420d-8839-c92280cbaf4b"/>
-				<textElement textAlignment="Center" verticalAlignment="Middle">
-					<font fontName="SansSerif" size="9" isBold="true"/>
+				<reportElement key="TPL_HEADER" mode="Opaque" x="0" y="0" width="120" height="24" forecolor="#FFFFFF" backcolor="#062E86" uuid="45e922e1-c978-420d-8839-c92280cbaf4b"/>
+				<box leftPadding="5" rightPadding="5">
+					<rightPen lineWidth="0.5" lineColor="#FFFFFF"/>
+				</box>
+				<textElement textAlignment="Left" verticalAlignment="Middle">
+					<font fontName="SansSerif" size="8" isBold="true"/>
 				</textElement>
 				<text><![CDATA[COLUMNA]]></text>
 			</staticText>
 		</band>
 	</columnHeader>
 	<detail>
-		<band height="16">
-			<textField>
-				<reportElement key="TPL_DETAIL" x="0" y="0" width="120" height="16" uuid="da8b003b-b624-4f74-bb12-2b0b6b1d5e21"/>
-				<textElement textAlignment="Center" verticalAlignment="Middle">
+		<band height="18">
+			<textField textAdjust="StretchHeight">
+				<reportElement key="TPL_DETAIL" style="Fila" stretchType="RelativeToTallestObject" x="0" y="0" width="120" height="18" forecolor="#1F2937" uuid="da8b003b-b624-4f74-bb12-2b0b6b1d5e21"/>
+				<box topPadding="3" leftPadding="5" bottomPadding="3" rightPadding="5">
+					<bottomPen lineWidth="0.5" lineColor="#E2E8F0"/>
+				</box>
+				<textElement textAlignment="Left" verticalAlignment="Middle">
 					<font fontName="SansSerif" size="8"/>
 				</textElement>
 				<textFieldExpression><![CDATA[$F{c0}]]></textFieldExpression>
 			</textField>
 		</band>
 	</detail>
-	<summary>
-		<band height="30">
+	<pageFooter>
+		<band height="22">
 			<textField>
-				<reportElement x="0" y="10" width="802" height="20" forecolor="#062E86" uuid="30acad91-d175-4221-af70-e80feac9a3af"/>
+				<reportElement key="PIE_TITULO" x="0" y="8" width="600" height="14" forecolor="#94A3B8" uuid="7c3e6b1a-2d4f-4a8e-9b0c-1e2f3a4b5c6d"/>
+				<textElement textAlignment="Left" verticalAlignment="Middle">
+					<font fontName="SansSerif" size="8"/>
+				</textElement>
+				<textFieldExpression><![CDATA[$P{TITULO}]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement key="PIE_PAGINA" x="600" y="8" width="160" height="14" forecolor="#94A3B8" uuid="8d4f7c2b-3e5a-4b9f-ac1d-2f3a4b5c6d7e"/>
 				<textElement textAlignment="Right" verticalAlignment="Middle">
-					<font fontName="SansSerif" size="10" isBold="true"/>
+					<font fontName="SansSerif" size="8"/>
+				</textElement>
+				<textFieldExpression><![CDATA["Página " + $V{PAGE_NUMBER} + " de"]]></textFieldExpression>
+			</textField>
+			<textField evaluationTime="Report">
+				<reportElement key="PIE_TOTAL" x="760" y="8" width="42" height="14" forecolor="#94A3B8" uuid="9e5a8d3c-4f6b-4cae-bd2e-3a4b5c6d7e8f"/>
+				<textElement textAlignment="Left" verticalAlignment="Middle">
+					<font fontName="SansSerif" size="8"/>
+				</textElement>
+				<textFieldExpression><![CDATA[" " + $V{PAGE_NUMBER}]]></textFieldExpression>
+			</textField>
+		</band>
+	</pageFooter>
+	<summary>
+		<band height="26">
+			<textField>
+				<reportElement key="RESUMEN" x="0" y="8" width="802" height="18" forecolor="#062E86" uuid="30acad91-d175-4221-af70-e80feac9a3af"/>
+				<textElement textAlignment="Right" verticalAlignment="Middle">
+					<font fontName="SansSerif" size="9" isBold="true"/>
 				</textElement>
 				<textFieldExpression><![CDATA["Total de registros: " + $P{TOTAL}]]></textFieldExpression>
 			</textField>

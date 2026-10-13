@@ -4,9 +4,11 @@
 # Dos etapas: en la primera se compila con el JDK y Gradle; en la segunda solo
 # queda el JRE con el .jar, sin código fuente ni herramientas de compilación.
 #
-#   docker build -t mesa-servicios-backend .
+#   docker build -t ghcr.io/<usuario>/mesa-servicios-backend:1.0.0 .
 #
 # Las pruebas no se ejecutan aquí (las corre GitHub Actions en cada push).
+# No lleva secretos: todo (base de datos, JWT, Graph) entra por variables de
+# entorno al arrancar el contenedor.
 # ==============================================================================
 
 # ---------- Etapa 1: compilación ----------
@@ -28,6 +30,12 @@ RUN ./gradlew --no-daemon bootJar -x test \
 
 # ---------- Etapa 2: ejecución ----------
 FROM eclipse-temurin:17-jre-jammy
+
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="mesa-servicios-backend" \
+      org.opencontainers.image.description="Mesa de Servicios COAC - API Spring Boot" \
+      org.opencontainers.image.source="https://github.com/IsmaelAndra/Backend-Mesa-Servicios" \
+      org.opencontainers.image.version="${VERSION}"
 
 # fontconfig + DejaVu: JasperReports dibuja los PDF con AWT y, sin fuentes del
 # sistema, los informes fallan o salen sin texto. curl, para el healthcheck.

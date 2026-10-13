@@ -1,4 +1,6 @@
 package com.mesaayuda.entity;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import jakarta.persistence.*;
@@ -103,6 +105,12 @@ public class User {
     /** Los tokens de acceso emitidos antes de este instante ya no valen. */
     @Column(name = "tokens_valid_after")
     private OffsetDateTime tokensValidAfter;
+
+    @OneToMany(mappedBy = "assignedUser", fetch = FetchType.LAZY)
+    private List<Asset> assignedAssets = new ArrayList<>();
+
+    @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+    private List<AssetHistory> assetHistory = new ArrayList<>();
 
     public String getFullName() {
         if (displayName != null && !displayName.isBlank()) {

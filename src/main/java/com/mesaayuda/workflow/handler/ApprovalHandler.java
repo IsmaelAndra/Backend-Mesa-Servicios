@@ -25,11 +25,10 @@ import java.util.Set;
  * en {@code workflow_wait} y termina la ejecución en estado {@code APROBACION}.
  * Quien tiene el permiso decide desde la interfaz y otra ejecución continúa.
  *
- * <p><b>El rol que aprueba se compara con el ámbito del workflow.</b> No es un
- * detalle: si el proceso lo creó un ADMIN y el nodo pidiera aprobación de un
- * SUPER_ADMIN, el workflow estaría pidiendo algo que su autor no puede hacer. Se
- * comprueba al crear la espera y, si no cuadra, la ejecución falla con un motivo
- * legible en vez de quedarse esperando a alguien que nunca tendrá acceso.
+ * <p><b>Siempre decide un SUPER_ADMIN.</b> El flujo es: lo que hace un ADMIN (o
+ * cualquier persona) espera la firma del SUPER_ADMIN, y quien lo provocó ve el
+ * resultado en "Mis solicitudes". Un grafo antiguo con {@code rol} ADMIN, AGENT
+ * o USER se trata como SUPER_ADMIN: nunca baja el nivel de quien aprueba.
  */
 @Component
 public class ApprovalHandler implements WorkflowNodeHandler {
@@ -37,6 +36,9 @@ public class ApprovalHandler implements WorkflowNodeHandler {
     private static final Logger log = LoggerFactory.getLogger(ApprovalHandler.class);
 
     private static final Set<String> ROLES_CONOCIDOS = Set.of("SUPER_ADMIN", "ADMIN", "AGENT", "USER");
+
+    /** El único rol que decide aprobaciones. */
+    public static final String ROL_APROBADOR = "SUPER_ADMIN";
 
     private final WorkflowWaitRepository waitRepository;
     private final WorkflowActor actor;
@@ -69,20 +71,20 @@ public class ApprovalHandler implements WorkflowNodeHandler {
                     + "Roles válidos: " + ROLES_CONOCIDOS + ".");
         }
 
+        if (!ROL_APROBADOR.equals(rolSolicitado)) {
+            log.info("El nodo APPROVAL '{}' pedía {}; las aprobaciones las decide siempre un {}.",
+                    nodo.id(), rolSolicitado, ROL_APROBADOR);
+            rolSolicitado = ROL_APROBADOR;
+        }
+
         String ambito = contexto.leer("authorityScope") == null
                 ? null : String.valueOf(contexto.leer("authorityScope"));
         if (ambito != null && !actor.ambitoValido(ambito)) {
             return WorkflowResult.fallar("El nodo APPROVAL '" + nodo.id()
                     + "' no puede ejecutarse: el ambito del workflow no es valido.");
         }
-        if (ambito != null && superior(rolSolicitado, ambito)) {
-            // Un proceso de un ADMIN no puede exigir la firma de un SUPER_ADMIN.
-            // Sería la vía para que un workflow escale privilegios por la puerta
-            // de atrás, que es justo lo que el ambito pretende impedir.
-            return WorkflowResult.fallar("El nodo APPROVAL '" + nodo.id() + "' pide la aprobacion de un "
-                    + rolSolicitado + ", pero el workflow se ejecuta con ambito " + ambito
-                    + ". Un proceso no puede pedir mas permisos de los que tiene su autor.");
-        }
+        // Pedir la firma de alguien superior no da permisos al proceso: el motor
+        // sigue ejecutando con su ámbito. Por eso no se compara con él.
 
         // Aprobador concreto (opcional). Tiene que tener al menos el rol pedido:
         // si no, el nodo serviría para saltarse el control por rol.
@@ -100,9 +102,9 @@ public class ApprovalHandler implements WorkflowNodeHandler {
                 return WorkflowResult.fallar("El aprobador indicado en '" + nodo.id() + "' no existe o no está activo.");
             }
             String rolAprobador = aprobador.getRolUser() == null ? "" : aprobador.getRolUser().getNameRole();
-            if (rango(rolAprobador) < rango(rolSolicitado)) {
+            if (!ROL_APROBADOR.equals(rolAprobador)) {
                 return WorkflowResult.fallar("El aprobador indicado en '" + nodo.id() + "' es " + rolAprobador
-                        + " y la aprobación exige al menos " + rolSolicitado + ".");
+                        + " y las aprobaciones solo las decide un " + ROL_APROBADOR + ".");
             }
         }
 
@@ -166,11 +168,6 @@ public class ApprovalHandler implements WorkflowNodeHandler {
         // Sin límite declarado no caduca: una aprobación no vencida nunca debería
         // desaparecer sola. Si hay un plazo, se respeta.
         return h > 0 ? OffsetDateTime.now().plusHours(h) : null;
-    }
-
-    /** Si {@code rol} tiene más poder que {@code ambito}. */
-    private boolean superior(String rol, String ambito) {
-        return rango(rol) > rango(ambito);
     }
 
     public static int rango(String rol) {

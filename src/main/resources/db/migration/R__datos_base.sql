@@ -13,7 +13,8 @@ INSERT INTO role (name_role, description_role) VALUES
     ('SUPER_ADMIN', 'Super administrador con acceso total al sistema, configuración de marca, SLA, equipos, maestros'),
     ('ADMIN',       'Administrador del sistema con permisos de gestión de usuarios, tickets, reportes'),
     ('AGENT',       'Agente de soporte de mesa de ayuda, resuelve tickets asignados'),
-    ('USER',        'Usuario final solicitante de tickets')
+    ('USER',        'Usuario final solicitante de tickets'),
+    ('AREA_MANAGER','Jefe de área con permisos de gestión de activos y reportes de su área')
 ON CONFLICT (name_role) DO NOTHING;
 
 -- ===== ÁREAS =====

@@ -20,6 +20,13 @@ public record WorkflowAprobacionResponse(
         UUID entityId,
         String entityLabel,
         OffsetDateTime createdAt,
-        OffsetDateTime deadline
+        OffsetDateTime deadline,
+        /** PENDING, APPROVED, REJECTED o TIMEOUT. */
+        String status,
+        /** Correo de quien provocó la solicitud (si fue una persona). */
+        String requestedBy,
+        String decidedBy,
+        OffsetDateTime decidedAt,
+        String comment
 ) {
 }
