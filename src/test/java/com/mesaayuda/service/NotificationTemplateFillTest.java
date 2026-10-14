@@ -21,14 +21,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class NotificationTemplateFillTest {
 
     private NotificationService service;
+    private com.mesaayuda.repository.BrandingConfigRepository brandingRepo;
 
     @BeforeEach
     void setUp() {
         service = new NotificationService();
+        brandingRepo = Mockito.mock(com.mesaayuda.repository.BrandingConfigRepository.class);
         ReflectionTestUtils.setField(service, "templateRepository",
                 Mockito.mock(com.mesaayuda.repository.NotificationTemplateRepository.class));
-        ReflectionTestUtils.setField(service, "brandingConfigRepository",
-                Mockito.mock(com.mesaayuda.repository.BrandingConfigRepository.class));
+        ReflectionTestUtils.setField(service, "brandingConfigRepository", brandingRepo);
     }
 
     private String fill(String text, Map<String, Object> variables) throws Exception {
@@ -123,6 +124,74 @@ Map.of(),
 plantilla("TICKET_CREADO", "/templates/image/0123456789abcdef0123456789abcdef"));
 
 assertEquals("", cuerpo);
+}
+
+/**
+ * [logo] entrega la URL a secas, no la etiqueta &lt;img&gt;.
+ *
+ * <p>El relleno escapa todo lo que inserta, asi que cuando el valor era el HTML
+ * del logo completo llegaba al correo como texto literal: el encabezado salia con
+ * `&lt;img src=&quot;...&quot;` escrito dentro en vez de la imagen. Quien escribe
+ * la plantilla pone la etiqueta, igual que con [imagenUrl].
+ */
+@Test
+void elLogoSeRellenaConLaUrlSola() throws Exception {
+ReflectionTestUtils.setField(service, "appBaseUrl", "https://mesa.coac.gob.ec/api");
+conLogo("/uploads/publico/logo_c42c712b.png");
+
+String cuerpo = fillConPlantilla(
+"<img src=\"[logo]\" alt=\"Mesa de Ayuda COAC\" style=\"max-height:60px\" />",
+Map.of(),
+plantilla("TICKET_CREADO", null));
+
+assertEquals("<img src=\"https://mesa.coac.gob.ec/api/uploads/publico/logo_c42c712b.png\""
++ " alt=\"Mesa de Ayuda COAC\" style=\"max-height:60px\" />", cuerpo);
+}
+
+/** El valor de [logo] nunca debe traer una etiqueta, aunque se quede sin comillas. */
+@Test
+void elLogoNoSeRellenaConHtml() throws Exception {
+ReflectionTestUtils.setField(service, "appBaseUrl", "https://mesa.coac.gob.ec/api");
+conLogo("/uploads/publico/logo_c42c712b.png");
+
+Map<String, Object> comunes = comunes(Map.of());
+
+assertEquals("https://mesa.coac.gob.ec/api/uploads/publico/logo_c42c712b.png", comunes.get("logo"));
+}
+
+/**
+ * Una URL de logo escrita a mano con comillas no puede cerrar el atributo src ni
+ * colar un onerror en el correo institucional: el escapado lo neutralize.
+ */
+@Test
+void unaUrlDeLogoConComillasNoRompeElAtributo() throws Exception {
+ReflectionTestUtils.setField(service, "appBaseUrl", "");
+conLogo("/logo.png\" onerror=\"alert(1)");
+
+String cuerpo = fillConPlantilla("<img src=\"[logo]\" />", Map.of(), plantilla("TICKET_CREADO", null));
+
+assertEquals("<img src=\"/logo.png&quot; onerror=&quot;alert(1)\" />", cuerpo);
+assertFalse(cuerpo.contains("onerror=\"alert"), cuerpo);
+}
+
+/** Sin logo configurado la variable queda vacia y no aparece un token suelto. */
+@Test
+void sinLogoConfiguradoLaVariableQuedaVacia() throws Exception {
+ReflectionTestUtils.setField(service, "appBaseUrl", "https://mesa.coac.gob.ec/api");
+
+String cuerpo = fillConPlantilla("<img src=\"[logo]\" />", Map.of(), plantilla("TICKET_CREADO", null));
+
+assertEquals("<img src=\"\" />", cuerpo);
+assertFalse(cuerpo.contains("[logo]"), cuerpo);
+}
+
+/** Deja configurado un logo de marca para el servicio en pruebas. */
+private void conLogo(String logoUrl) {
+com.mesaayuda.entity.BrandingConfig branding = new com.mesaayuda.entity.BrandingConfig();
+branding.setIdBranding(UUID.randomUUID());
+branding.setLogoUrl(logoUrl);
+Mockito.when(brandingRepo.findTopByOrderByIdBrandingAsc())
+.thenReturn(java.util.Optional.of(branding));
 }
 
     /** Rellena como lo hace el envío real, con la plantilla de la que salen sus variables. */

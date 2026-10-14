@@ -369,7 +369,8 @@ public class NotificationService {
                 "correo", user.getCorporateEmailUser() == null ? "" : user.getCorporateEmailUser(),
                 "password", password == null ? "" : password,
                 "clave", password == null ? "" : password,
-                "logo", logoHtml());
+                // Solo la URL: ver la nota en comunes().
+                "logo", brandingLogoUrl());
     }
 
     private String defaultAccountBody(String heading, User user, String password) {
@@ -398,6 +399,12 @@ public class NotificationService {
     /**
      * Imagen del logo del sistema para la cabecera del correo. Si no hay logo
      * configurado, se muestra el nombre del sistema como texto.
+     *
+     * <p>Solo se usa concatenada dentro del HTML que arma el propio backend
+     * ({@link #wrapEmailBody} y los cuerpos de reserva), nunca como valor de la
+     * variable {@code [logo]}: esa entrega la URL a secas, porque todo lo que
+     * pasa por el relleno de plantillas se escapa y el HTML llegaría al correo
+     * como texto literal.
      */
     private String logoHtml() {
         String url = brandingLogoUrl();
@@ -742,7 +749,11 @@ private void imagenDePlantilla(Map<String, Object> valores, NotificationTemplate
         base.put("appName", "Mesa de Servicios");
         base.put("fecha", ahora.toLocalDate().toString());
         base.put("hora", String.format("%02d:%02d", ahora.getHour(), ahora.getMinute()));
-        base.put("logo", logoHtml());
+        // Solo la URL, no la etiqueta <img>. El relleno escapa todo lo que
+        // inserta, asi que antes el HTML del logo llegaba al correo como texto
+        // literal (&lt;img src=&quot;...) y el encabezado se veía roto.
+        // Quien escribe la plantilla pone la etiqueta, igual que con [imagenUrl].
+        base.put("logo", brandingLogoUrl());
         // Enlaces de la SPA. Se calculan aquí y no en cada disparador porque
         // cualquier plantilla puede usarlos, incluidas las que no son de ticket.
         String baseFrontend = urlFrontend("");
