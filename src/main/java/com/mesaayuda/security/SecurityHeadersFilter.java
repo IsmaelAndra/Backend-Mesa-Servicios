@@ -49,7 +49,18 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        if (habilitado) {
+        // Imágenes públicas (logo, fondos, avatares): llevan su propia CSP
+        // (PublicUploadHeadersFilter) y su caché (WebConfig). Con "no-store" el
+        // navegador volvía a bajar el fondo del login (más de 600 KB) en cada visita.
+        boolean publico = request.getRequestURI() != null
+                && request.getRequestURI().contains("/uploads/" + com.mesaayuda.config.UploadZones.PUBLICO + "/");
+        if (habilitado && publico) {
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            if (hstsMaxAge > 0 && esHttps(request)) {
+                response.setHeader("Strict-Transport-Security",
+                        "max-age=" + hstsMaxAge + "; includeSubDomains");
+            }
+        } else if (habilitado) {
             response.setHeader("Content-Security-Policy", csp);
             response.setHeader("X-Content-Type-Options", "nosniff");
             response.setHeader("X-Frame-Options", "DENY");

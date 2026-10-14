@@ -268,8 +268,19 @@ public class AdminController {
         return m;
     }
 
+    /**
+     * En producción la API y la aplicación comparten origen (Nginx del frontend),
+     * así que basta una ruta relativa ("/api/uploads/..."). Armar la URL completa
+     * dependía de que TODOS los proxies pasaran bien X-Forwarded-Proto y el host:
+     * si el del servidor no lo hacía, salía http://dominio:80/... dentro de una
+     * página https y el navegador no mostraba la imagen.
+     */
+    @org.springframework.beans.factory.annotation.Value("${app.urls-relativas:false}")
+    private boolean urlsRelativas;
+
     private String toAbsoluteUrl(HttpServletRequest request, String path) {
         if (path == null || path.startsWith("http")) return path == null ? "" : path;
+        if (urlsRelativas) return request.getContextPath() + path;
         String base = request.getScheme() + "://" + request.getServerName()
                 + ":" + request.getServerPort() + request.getContextPath();
         return base + path;

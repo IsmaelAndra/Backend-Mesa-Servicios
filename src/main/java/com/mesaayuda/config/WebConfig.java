@@ -11,7 +11,10 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import org.springframework.http.CacheControl;
+
 import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
 import java.nio.file.Paths;
 
 /**
@@ -59,8 +62,16 @@ import java.nio.file.Paths;
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         Path base = Paths.get(uploadDir).toAbsolutePath().normalize().resolve(UploadZones.PUBLICO);
         String location = "file:" + base.toString().replace("\\", "/") + "/";
-registry.addResourceHandler("/uploads/" + UploadZones.PUBLICO + "/**")
-                  .addResourceLocations(location);
+        // Antes salían sin Cache-Control y el navegador volvía a pedir el fondo del
+        // login y el logo en cada visita. Las imágenes de marca llevan un uuid en
+        // el nombre (un cambio crea otro archivo), así que pueden guardarse un mes.
+        // Los avatares conservan su nombre al actualizarse: caché de una hora.
+        registry.addResourceHandler("/uploads/" + UploadZones.PUBLICO + "/avatars/**")
+                .addResourceLocations(location + "avatars/")
+                .setCacheControl(CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic());
+        registry.addResourceHandler("/uploads/" + UploadZones.PUBLICO + "/**")
+                .addResourceLocations(location)
+                .setCacheControl(CacheControl.maxAge(30, TimeUnit.DAYS).cachePublic());
       }
   
       /**

@@ -51,6 +51,20 @@ class SecurityHeadersFilterTest {
     }
 
     @Test
+    @DisplayName("las imagenes publicas no llevan no-store (se pueden cachear)")
+    void lasImagenesPublicasSePuedenCachear() throws Exception {
+        MockHttpServletResponse img = pasar(crear(true, 31536000),
+                new MockHttpServletRequest("GET", "/api/uploads/publico/fondo_1.jpg"));
+        assertNull(img.getHeader("Cache-Control"), "el fondo del login se volvia a bajar en cada visita");
+        assertNull(img.getHeader("Content-Security-Policy"), "la CSP de la imagen la pone PublicUploadHeadersFilter");
+        assertEquals("nosniff", img.getHeader("X-Content-Type-Options"));
+
+        MockHttpServletResponse api = pasar(crear(true, 31536000),
+                new MockHttpServletRequest("GET", "/api/tickets"));
+        assertEquals("no-store", api.getHeader("Cache-Control"));
+    }
+
+    @Test
     @DisplayName("en produccion pone nosniff, DENY y no-referrer")
     void poneLasCabecerasBasicas() throws Exception {
         MockHttpServletResponse res = pasar(crear(true, 31536000),

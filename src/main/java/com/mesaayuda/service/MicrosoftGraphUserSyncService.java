@@ -127,7 +127,11 @@ public class MicrosoftGraphUserSyncService {
     }
 
     private void syncPhoto(User user, String upn) {
-        MicrosoftGraphService.GraphPhoto photo = graphService.getPhoto(upn, user.getMicrosoftPhotoEtag());
+        // Si el archivo no está en disco (base restaurada en otro servidor, volumen
+        // nuevo...), se pide sin etag: con él Microsoft responde "sin cambios" y la
+        // foto no se volvería a descargar nunca.
+        String etag = fotoEnDisco(user) ? user.getMicrosoftPhotoEtag() : null;
+        MicrosoftGraphService.GraphPhoto photo = graphService.getPhoto(upn, etag);
         if (photo == null) {
             return; // sin foto en Microsoft 365
         }
@@ -153,6 +157,18 @@ public class MicrosoftGraphUserSyncService {
         } catch (IOException e) {
             throw new IllegalStateException("No se pudo guardar la foto: " + e.getMessage(), e);
         }
+    }
+
+    /** Si la foto que apunta el usuario existe en la carpeta de subidas. */
+    private boolean fotoEnDisco(User user) {
+        String url = user.getPhotoUrl();
+        String prefijo = "/uploads/";
+        if (url == null || !url.startsWith(prefijo)) {
+            return false;
+        }
+        Path base = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path archivo = base.resolve(url.substring(prefijo.length())).normalize();
+        return archivo.startsWith(base) && Files.isRegularFile(archivo);
     }
 
     private String detectExtension(byte[] content) {

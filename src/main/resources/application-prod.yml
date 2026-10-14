@@ -77,6 +77,9 @@ logging:
 # El CSP lo pone PublicUploadHeadersFilter para la zona publica; esto es lo que
 # se devuelve en el resto de respuestas.
 app:
+  # Imágenes de marca con ruta relativa (/api/uploads/...): la API y la app van
+  # por el mismo origen, y así no dependen de las cabeceras del proxy.
+  urls-relativas: true
   auth:
     # En producción la cookie del refresh token va siempre con Secure. Antes
     # dependía solo de APP_SECURE_COOKIE, y si se olvidaba la variable la cookie

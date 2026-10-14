@@ -5,6 +5,7 @@ import com.mesaayuda.repository.UserRepository;
 import com.mesaayuda.service.ExpiringStateMap;
 import com.mesaayuda.service.SseEventBroker;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -102,6 +103,13 @@ public class SseController {
         boolean esPersonal = usuario.getRolUser() != null
                 && List.of("AGENT", "ADMIN", "SUPER_ADMIN").contains(usuario.getRolUser().getNameRole());
         SseEmitter emitter = sseEventBroker.subscribe(userId, esPersonal);
-        return ResponseEntity.ok(emitter);
+        // X-Accel-Buffering: no le dice a CUALQUIER Nginx de por medio (el del
+        // frontend y el del servidor) que no guarde el flujo en búfer. Sin ella,
+        // basta con que el proxy del servidor no tenga "proxy_buffering off" para
+        // que los mensajes del chat no lleguen en vivo.
+        return ResponseEntity.ok()
+                .header("X-Accel-Buffering", "no")
+                .cacheControl(CacheControl.noCache().noTransform())
+                .body(emitter);
     }
 }
