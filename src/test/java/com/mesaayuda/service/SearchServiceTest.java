@@ -301,7 +301,7 @@ class SearchServiceTest {
     }
 
     @Test
-    void unAgenteSoloEncuentraSusTicketsAsignadosOAbiertosPorEl() {
+    void unAgenteBuscaTicketsConElMismoCorteQueLaLista() {
         como("AGENT");
         when(accessPolicy.esPersonal(usuario)).thenReturn(true);
         conPersonas(List.of(), List.of());
@@ -309,13 +309,9 @@ class SearchServiceTest {
 
         searchService.buscar("impresora");
 
-        UUID yo = usuario.getIdUser();
-        // Asignados a él (agentId) y abiertos por él (requesterId); nunca sin filtro.
-        verify(ticketService).search(any(), any(), any(), any(), org.mockito.ArgumentMatchers.eq(yo),
-                org.mockito.ArgumentMatchers.isNull(), any(), any(), any(Integer.class), any(Integer.class));
+        // El corte "solo los suyos" (abiertos por él o asignados a él) lo aplica
+        // TicketService.search: aquí se delega una sola vez, sin filtros propios.
         verify(ticketService).search(any(), any(), any(), any(), org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.eq(yo), any(), any(), any(Integer.class), any(Integer.class));
-        verify(ticketService, never()).search(any(), any(), any(), any(), org.mockito.ArgumentMatchers.isNull(),
                 org.mockito.ArgumentMatchers.isNull(), any(), any(), any(Integer.class), any(Integer.class));
     }
 

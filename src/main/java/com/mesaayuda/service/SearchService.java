@@ -26,8 +26,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.List;
@@ -132,25 +130,11 @@ public class SearchService {
      * los que coinciden. Mapea la respuesta completa a la vista compacta.
      */
     private List<SearchTicketItem> buscarTickets(User actual, String termino, Pageable limite) {
-        // ADMIN y SUPER_ADMIN buscan en todos. El resto, solo en los suyos: un
-        // agente ve los que tiene asignados y los que abrió él; un solicitante,
-        // los que abrió (eso ya lo impone TicketService.search).
-        if (accessPolicy.esPersonalAdministrador(actual) || !accessPolicy.esPersonal(actual)) {
-            return aItems(ticketService.search(null, null, null, null, null, null,
-                    termino, null, limite.getPageNumber(), limite.getPageSize()).getContent());
-        }
-        Map<UUID, TicketResponse> propios = new LinkedHashMap<>();
-        ticketService.search(null, null, null, null, actual.getIdUser(), null,
-                        termino, null, 0, limite.getPageSize())
-                .getContent().forEach(t -> propios.putIfAbsent(t.idTicket(), t));
-        ticketService.search(null, null, null, null, null, actual.getIdUser(),
-                        termino, null, 0, limite.getPageSize())
-                .getContent().forEach(t -> propios.putIfAbsent(t.idTicket(), t));
-        return aItems(propios.values().stream()
-                .sorted(Comparator.comparing(TicketResponse::createdAtTicket,
-                        Comparator.nullsLast(Comparator.reverseOrder())))
-                .limit(limite.getPageSize())
-                .toList());
+        // ADMIN y SUPER_ADMIN buscan en todos. El resto, solo en los suyos (un
+        // agente, los que abrió y los que tiene asignados): lo impone
+        // TicketService.search, igual que en la lista de tickets.
+        return aItems(ticketService.search(null, null, null, null, null, null,
+                termino, null, limite.getPageNumber(), limite.getPageSize()).getContent());
     }
 
     private static List<SearchTicketItem> aItems(List<TicketResponse> lista) {

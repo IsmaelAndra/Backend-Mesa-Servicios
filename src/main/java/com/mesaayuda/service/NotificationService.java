@@ -4,16 +4,29 @@ import com.mesaayuda.entity.MailOutbox;
 import com.mesaayuda.dto.MicrosoftGraphConfigResponse;
 import com.mesaayuda.exception.MailDeliveryException;
 import com.mesaayuda.entity.*;
+import com.mesaayuda.repository.AnswerRepository;
+import com.mesaayuda.repository.AttachRepository;
 import com.mesaayuda.repository.BrandingConfigRepository;
+import com.mesaayuda.repository.TicketAuditRepository;
+import com.mesaayuda.repository.TicketSlaRepository;
+import com.mesaayuda.repository.UserRepository;
 import com.mesaayuda.repository.NotificationRepository;
 import com.mesaayuda.repository.NotificationTemplateRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.TextStyle;
+import java.time.temporal.TemporalAdjusters;
 import java.time.OffsetDateTime;
 import java.time.Year;
 import java.util.ArrayList;
@@ -21,6 +34,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -55,6 +69,28 @@ public class NotificationService {
     @Autowired
     private BrandingConfigRepository brandingConfigRepository;
 
+    // Datos extra de las plantillas (SLA, contadores, solución, quién asigna).
+    // Se usan con tolerancia a null: las pruebas unitarias crean el servicio sin ellos.
+    @Autowired(required = false)
+    private TicketSlaRepository ticketSlaRepository;
+
+    @Autowired(required = false)
+    private AnswerRepository answerRepository;
+
+    @Autowired(required = false)
+    private AttachRepository attachRepository;
+
+    @Autowired(required = false)
+    private TicketAuditRepository ticketAuditRepository;
+
+    @Autowired(required = false)
+    private UserRepository userRepository;
+
+    private static final ZoneId ZONA = ZoneId.of("America/Guayaquil");
+    private static final DateTimeFormatter FECHA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter FECHA_HORA = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final Locale ES = Locale.forLanguageTag("es-EC");
+
     @Autowired
     private SseEventBroker sseEventBroker;
 
@@ -86,7 +122,9 @@ public class NotificationService {
         v.put("ticketId", ticket.getIdTicket());
         v.put("title", ticket.getTitleTicket());
         v.put("titulo", ticket.getTitleTicket());
-        v.put("descripcion", ticket.getDescriptionTicket());
+        // La descripción es HTML del editor (párrafos, imágenes pegadas). Al
+        // escaparla llegaba al correo con las etiquetas a la vista; se pasa a texto.
+        v.put("descripcion", recortar(textoDelChat(ticket.getDescriptionTicket()), 800));
         v.put("estado", nombre(ticket.getStatusTicket() == null ? null : ticket.getStatusTicket().getNameStatus()));
         v.put("status", v.get("estado"));
         v.put("prioridad", nombre(ticket.getPriorityTicket() == null ? null : ticket.getPriorityTicket().getNamePriority()));
@@ -95,12 +133,156 @@ public class NotificationService {
         v.put("area", nombre(ticket.getAreaTicket() == null ? null : ticket.getAreaTicket().getNameArea()));
         v.put("tipo", nombre(ticket.getTypeTicket() == null ? null : ticket.getTypeTicket().getNameTicketType()));
         v.put("solicitante", nameOf(ticket.getUserTicket()));
-        v.put("agente", ticket.getAgentTicket() == null ? "" : nameOf(ticket.getAgentTicket()));
-        v.put("fechaAsignacion", fecha(ticket.getCreatedAtTicket()));
-        if (ticket.getAgentTicket() != null) {
-            v.put("asignadoPor", "");
-        }
+        v.put("agente", ticket.getAgentTicket() == null ? "Sin asignar" : nameOf(ticket.getAgentTicket()));
+        v.put("ticket", v.get("id"));
+        v.put("asunto", v.get("titulo"));
+        v.put("correoSolicitante", ticket.getUserTicket() == null ? "" : nombre(ticket.getUserTicket().getCorporateEmailUser()));
+        v.put("fechaCreacion", fechaHora(ticket.getCreatedAtTicket()));
+        v.put("fechaAsignacion", fechaHora(OffsetDateTime.now()));
+        v.put("fechaActualizacion", fechaHora(OffsetDateTime.now()));
+        OffsetDateTime fin = ticket.getClosingDateTicket() != null ? ticket.getClosingDateTicket() : OffsetDateTime.now();
+        v.put("fechaResolucion", fechaHora(fin));
+        v.put("fechaCierre", fechaHora(fin));
+        v.put("tiempoTotal", ticket.getCreatedAtTicket() == null ? ""
+                : duracion(Duration.between(ticket.getCreatedAtTicket(), fin).toMinutes()));
+        v.put("asignadoPor", quienActua("Asignación automática"));
+        varsSla(ticket, v);
+        varsConversacion(ticket, v);
         return v;
+    }
+
+    /**
+     * Variables del SLA: [slaTiempo]/[sla] (plazo de resolución de la política),
+     * [fechaLimite], [tiempoTranscurrido], [tiempoRestante] y [tiempoVencido].
+     */
+    private void varsSla(Ticket ticket, Map<String, Object> v) {
+        v.put("slaTiempo", "el acuerdo de nivel de servicio vigente");
+        v.put("sla", "");
+        v.put("fechaLimite", "");
+        v.put("tiempoTranscurrido", "");
+        v.put("tiempoRestante", "");
+        v.put("tiempoVencido", "");
+        TicketSla sla = slaDe(ticket);
+        if (sla == null) {
+            return;
+        }
+        Integer minutos = sla.getSlaPolicy() == null ? null : sla.getSlaPolicy().getResolutionTimeMinutes();
+        if (minutos != null && minutos > 0) {
+            v.put("slaTiempo", duracion(minutos));
+            v.put("sla", duracion(minutos));
+        }
+        OffsetDateTime limite = sla.getResolutionDueAt();
+        OffsetDateTime ahora = OffsetDateTime.now();
+        if (limite != null) {
+            v.put("fechaLimite", fechaHora(limite));
+            long resta = Duration.between(ahora, limite).toMinutes();
+            v.put("tiempoRestante", resta > 0 ? duracion(resta) : "Vencido");
+            v.put("tiempoVencido", resta < 0 ? duracion(-resta) : "");
+        }
+        if (ticket.getCreatedAtTicket() != null) {
+            v.put("tiempoTranscurrido", duracion(Duration.between(ticket.getCreatedAtTicket(), ahora).toMinutes()));
+        }
+    }
+
+    /**
+     * Variables de la conversación: [solucion]/[resumenAtencion] (última respuesta
+     * pública del personal), [totalMensajes], [totalAdjuntos], [totalCambios],
+     * [valorAnterior]/[valorNuevo] (último cambio registrado del ticket).
+     */
+    private void varsConversacion(Ticket ticket, Map<String, Object> v) {
+        v.put("solucion", "");
+        v.put("resumenAtencion", "");
+        v.put("totalMensajes", "0");
+        v.put("totalAdjuntos", "0");
+        v.put("totalCambios", "0");
+        v.put("valorAnterior", "");
+        v.put("valorNuevo", "");
+        if (ticket.getIdTicket() == null) {
+            return;
+        }
+        try {
+            if (answerRepository != null) {
+                v.put("totalMensajes", String.valueOf(answerRepository
+                        .countByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalse(ticket.getIdTicket())));
+                String solucion = answerRepository
+                        .findByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+                                ticket.getIdTicket(), org.springframework.data.domain.PageRequest.of(0, 10))
+                        .stream()
+                        .filter(a -> a.getUserAnswer() != null && ticket.getUserTicket() != null
+                                && !a.getUserAnswer().getIdUser().equals(ticket.getUserTicket().getIdUser()))
+                        .map(a -> recortar(textoDelChat(a.getMessageAnswer()), 600))
+                        .filter(t -> !t.isBlank())
+                        .findFirst().orElse("");
+                v.put("solucion", solucion);
+                v.put("resumenAtencion", solucion);
+            }
+            if (attachRepository != null) {
+                v.put("totalAdjuntos", String.valueOf(attachRepository
+                        .findByTicketAttachIdTicketAndDeletedAttachFalse(ticket.getIdTicket()).size()));
+            }
+            if (ticketAuditRepository != null) {
+                List<TicketAudit> cambios = ticketAuditRepository
+                        .findByTicketIdTicketOrderByCreatedAtAuditDesc(ticket.getIdTicket());
+                v.put("totalCambios", String.valueOf(cambios.stream()
+                        .filter(c -> "STATUS_CHANGE".equals(c.getActionType())).count()));
+                cambios.stream()
+                        .filter(c -> c.getNewValue() != null && !c.getActionType().startsWith("ANSWER"))
+                        .findFirst()
+                        .ifPresent(c -> {
+                            v.put("valorAnterior", nombre(c.getOldValue()));
+                            v.put("valorNuevo", nombre(c.getNewValue()));
+                        });
+            }
+        } catch (RuntimeException e) {
+            log.debug("Variables de conversación no disponibles para el ticket {}: {}",
+                    ticket.getIdTicket(), e.getMessage());
+        }
+    }
+
+    private TicketSla slaDe(Ticket ticket) {
+        if (ticketSlaRepository == null || ticket.getIdTicket() == null) {
+            return null;
+        }
+        try {
+            return ticketSlaRepository.findByTicketIdTicket(ticket.getIdTicket()).orElse(null);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** Nombre de quien hace la petición en curso, o el texto dado si es un proceso automático. */
+    private String quienActua(String siNadie) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth == null || !auth.isAuthenticated() || userRepository == null
+                    || auth.getName() == null || !auth.getName().contains("@")) {
+                return siNadie;
+            }
+            return userRepository.findByCorporateEmailUser(auth.getName())
+                    .map(this::nameOf).orElse(siNadie);
+        } catch (RuntimeException e) {
+            return siNadie;
+        }
+    }
+
+    /** "30 min", "4 h", "2 d 3 h": igual que duracionLegible() del frontend. */
+    static String duracion(long minutos) {
+        if (minutos < 60) {
+            return Math.max(minutos, 0) + " min";
+        }
+        long horas = minutos / 60;
+        long resto = minutos % 60;
+        if (horas < 24) {
+            return resto == 0 ? horas + " h" : horas + " h " + resto + " min";
+        }
+        long dias = horas / 24;
+        long h = horas % 24;
+        return h == 0 ? dias + " d" : dias + " d " + h + " h";
+    }
+
+    private static String recortar(String texto, int max) {
+        if (texto == null) return "";
+        return texto.length() <= max ? texto : texto.substring(0, max).trim() + "…";
     }
 
     /**
@@ -132,12 +314,15 @@ public class NotificationService {
     }
 
     private String fecha(OffsetDateTime momento) {
-        return momento == null ? "" : momento.toLocalDate().toString();
+        return momento == null ? "" : momento.atZoneSameInstant(ZONA).format(FECHA);
+    }
+
+    private String fechaHora(OffsetDateTime momento) {
+        return momento == null ? "" : momento.atZoneSameInstant(ZONA).format(FECHA_HORA);
     }
 
     public void notifyTicketCreated(Ticket ticket) {
-        Map<String, Object> variables = new HashMap<>(ticketVars(ticket));
-        variables.put("nombre", nameOf(ticket.getUserTicket()));
+        Map<String, Object> variables = varsTicket(ticket, ticket.getUserTicket());
         String subject = subjectTemplate("TICKET_CREADO", variables,
                 "Ticket #%d creado".formatted(ticket.getNumberTicket()));
         String body = bodyTemplate("TICKET_CREADO", variables,
@@ -150,9 +335,9 @@ public class NotificationService {
     public void notifyTicketAssigned(Ticket ticket) {
         if (ticket.getAgentTicket() == null) return;
         User receiver = ticket.getAgentTicket();
-        Map<String, Object> variables = new HashMap<>(ticketVars(ticket));
-        variables.put("agente", receiver.getCorporateEmailUser());
-        variables.put("slaTiempo", "acuerdo de nivel de servicio vigente");
+        // [nombre] es quien recibe el correo (el agente) y [agente] su nombre, no
+        // su correo: antes [nombre] salía vacío y [agente] con la dirección.
+        Map<String, Object> variables = varsTicket(ticket, receiver);
         String subject = subjectTemplate("TICKET_ASIGNADO", variables,
                 "Ticket #%d asignado".formatted(ticket.getNumberTicket()));
         String body = bodyTemplate("TICKET_ASIGNADO", variables,
@@ -166,6 +351,8 @@ public class NotificationService {
         Map<String, Object> variables = varsTicket(ticket, receiver);
         variables.put("respuesta", message == null ? "" : message);
         variables.put("mensaje", message == null ? "" : message);
+        variables.put("comentario", message == null ? "" : message);
+        variables.put("observacion", message == null ? "" : message);
         String subject = subjectTemplate("TICKET_ACTUALIZADO", variables,
                 "Ticket #%d actualizado".formatted(ticket.getNumberTicket()));
         String body = bodyTemplate("TICKET_ACTUALIZADO", variables,
@@ -191,10 +378,15 @@ public class NotificationService {
         // El chat guarda el HTML del editor ("<p>Prueba</p><p><br></p>"). Al
         // escaparlo para el correo llegaba con las etiquetas a la vista.
         String message = textoDelChat(mensajeHtml);
-        Map<String, Object> variables = new HashMap<>(ticketVars(ticket));
+        Map<String, Object> variables = varsTicket(ticket, receiver);
         variables.put("respuesta", message == null ? "" : message);
         variables.put("mensaje", message == null ? "" : message);
-        variables.put("nombre", autor == null || autor.isBlank() ? "Un usuario" : autor);
+        variables.put("comentario", message == null ? "" : message);
+        // [autor] es quien escribió y [nombre] quien recibe el correo ("Estimado/a
+        // [nombre]: [autor] ha escrito..."). Antes [nombre] era el autor y el
+        // correo saludaba a quien lo había escrito.
+        variables.put("autor", autor == null || autor.isBlank() ? "Un usuario" : autor);
+        variables.put("fechaMensaje", fechaHora(OffsetDateTime.now()));
 
         String asunto = autor == null || autor.isBlank()
                 ? "Nuevo mensaje en el ticket #%d".formatted(ticket.getNumberTicket())
@@ -238,6 +430,7 @@ public class NotificationService {
         Map<String, Object> variables = varsTicket(ticketSla.getTicket(), ticketSla.getTicket().getAgentTicket());
         variables.put("percentage", percentage);
         variables.put("porcentaje", percentage);
+        variables.put("nombre", nameOf(ticketSla.getTicket().getAgentTicket()));
         String subject = subjectTemplate("SLA_WARNING", variables,
                 "SLA por vencer - Ticket #%d".formatted(ticketSla.getTicket().getNumberTicket()));
         String body = bodyTemplate("SLA_WARNING", variables,
@@ -265,17 +458,47 @@ public class NotificationService {
         Map<String, Object> variables = varsTicket(ticket, receiver);
         variables.put("action", accionEnEspanol(escalation.getActionType()));
         variables.put("accion", accionEnEspanol(escalation.getActionType()));
+        variables.put("fechaEscalado", fechaHora(OffsetDateTime.now()));
+        variables.put("motivo", escalation.getTriggerPercentage() == null
+                ? accionEnEspanol(escalation.getActionType())
+                : "Se alcanzó el %d%% del tiempo del SLA (%s)".formatted(escalation.getTriggerPercentage(),
+                        accionEnEspanol(escalation.getActionType()).toLowerCase(ES)));
         String subject = subjectTemplate("ESCALATION", variables,
                 "Ticket #%d escalado".formatted(ticket.getNumberTicket()));
         String body = bodyTemplate("ESCALATION", variables,
                 "<p>El ticket <b>#%d</b> ha sido <b>escalado</b> (acción: %s).</p>"
                         .formatted(ticket.getNumberTicket(),
-                                escaparHtml(escalation.getActionType() == null ? "-" : escalation.getActionType())));
+                                escaparHtml(accionEnEspanol(escalation.getActionType()))));
         sendNotification(ticket, receiver, "ESCALATION", subject, body);
     }
 
     public void notifyMonthlyEvaluation(User agent) {
-        Map<String, Object> variables = Map.of("nombre", nameOf(agent));
+        notifyMonthlyEvaluation(agent, null);
+    }
+
+    /**
+     * Aviso de evaluación mensual con sus cifras: [mes], [anio], [ticketsCerrados],
+     * [sla] (% de cumplimiento), [satisfaccion], [tiempoPromedio] (horas) y
+     * [fechaLimite] (fin del mes en curso).
+     */
+    public void notifyMonthlyEvaluation(User agent, MonthlyEvaluation ev) {
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("nombre", nameOf(agent));
+        variables.put("agente", nameOf(agent));
+        LocalDate mes = ev != null && ev.getEvaluationMonth() != null
+                ? ev.getEvaluationMonth() : LocalDate.now(ZONA).minusMonths(1);
+        String nombreMes = mes.getMonth().getDisplayName(TextStyle.FULL, ES);
+        variables.put("mes", nombreMes.substring(0, 1).toUpperCase(ES) + nombreMes.substring(1));
+        variables.put("anio", String.valueOf(mes.getYear()));
+        variables.put("fechaLimite", LocalDate.now(ZONA).with(TemporalAdjusters.lastDayOfMonth()).format(FECHA));
+        variables.put("ticketsCerrados", ev == null || ev.getTicketsClosed() == null ? "0" : String.valueOf(ev.getTicketsClosed()));
+        variables.put("sla", ev == null || ev.getSlaComplianceRate() == null ? "0"
+                : ev.getSlaComplianceRate().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString());
+        variables.put("satisfaccion", ev == null || ev.getSatisfactionScore() == null ? "—"
+                : ev.getSatisfactionScore().setScale(1, java.math.RoundingMode.HALF_UP).toPlainString());
+        variables.put("tiempoPromedio", ev == null || ev.getAvgResolutionTimeMinutes() == null ? "0"
+                : ev.getAvgResolutionTimeMinutes().divide(java.math.BigDecimal.valueOf(60), 1,
+                        java.math.RoundingMode.HALF_UP).toPlainString());
         String subject = subjectTemplate("MONTHLY_EVALUATION", variables, "Evaluación mensual disponible");
         String body = bodyTemplate("MONTHLY_EVALUATION", variables,
                 "<p>Estimado/a <b>%s</b>, su evaluación mensual está disponible.</p>"
@@ -301,14 +524,22 @@ public class NotificationService {
                 + "<b>Hora:</b> " + hora + "<br/>"
                 + "<b>Estado:</b> " + task.getStatusTask() + "</p>"
                 + "<p>Por favor tome en cuenta la hora acordada y llegue preparado a la cita.</p>";
-        Map<String, Object> variables = Map.of(
-                "task", task.getTitleTask(),
-                "descripcion", task.getDescriptionTask() == null ? "" : task.getDescriptionTask(),
-                "fecha", fecha,
-                "hora", hora,
-                "estado", task.getStatusTask(),
-                "nombre", nameOf(receiver),
-                "agente", nameOf(receiver));
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("task", task.getTitleTask());
+        variables.put("titulo", task.getTitleTask());
+        variables.put("descripcion", task.getDescriptionTask() == null ? "" : textoDelChat(task.getDescriptionTask()));
+        variables.put("fecha", fecha);
+        variables.put("hora", hora);
+        variables.put("estado", task.getStatusTask());
+        variables.put("nombre", nameOf(receiver));
+        variables.put("agente", nameOf(receiver));
+        variables.put("fechaInicio", task.getStartTask() == null ? "Por confirmar" : fechaHora(task.getStartTask()));
+        variables.put("fechaFin", task.getDueTask() == null ? "Sin fecha límite" : fechaHora(task.getDueTask()));
+        variables.put("duracion", task.getDurationMinutes() == null ? "—" : String.valueOf(task.getDurationMinutes()));
+        variables.put("prioridad", "Normal");
+        variables.put("asignadaPor", task.getCreatedBy() == null ? quienActua("El sistema") : nameOf(task.getCreatedBy()));
+        // Las tareas no son tickets: el botón lleva a Actividades.
+        variables.put("urlTicket", urlFrontend("activities"));
         String subjectTpl = subjectTemplate("TASK_ASIGNADA", variables, subject);
         String bodyTpl = bodyTemplate("TASK_ASIGNADA", variables, body);
         sendNotification(null, receiver, "TASK_ASIGNADA", subjectTpl, bodyTpl);
@@ -338,8 +569,16 @@ public class NotificationService {
         variables.put("urlReset", urlReset == null ? "" : urlReset);
         String subject = subjectTemplate("RESET_PASSWORD", variables,
                 "Restablecimiento de contraseña - Mesa de Servicios");
-        String body = bodyTemplate("RESET_PASSWORD", variables,
-                defaultResetBody(user, urlReset));
+        // Las plantillas antiguas mostraban [password], que ya no existe: el
+        // restablecimiento va por enlace. Si la plantilla no trae [urlReset] el
+        // correo saldría con la contraseña vacía y sin forma de continuar, así que
+        // se usa el cuerpo estándar con el botón.
+        NotificationTemplate plantilla = activeTemplate("RESET_PASSWORD");
+        boolean plantillaConEnlace = plantilla != null && plantilla.getBodyTemplate() != null
+                && plantilla.getBodyTemplate().matches("(?s).*(\\[urlReset]|\\{\\{urlReset}}).*");
+        String body = plantillaConEnlace
+                ? bodyTemplate("RESET_PASSWORD", variables, defaultResetBody(user, urlReset))
+                : defaultResetBody(user, urlReset);
         mailOutboxService.encolar(user.getCorporateEmailUser(), subject, body, "RESET_PASSWORD",
                 MailOutbox.PRIORIDAD_URGENTE, null, null);
     }
@@ -587,7 +826,9 @@ public class NotificationService {
             return fallback;
         }
         // Un asunto es una sola línea: los saltos que deja fill se cambian por espacios.
-        return fill(template.getSubjectTemplate(), variables, template).replace("<br>", " ");
+        // Y sin entidades: el asunto no es HTML, así que un título con comillas o
+        // "&" salía como &quot; o &amp; en la bandeja de entrada.
+        return desescapar(fill(template.getSubjectTemplate(), variables, template).replace("<br>", " "));
     }
 
     private String bodyTemplate(String name, Map<String, Object> variables, String fallback) {
@@ -614,6 +855,19 @@ public class NotificationService {
         variables.put("email", email == null || email.isBlank() ? "-" : email);
         variables.put("fecha", ahora.toLocalDate().toString());
         variables.put("hora", String.format("%02d:%02d", ahora.getHour(), ahora.getMinute()));
+        // La plantilla habla de "servidor SMTP": el envío va por Microsoft Graph,
+        // así que se rellenan con los datos reales de esa conexión.
+        String remitente = "";
+        try {
+            remitente = nombre(graphConfigService.getConfig().mailFromAccount());
+        } catch (RuntimeException e) {
+            log.debug("Sin remitente configurado para la prueba de envío");
+        }
+        variables.put("fromAddress", remitente);
+        variables.put("remitente", remitente);
+        variables.put("host", "graph.microsoft.com (Microsoft Graph)");
+        variables.put("puerto", "443");
+        variables.put("tls", "HTTPS (TLS 1.2 o superior)");
         return new String[] {
                 isBlank(template.getSubjectTemplate()) ? "Prueba de envío de correo" : template.getSubjectTemplate(),
                 fill(template.getBodyTemplate(), variables, template)
@@ -720,6 +974,12 @@ Matcher matcher = Pattern.compile("\\{\\{([a-zA-Z0-9_]+)}}|\\[([a-zA-Z0-9_]+)]")
       return t.replaceAll("[ \t]+\n", "\n").replaceAll("\n{3,}", "\n\n").trim();
   }
 
+  /** Deshace el escape de {@link #escaparHtml} (para el asunto, que es texto plano). */
+  private static String desescapar(String texto) {
+      return texto.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+              .replace("&#39;", "'").replace("&amp;", "&");
+  }
+
   /** Escapa el texto y conserva sus saltos de línea como {@code <br>}. */
   private static String conSaltos(String texto) {
       return texto == null ? "" : escaparHtml(texto).replace("\r\n", "\n").replace("\n", "<br>");
@@ -789,10 +1049,12 @@ private void imagenDePlantilla(Map<String, Object> valores, NotificationTemplate
 
     /** Variables disponibles en cualquier plantilla, se refuerzan con las del evento. */
     private Map<String, Object> comunes(Map<String, Object> variables) {
-        LocalDateTime ahora = LocalDateTime.now();
+        LocalDateTime ahora = LocalDateTime.now(ZONA);
         Map<String, Object> base = new HashMap<>();
         base.put("appName", "Mesa de Servicios");
-        base.put("fecha", ahora.toLocalDate().toString());
+        base.put("empresa", "COAC Magisterio de Pichincha");
+        base.put("compania", "COAC Magisterio de Pichincha");
+        base.put("fecha", ahora.toLocalDate().format(FECHA));
         base.put("hora", String.format("%02d:%02d", ahora.getHour(), ahora.getMinute()));
         // Solo la URL, no la etiqueta <img>. El relleno escapa todo lo que
         // inserta, asi que antes el HTML del logo llegaba al correo como texto

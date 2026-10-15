@@ -260,10 +260,20 @@ public TicketResponse create(TicketRequest request) {
         // con ?requesterId=<otro id> para ver los tickets de otra persona.
         // El personal conserva el filtro libre: el kanban lo necesita.
         UUID solicitanteEfectivo = esPersonal(actual) ? requesterId : actual.getIdUser();
+        // Solo ADMIN y SUPER_ADMIN ven todos los tickets. Un agente ve los que
+        // abrió y los que tiene asignados: antes veía los de todo el mundo en la
+        // lista de tickets, aunque no tuviera nada que ver con ellos.
+        UUID agenteRestringido = esPersonal(actual) && !esPersonalAdministrador(actual)
+                ? actual.getIdUser() : null;
 
         Specification<Ticket> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get("deletedTicket")));
+            if (agenteRestringido != null) {
+                predicates.add(cb.or(
+                        cb.equal(root.get("userTicket").get("idUser"), agenteRestringido),
+                        cb.equal(root.get("agentTicket").get("idUser"), agenteRestringido)));
+            }
             if (status != null && !status.isBlank()) {
                 predicates.add(cb.equal(root.get("statusTicket").get("nameStatus"), status.toUpperCase()));
             }

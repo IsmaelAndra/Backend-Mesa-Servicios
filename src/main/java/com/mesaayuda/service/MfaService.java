@@ -206,12 +206,19 @@ log.info("Doble factor {} por el usuario {}", habilitado ? "activado" : "desacti
      * nadie puede recuperar.
      */
     private MfaChallengeResponse prepararAlta(User user, UserMfa mfa) {
-        String secreto = totp.generarSecreto();
-        mfa.setSecretPendiente(secretCrypto.encrypt(secreto));
+        // Si ya hay un alta a medias reciente se reutiliza su secreto. Antes cada
+        // login generaba uno nuevo: quien escaneaba el QR, volvía atrás (o tecleaba
+        // mal y repetía el acceso) y escaneaba otra vez acababa con dos cuentas en
+        // el Authenticator, una de ellas inservible.
+        String secreto = secretoPendienteVigente(mfa);
+        if (secreto == null) {
+            secreto = totp.generarSecreto();
+            mfa.setSecretPendiente(secretCrypto.encrypt(secreto));
+            mfa.setCreadoAtUserMfa(OffsetDateTime.now());
+        }
         mfa.setSecretAlmacenado(null);
         mfa.setEnrolled(false);
         mfa.setUltimoContador(null);
-        mfa.setCreadoAtUserMfa(OffsetDateTime.now());
         userMfaRepository.save(mfa);
 
         String token = nuevoDesafio(user, MfaChallenge.PROPOSITO_ENROLL);
@@ -515,6 +522,27 @@ private String emisor() {
                 .map(MfaSetting::getIssuerMfa)
                 .filter(s -> s != null && !s.isBlank())
                 .orElse("Mesa de Servicios");
+    }
+
+    /** Horas durante las que un alta a medias conserva su QR. */
+    private static final long HORAS_ALTA_PENDIENTE = 24;
+
+    /**
+     * Secreto del alta a medias si sigue vigente, o null para generar uno nuevo.
+     * Pasado el plazo se renueva: un QR que lleva días a la vista (capturas,
+     * pantallas compartidas) ya no debería servir.
+     */
+    private String secretoPendienteVigente(UserMfa mfa) {
+        if (mfa.isEnrolled() || mfa.getSecretPendiente() == null || mfa.getCreadoAtUserMfa() == null
+                || mfa.getCreadoAtUserMfa().isBefore(OffsetDateTime.now().minusHours(HORAS_ALTA_PENDIENTE))) {
+            return null;
+        }
+        try {
+            return secretCrypto.decrypt(mfa.getSecretPendiente());
+        } catch (RuntimeException e) {
+            log.warn("No se pudo leer el secreto pendiente del usuario; se genera uno nuevo");
+            return null;
+        }
     }
 
     private String formatear(String secreto) {

@@ -168,7 +168,7 @@ public class EvaluationService {
                 User agent = userRepo.findByCorporateEmailUser(email).orElseThrow();
                 MonthlyEvaluation ev = generateForAgent(agent.getIdUser(), month);
                 if ("PENDING".equals(ev.getStatus())) {
-                    notificationService.notifyMonthlyEvaluation(agent);
+                    notificationService.notifyMonthlyEvaluation(agent, ev);
                     ev.setStatus("COMPLETED");
                     evaluationRepository.save(ev);
                 }

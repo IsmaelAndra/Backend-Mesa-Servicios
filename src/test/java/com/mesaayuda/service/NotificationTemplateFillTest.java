@@ -426,7 +426,7 @@ Mockito.when(brandingRepo.findTopByOrderByIdBrandingAsc())
         com.mesaayuda.entity.Ticket ticket = new com.mesaayuda.entity.Ticket();
         ticket.setIdTicket(id(8));
         ticket.setTitleTicket("Verificacion final de variables");
-        ticket.setDescriptionTicket("Confirma los datos del ticket");
+        ticket.setDescriptionTicket("<p>Confirma los <b>datos</b> del ticket</p><p><img src=\"data:image/png;base64,AAA\"></p>");
         ticket.setUserTicket(usuario("Solicitante", "solicitante@coacmagisterio.fin.ec"));
         ticket.setAgentTicket(usuario("Agente", "agente@coacmagisterio.fin.ec"));
         ticket.setAreaTicket(texto(com.mesaayuda.entity.Area.class, "nameArea", "TI"));
@@ -452,8 +452,22 @@ Mockito.when(brandingRepo.findTopByOrderByIdBrandingAsc())
         assertEquals("MEDIA", vars.get("priority"));
         assertEquals("ASIGNADO", vars.get("estado"));
         assertEquals("ASIGNADO", vars.get("status"));
-        assertEquals("2026-09-28", vars.get("fechaAsignacion"));
+        // Fechas en formato local y en la zona de Guayaquil (UTC-5).
+        assertEquals("28/09/2026 05:00", vars.get("fechaCreacion"));
         assertEquals("Verificacion final de variables", vars.get("titulo"));
+        // La descripción llega como texto: sin etiquetas ni imágenes del editor.
+        assertEquals("Confirma los datos del ticket", vars.get("descripcion"));
+        // Sin repositorios (prueba unitaria) los contadores quedan en cero, no vacíos.
+        assertEquals("0", vars.get("totalMensajes"));
+        assertEquals("Asignación automática", vars.get("asignadoPor"));
+    }
+
+    @Test
+    void lasDuracionesSeEscribenComoEnLaPantalla() {
+        assertEquals("30 min", NotificationService.duracion(30));
+        assertEquals("4 h", NotificationService.duracion(240));
+        assertEquals("1 h 30 min", NotificationService.duracion(90));
+        assertEquals("2 d 3 h", NotificationService.duracion(51 * 60));
     }
 
     /** Un ticket sin area, categoria ni agente tampoco debe lanzar excepcion. */
@@ -473,7 +487,7 @@ Mockito.when(brandingRepo.findTopByOrderByIdBrandingAsc())
         assertEquals("", vars.get("categoria"));
         assertEquals("", vars.get("estado"));
         assertEquals("", vars.get("solicitante"));
-        assertEquals("", vars.get("agente"));
+        assertEquals("Sin asignar", vars.get("agente"));
     }
 
     private com.mesaayuda.entity.User usuario(String nombre, String correo) {

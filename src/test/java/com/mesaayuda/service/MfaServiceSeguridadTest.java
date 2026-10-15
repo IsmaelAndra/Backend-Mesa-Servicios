@@ -126,6 +126,47 @@ Role rol = new Role();
     // ============================ interruptor ============================
 
     @Test
+    @DisplayName("repetir el acceso con el alta a medias muestra el MISMO QR")
+    void altaPendienteReutilizaElSecreto() {
+        // Antes cada login generaba un secreto nuevo: quien escaneaba, volvía
+        // atrás y escaneaba otra vez quedaba con dos cuentas en el Authenticator.
+        mfaActivado();
+        String secreto = totpReal.generarSecreto();
+        UserMfa m = new UserMfa();
+        m.setUser(usuario);
+        m.setEnrolled(false);
+        m.setSecretPendiente("cifrado:" + secreto);
+        m.setCreadoAtUserMfa(OffsetDateTime.now().minusMinutes(10));
+        org.mockito.Mockito.when(userMfaRepository.findByUser_IdUser(id(50))).thenReturn(Optional.of(m));
+        org.mockito.Mockito.when(secretCrypto.decrypt("cifrado:" + secreto)).thenReturn(secreto);
+
+        MfaChallengeResponse r = mfa.prepararDesafio(usuario);
+
+        assertEquals(MfaChallengeResponse.STATUS_ENROLAR, r.status());
+        assertTrue(r.qrUri().contains("secret=" + secreto), "el QR debe llevar el secreto ya escaneado");
+        assertEquals("cifrado:" + secreto, m.getSecretPendiente());
+    }
+
+    @Test
+    @DisplayName("un alta a medias de hace más de un día genera QR nuevo")
+    void altaPendienteCaducadaGeneraOtroSecreto() {
+        mfaActivado();
+        String viejo = totpReal.generarSecreto();
+        UserMfa m = new UserMfa();
+        m.setUser(usuario);
+        m.setEnrolled(false);
+        m.setSecretPendiente("cifrado:" + viejo);
+        m.setCreadoAtUserMfa(OffsetDateTime.now().minusDays(2));
+        org.mockito.Mockito.when(userMfaRepository.findByUser_IdUser(id(50))).thenReturn(Optional.of(m));
+        org.mockito.Mockito.when(secretCrypto.encrypt(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(inv -> "cifrado:" + inv.getArgument(0));
+
+        MfaChallengeResponse r = mfa.prepararDesafio(usuario);
+
+        assertFalse(r.qrUri().contains("secret=" + viejo));
+    }
+
+    @Test
     @DisplayName("con el interruptor apagado, el login no exige nada")
     void apagadoNoExigeNada() {
         mfaApagado();
