@@ -84,6 +84,15 @@ public class PresenceService {
         }
 
         Map<UUID, String> salida = new HashMap<>();
+        // Cerró la aplicación hace poco: es lo que de verdad significa "Reciente".
+        // La renovación del token (abajo) solo ocurre cada 15 minutos, así que por
+        // sí sola casi nunca marcaba a nadie como reciente.
+        for (UUID id : sinConexion) {
+            Instant salio = sseEventBroker.ultimaDesconexion(id);
+            if (salio != null && !OffsetDateTime.ofInstant(salio, ZoneOffset.UTC).isBefore(limite)) {
+                salida.put(id, RECIENTE);
+            }
+        }
         for (Object[] fila : refreshTokenRepository.ultimaActividadPorUsuario(sinConexion, ahora)) {
             if (!(fila[0] instanceof UUID id)) {
                 continue;

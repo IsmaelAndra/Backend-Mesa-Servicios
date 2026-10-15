@@ -59,6 +59,7 @@ private final Map<UUID, Set<SseEmitter>> clients = new ConcurrentHashMap<>();
      */
     public SseEmitter subscribe(UUID userId, boolean esPersonal) {
         personal.put(userId, esPersonal);
+        ultimaDesconexion.remove(userId);
         SseEmitter emitter = new SseEmitter(0L);
         emitter.onCompletion(() -> desconectar(userId, emitter));
         emitter.onTimeout(() -> {
@@ -118,6 +119,14 @@ synchronized (recent) {
             }
         });
     }
+
+    /** Cuándo cerró el usuario su última conexión (null si está conectado o nunca se conectó). */
+    public Instant ultimaDesconexion(UUID userId) {
+        return userId == null ? null : ultimaDesconexion.get(userId);
+    }
+
+    /** Momento en que cada usuario cerró su última conexión; se usa para "Reciente". */
+    private final Map<UUID, Instant> ultimaDesconexion = new ConcurrentHashMap<>();
 
     /** true si el usuario tiene al menos una conexión SSE abierta ahora mismo. */
     public boolean isConectado(UUID userId) {
@@ -312,6 +321,10 @@ private void desconectar(UUID userId, SseEmitter emitter) {
               emisores.remove(emitter);
               return emisores.isEmpty() ? null : emisores;
           });
+          if (!clients.containsKey(userId)) {
+              // Para el estado "Reciente": cuándo cerró su última pestaña.
+              ultimaDesconexion.put(userId, Instant.now());
+          }
           // El rol se guarda solo mientras haya conexiones: si no, el mapa
           // crecia con cada alta o baja de usuario y nunca se limpiaba.
           if (!clients.containsKey(userId)) {

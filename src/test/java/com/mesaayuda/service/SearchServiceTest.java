@@ -85,6 +85,9 @@ class SearchServiceTest {
         Role r = new Role();
         r.setNameRole(rol);
         usuario.setRolUser(r);
+        // ADMIN y SUPER_ADMIN buscan tickets en toda la mesa; el resto, solo en los suyos.
+        org.mockito.Mockito.lenient().when(accessPolicy.esPersonalAdministrador(usuario))
+                .thenReturn("ADMIN".equals(rol) || "SUPER_ADMIN".equals(rol));
     }
 
     private TicketResponse ticketResponse() {
@@ -295,5 +298,24 @@ class SearchServiceTest {
                 org.mockito.ArgumentMatchers.eq("100\\%"), any(), any(Integer.class), any(Integer.class));
         verify(workflowRepository).buscarPorTexto(
                 org.mockito.ArgumentMatchers.eq("100\\%"), any(Pageable.class));
+    }
+
+    @Test
+    void unAgenteSoloEncuentraSusTicketsAsignadosOAbiertosPorEl() {
+        como("AGENT");
+        when(accessPolicy.esPersonal(usuario)).thenReturn(true);
+        conPersonas(List.of(), List.of());
+        sinTicketsNiEquiposNiAreas();
+
+        searchService.buscar("impresora");
+
+        UUID yo = usuario.getIdUser();
+        // Asignados a él (agentId) y abiertos por él (requesterId); nunca sin filtro.
+        verify(ticketService).search(any(), any(), any(), any(), org.mockito.ArgumentMatchers.eq(yo),
+                org.mockito.ArgumentMatchers.isNull(), any(), any(), any(Integer.class), any(Integer.class));
+        verify(ticketService).search(any(), any(), any(), any(), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(yo), any(), any(), any(Integer.class), any(Integer.class));
+        verify(ticketService, never()).search(any(), any(), any(), any(), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(), any(), any(), any(Integer.class), any(Integer.class));
     }
 }

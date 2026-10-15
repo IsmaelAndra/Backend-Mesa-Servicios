@@ -153,7 +153,8 @@ private Sucursal sucursalDelTicket(UUID sucursalId, User requester) {
 }
 
 public TicketResponse create(TicketRequest request) {
-        User requester = userService.getCurrentUser();
+        User creador = userService.getCurrentUser();
+        User requester = solicitanteDe(request, creador);
 
         Category category = (request.categoryId() != null)
                 ? categoryRepository.findById(request.categoryId())
@@ -198,13 +199,16 @@ public TicketResponse create(TicketRequest request) {
 
         slaService.applySlaToTicket(ticket);
         auditService.record(ticket, "CREATE", null, ticket.getTitleTicket(),
-                "Ticket creado por " + requester.getCorporateEmailUser());
+                requester == creador
+                        ? "Ticket creado por " + creador.getCorporateEmailUser()
+                        : "Ticket creado por " + creador.getCorporateEmailUser()
+                                + " a nombre de " + requester.getCorporateEmailUser());
         notificationService.notifyTicketCreated(ticket);
         if (ticket.getAgentTicket() != null) {
             notificationService.notifyTicketAssigned(ticket);
         }
 
-        publishSse("TICKET_CREATED", ticket, requester.getIdUser(), requester.getCorporateEmailUser());
+        publishSse("TICKET_CREATED", ticket, creador.getIdUser(), creador.getCorporateEmailUser());
         // La automatización se encola despues del commit, no aqui: si se
         // ejecutara ahora, el worker podria tomar la ejecucion antes de que
         // esta transaccion confirme y leeria un ticket que todavia no existe.
@@ -213,6 +217,27 @@ public TicketResponse create(TicketRequest request) {
         log.info("Ticket #{} creado por {}", ticket.getIdTicket(), requester.getCorporateEmailUser());
         return ticketMapper.toResponse(ticket);
       }
+
+    /**
+     * Quién figura como solicitante. Solo el personal (agente, administrador)
+     * puede abrir un ticket a nombre de otra persona, y esa persona tiene que
+     * existir y estar activa. Un solicitante que mande requesterId de otro
+     * recibe 403: no puede crear casos en nombre ajeno.
+     */
+    private User solicitanteDe(TicketRequest request, User creador) {
+        UUID id = request.requesterId();
+        if (id == null || id.equals(creador.getIdUser())) {
+            return creador;
+        }
+        if (!esPersonal(creador)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Solo el personal puede crear tickets a nombre de otra persona");
+        }
+        return userRepository.findById(id)
+                .filter(u -> !Boolean.TRUE.equals(u.getDeletedUser()))
+                .filter(this::esActivo)
+                .orElseThrow(() -> new BadRequestException("El solicitante no existe o no está activo"));
+    }
 
     private Priority resolvePriority(Category category) {
         int level = category.getTeamCategory() != null
@@ -519,6 +544,14 @@ publishSse("TICKET_STATUS_CHANGED", ticket, current.getIdUser(), current.getCorp
         String autorVisible = nombreVisible(current);
         User notified = current.getIdUser().equals(ticket.getUserTicket().getIdUser())
                 ? ticket.getAgentTicket() : ticket.getUserTicket();
+        // Una nota interna (mensaje privado) es solo para el personal. Antes el
+        // aviso salía igual al solicitante, por correo y en la campana, con el
+        // texto completo de la nota. Ahora va al agente asignado (si no es quien
+        // escribe) y a los administradores, nunca al solicitante.
+        if (internal) {
+            User agente = ticket.getAgentTicket();
+            notified = agente != null && !agente.getIdUser().equals(current.getIdUser()) ? agente : null;
+        }
         if (notified != null) {
             notificationService.notifyChatMessage(ticket, notified, request.message(), autorVisible);
         }

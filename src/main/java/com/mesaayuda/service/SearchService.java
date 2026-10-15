@@ -26,6 +26,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 import java.util.List;
 
 /**
@@ -95,7 +99,7 @@ public class SearchService {
         boolean superAdmin = actual != null && actual.getRolUser() != null
                 && "SUPER_ADMIN".equals(actual.getRolUser().getNameRole());
 
-        List<SearchTicketItem> tickets = buscarTickets(termino, limite);
+        List<SearchTicketItem> tickets = buscarTickets(actual, termino, limite);
         List<SearchUserItem> users = List.of();
         List<SearchUserItem> agents = List.of();
         List<SearchWorkflowItem> workflows = List.of();
@@ -123,10 +127,30 @@ public class SearchService {
      * por rol: un solicitante recibe solo los suyos y el personal recibe todos
      * los que coinciden. Mapea la respuesta completa a la vista compacta.
      */
-    private List<SearchTicketItem> buscarTickets(String termino, Pageable limite) {
-        return ticketService.search(null, null, null, null, null, null,
-                        termino, null, limite.getPageNumber(), limite.getPageSize())
-                .getContent().stream()
+    private List<SearchTicketItem> buscarTickets(User actual, String termino, Pageable limite) {
+        // ADMIN y SUPER_ADMIN buscan en todos. El resto, solo en los suyos: un
+        // agente ve los que tiene asignados y los que abrió él; un solicitante,
+        // los que abrió (eso ya lo impone TicketService.search).
+        if (accessPolicy.esPersonalAdministrador(actual) || !accessPolicy.esPersonal(actual)) {
+            return aItems(ticketService.search(null, null, null, null, null, null,
+                    termino, null, limite.getPageNumber(), limite.getPageSize()).getContent());
+        }
+        Map<UUID, TicketResponse> propios = new LinkedHashMap<>();
+        ticketService.search(null, null, null, null, actual.getIdUser(), null,
+                        termino, null, 0, limite.getPageSize())
+                .getContent().forEach(t -> propios.putIfAbsent(t.idTicket(), t));
+        ticketService.search(null, null, null, null, null, actual.getIdUser(),
+                        termino, null, 0, limite.getPageSize())
+                .getContent().forEach(t -> propios.putIfAbsent(t.idTicket(), t));
+        return aItems(propios.values().stream()
+                .sorted(Comparator.comparing(TicketResponse::createdAtTicket,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(limite.getPageSize())
+                .toList());
+    }
+
+    private static List<SearchTicketItem> aItems(List<TicketResponse> lista) {
+        return lista.stream()
                 .map(t -> new SearchTicketItem(t.idTicket(), t.titleTicket(), t.status(),
                         t.priority(), t.createdAtTicket(), t.numberTicket()))
                 .toList();

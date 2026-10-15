@@ -24,5 +24,17 @@ public record TicketRequest(
          * solicitante: alguien de Quito puede abrir un ticket que hay que
          * resolver en Guayaquil.
          */
-        UUID sucursalId
-) {}
+        UUID sucursalId,
+
+        /**
+         * Solicitante, cuando el personal abre el ticket a nombre de otra persona
+         * (por ejemplo desde la búsqueda global). Vacío = quien lo crea.
+         */
+        UUID requesterId
+) {
+    /** Compatibilidad: ticket a nombre de quien lo crea. */
+    public TicketRequest(String title, String description, UUID categoryId, UUID priorityId,
+                         UUID typeId, UUID sucursalId) {
+        this(title, description, categoryId, priorityId, typeId, sucursalId, null);
+    }
+}

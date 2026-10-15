@@ -137,7 +137,8 @@ public class NotificationService {
         sendNotification(ticket, receiver, "TICKET_ASIGNADO", subject, body);
     }
 
-    public void notifyTicketUpdated(Ticket ticket, User receiver, String message) {
+    public void notifyTicketUpdated(Ticket ticket, User receiver, String mensajeHtml) {
+        String message = textoDelChat(mensajeHtml);
         Map<String, Object> variables = Map.of(
                 "id", numeroDe(ticket),
                 "ticketId", ticket.getIdTicket(),
@@ -151,7 +152,7 @@ public class NotificationService {
         String body = bodyTemplate("TICKET_ACTUALIZADO", variables,
                 "<p>El ticket <b>#%d - %s</b> tiene una nueva respuesta:</p><p>%s</p>"
                         .formatted(ticket.getNumberTicket(), escaparHtml(ticket.getTitleTicket()),
-                                escaparHtml(message == null ? "" : message)));
+                                conSaltos(message)));
         sendNotification(ticket, receiver, "TICKET_ACTUALIZADO", subject, body);
     }
 
@@ -166,8 +167,11 @@ public class NotificationService {
      * Si no existe plantilla CHAT_MENSAJE, subjectTemplate y bodyTemplate caen
      * al texto por defecto de abajo, que ya es un mensaje utilizable.
      */
-    public void notifyChatMessage(Ticket ticket, User receiver, String message, String autor) {
+    public void notifyChatMessage(Ticket ticket, User receiver, String mensajeHtml, String autor) {
         if (receiver == null || ticket == null) return;
+        // El chat guarda el HTML del editor ("<p>Prueba</p><p><br></p>"). Al
+        // escaparlo para el correo llegaba con las etiquetas a la vista.
+        String message = textoDelChat(mensajeHtml);
         Map<String, Object> variables = new HashMap<>(ticketVars(ticket));
         variables.put("respuesta", message == null ? "" : message);
         variables.put("mensaje", message == null ? "" : message);
@@ -179,11 +183,11 @@ public class NotificationService {
         String cuerpo = autor == null || autor.isBlank()
                 ? "<p>Hay un mensaje nuevo en el ticket <b>#%d - %s</b>.</p><p>%s</p>"
                         .formatted(ticket.getNumberTicket(), escaparHtml(ticket.getTitleTicket()),
-                                escaparHtml(message == null ? "" : message))
+                                conSaltos(message))
                 : "<p><b>%s</b> escribió en el ticket <b>#%d - %s</b>:</p><p>%s</p>"
                         .formatted(escaparHtml(autor), ticket.getNumberTicket(),
                                 escaparHtml(ticket.getTitleTicket()),
-                                escaparHtml(message == null ? "" : message));
+                                conSaltos(message));
 
         sendNotification(ticket, receiver, "CHAT_MENSAJE",
                 subjectTemplate("CHAT_MENSAJE", variables, asunto),
@@ -570,7 +574,8 @@ public class NotificationService {
         if (template == null || isBlank(template.getSubjectTemplate())) {
             return fallback;
         }
-        return fill(template.getSubjectTemplate(), variables, template);
+        // Un asunto es una sola línea: los saltos que deja fill se cambian por espacios.
+        return fill(template.getSubjectTemplate(), variables, template).replace("<br>", " ");
     }
 
     private String bodyTemplate(String name, Map<String, Object> variables, String fallback) {
@@ -654,7 +659,7 @@ Matcher matcher = Pattern.compile("\\{\\{([a-zA-Z0-9_]+)}}|\\[([a-zA-Z0-9_]+)]")
               // la notación que no se usó en esa coincidencia.
               String clave = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
               Object valor = valores.get(clave);
-              out.append(valor == null ? "" : escaparHtml(String.valueOf(valor)));
+              out.append(valor == null ? "" : conSaltos(String.valueOf(valor)));
               fin = matcher.end();
           }
           out.append(text.substring(fin));
@@ -680,6 +685,34 @@ Matcher matcher = Pattern.compile("\\{\\{([a-zA-Z0-9_]+)}}|\\[([a-zA-Z0-9_]+)]")
    * texto se sigue viendo igual. El resumen corto de la campana se arma aparte y
    * no pasa por aqui.
    */
+  /**
+   * Texto legible a partir del HTML del editor del chat: los saltos de párrafo y
+   * de línea quedan como saltos, el resto de etiquetas se quitan y las entidades
+   * se decodifican. El resultado es texto plano; al ir al correo se escapa.
+   */
+  static String textoDelChat(String html) {
+      if (html == null || html.isBlank()) {
+          return "";
+      }
+      String t = html
+              .replaceAll("(?i)<br\\s*/?>", "\n")
+              .replaceAll("(?i)</(p|div|li|h[1-6]|blockquote|tr)>", "\n")
+              .replaceAll("(?i)<li[^>]*>", "• ")
+              .replaceAll("<[^>]*>", "")
+              .replace("&nbsp;", " ")
+              .replace("&lt;", "<")
+              .replace("&gt;", ">")
+              .replace("&quot;", "\"")
+              .replace("&#39;", "'")
+              .replace("&amp;", "&");
+      return t.replaceAll("[ \t]+\n", "\n").replaceAll("\n{3,}", "\n\n").trim();
+  }
+
+  /** Escapa el texto y conserva sus saltos de línea como {@code <br>}. */
+  private static String conSaltos(String texto) {
+      return texto == null ? "" : escaparHtml(texto).replace("\r\n", "\n").replace("\n", "<br>");
+  }
+
   private static String escaparHtml(String valor) {
       // Se escapan solo los cinco caracteres con significado en HTML en vez de
       // usar escapeHtml4 de commons-text. La diferencia no es academica: esta

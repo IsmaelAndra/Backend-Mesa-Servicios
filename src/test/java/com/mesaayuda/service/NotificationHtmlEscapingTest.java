@@ -149,9 +149,11 @@ class NotificationHtmlEscapingTest {
 
         service.notifyTicketUpdated(ticket, agente, PAYLOAD);
 
+        // El mensaje es HTML del editor del chat: las etiquetas se quitan (no se
+        // muestran escapadas), y de la inyección no queda ni la etiqueta ni el onerror.
         String cuerpo = cuerpoEnviado();
         assertFalse(cuerpo.contains("<img"), "el mensaje llego como etiqueta: " + cuerpo);
-        assertTrue(cuerpo.contains("&lt;img"));
+        assertFalse(cuerpo.contains("onerror"), "quedo el manejador del ataque: " + cuerpo);
     }
 
     @Test
