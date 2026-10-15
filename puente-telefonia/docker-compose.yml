@@ -1,0 +1,17 @@
+# Puente de telefonía: se ejecuta en un servidor INTERNO de la cooperativa.
+#   docker compose up -d --build
+#   docker compose logs -f
+# No publica puertos: solo hace conexiones de salida (a la mesa y a la UCM).
+name: mesa-puente-telefonia
+
+services:
+  puente:
+    build: .
+    image: mesa-puente-telefonia:1.0.0
+    restart: unless-stopped
+    env_file: .env
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

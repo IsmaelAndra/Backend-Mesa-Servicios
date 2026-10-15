@@ -88,6 +88,9 @@ public class SecurityConfig {
                 // perfil "dev" o SWAGGER_ENABLED=true. Apagado, estas rutas responden 404.
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
+                // Puente de telefonía: no tiene sesión; se identifica con X-Puente-Token,
+                // que comprueba TelefoniaService (tiempo constante).
+                .requestMatchers("/telefonia/puente/**").permitAll()
                 // Solo los recursos de marca (logo, icono del sistema, fondos del
                 // chat, logos de informe y avatares) son publicos: se pintan en la
                 // pantalla de acceso, antes de que exista sesion, y ademas los

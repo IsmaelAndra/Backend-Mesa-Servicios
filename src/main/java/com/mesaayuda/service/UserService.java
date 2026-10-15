@@ -271,6 +271,7 @@ public class UserService {
         user.setCorporateEmailUser(request.corporateEmail());
         user.setPasswordUser(passwordEncoder.encode(generatedPassword));
         user.setPhoneUser(request.phone());
+        user.setExtensionUser(extensionLimpia(request.extension()));
         user.setStatusUser("ACTIVE");
         user.setRolUser(role);
         user.setArea(area);
@@ -374,6 +375,10 @@ public UserResponse update(UUID id, RegisterRequest request) {
         if (request.phone() != null) {
             user.setPhoneUser(request.phone());
         }
+        if (request.extension() != null) {
+            // Vacía = se le quita la extensión.
+            user.setExtensionUser(extensionLimpia(request.extension()));
+        }
         user.setRolUser(role);
         user.setArea(area);
         user.setSucursal(resolverSucursal(request.sucursalId()));
@@ -468,6 +473,15 @@ public UserResponse changeStatus(UUID id, String status) {
   }
 
     @Transactional(readOnly = true)
+    /** Extensión sin espacios; vacía o con letras se guarda como "sin extensión". */
+    private static String extensionLimpia(String extension) {
+        if (extension == null) {
+            return null;
+        }
+        String e = extension.trim();
+        return e.matches("^[0-9]{1,10}$") ? e : null;
+    }
+
     public User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || auth.getName() == null) {

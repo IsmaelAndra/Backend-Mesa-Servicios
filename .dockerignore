@@ -24,5 +24,7 @@ out/
 
 # Despliegue: compose, .env de producción y documentación no van en la imagen
 despliegue/
+# El puente de telefonía es otra imagen, para el servidor interno
+puente-telefonia/
 Dockerfile
 .dockerignore

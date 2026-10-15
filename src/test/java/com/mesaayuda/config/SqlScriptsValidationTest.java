@@ -43,6 +43,7 @@ class SqlScriptsValidationTest {
             "db/migration/V10__cola_de_correo.sql",
             "db/migration/V11__activos.sql",
             "db/migration/V12__historial_activos.sql",
+            "db/migration/V13__telefonia.sql",
             "db/migration/R__datos_base.sql",
             "db/dev/R__datos_dev.sql"};
 

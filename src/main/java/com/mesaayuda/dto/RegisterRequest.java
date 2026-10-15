@@ -33,5 +33,16 @@ public record RegisterRequest(
          * que se den de alta sin sede siguen siendo validas, y obligarla
          * impediria dar de alta a alguien antes de tener el catalogo cargado.
          */
-        UUID sucursalId
-) {}
+        UUID sucursalId,
+
+        /** Extensión telefónica (solo dígitos, hasta 10). Vacía = sin extensión. */
+        @jakarta.validation.constraints.Pattern(regexp = "^$|^[0-9]{1,10}$",
+                message = "La extensión solo admite números (hasta 10 dígitos)")
+        String extension
+) {
+    /** Compatibilidad: alta o edición sin extensión. */
+    public RegisterRequest(String identification, String corporateEmail, String password, String phone,
+                           String roleName, UUID areaId, UUID sucursalId) {
+        this(identification, corporateEmail, password, phone, roleName, areaId, sucursalId, null);
+    }
+}

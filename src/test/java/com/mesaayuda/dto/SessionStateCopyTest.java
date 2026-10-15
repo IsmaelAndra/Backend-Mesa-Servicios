@@ -24,7 +24,7 @@ return new TicketResponse(id, userId, "titulo", "descripcion", "correo", "Nombre
 private UserResponse user(UUID id, String statusUser, String sessionState) {
           return new UserResponse(id, "0102030405", "correo@coac.gob.ec", "0999999999",
                   statusUser, sessionState, "AGENT", "area", null, null, "Nombre", "Nombre", "Apellido",
-                  null, null, null, null, null, null);
+                  null, null, null, null, null, null, "182");
       }
 
     @Test

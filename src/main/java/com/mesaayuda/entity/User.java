@@ -87,6 +87,10 @@ public class User {
     @Column(name = "photo_url", length = 500)
     private String photoUrl;
 
+    /** Extensión telefónica en la central (V13). Solo dígitos. */
+    @Column(name = "extension_user", length = 20)
+    private String extensionUser;
+
     @Column(name = "user_principal_name", length = 255)
     private String userPrincipalName;
 
