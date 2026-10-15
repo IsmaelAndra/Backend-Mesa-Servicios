@@ -19,6 +19,7 @@ public final class IdsConfiguracion {
     public static final UUID ERROR_PAGE = UUID.fromString("00000000-0000-0000-0000-000000000004");
     public static final UUID PRIVACIDAD = UUID.fromString("00000000-0000-0000-0000-000000000005");
     public static final UUID MFA = UUID.fromString("00000000-0000-0000-0000-000000000006");
+    public static final UUID TELEFONIA = UUID.fromString("00000000-0000-0000-0000-000000000007");
 
     private IdsConfiguracion() {
     }

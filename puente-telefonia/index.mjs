@@ -1,45 +1,63 @@
 // =============================================================================
 // Puente de telefonía de la Mesa de Servicios COAC
 // =============================================================================
-// Corre en un servidor INTERNO de la cooperativa. Cada pocos segundos pregunta
-// a la mesa de servicios (conexión de SALIDA por HTTPS, como un navegador) si
-// hay llamadas pendientes, y las ejecuta con la API de la central Grandstream
-// UCM, que solo es accesible desde la red interna.
+// Corre en un servidor INTERNO de la cooperativa. Cada 2 segundos pregunta a
+// la mesa de servicios (conexión de SALIDA por HTTPS, como un navegador) si hay
+// llamadas pendientes, y las ejecuta con la API de la central Grandstream UCM,
+// que solo es accesible desde la red interna.
 //
 //   Mesa (AWS) <── HTTPS de salida ── este puente ──> UCM (red interna)
 //
-// No abre ningún puerto ni expone la UCM. Solo usa la acción dialExtension:
-// suena la extensión del agente y, al contestar, la central marca la del
-// solicitante.
+// No abre ningún puerto ni expone la UCM. Solo usa la acción dialExtension.
+//
+// Configuración: solo MESA_URL y PUENTE_TOKEN (archivo .env junto a este).
+// La URL, el usuario y la clave de la API de la UCM se configuran en la mesa
+// (Administración → Telefonía) y el puente los descarga; los cambios se aplican
+// solos, sin reiniciar.
 //
 // Sin dependencias externas: Node.js 20 o superior.
 // =============================================================================
 
 import https from 'node:https';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const cfg = {
-  mesaUrl: requerida('MESA_URL').replace(/\/+$/, ''),        // https://mesa-servicios.coacmagisterio.fin.ec/api
-  token: requerida('PUENTE_TOKEN'),                          // el mismo TELEFONIA_PUENTE_TOKEN del backend
-  ucmUrl: requerida('UCM_URL').replace(/\/+$/, ''),          // https://192.168.1.235:8089/api
-  ucmUsuario: requerida('UCM_USUARIO'),                      // usuario creado en la UCM → API Configuration
-  ucmClave: requerida('UCM_CLAVE'),
-  intervaloMs: Number(process.env.INTERVALO_MS || 2000),
-};
+const VERSION = '1.1.0';
+const CARPETA = path.dirname(fileURLToPath(import.meta.url));
 
-if (cfg.token.length < 32) {
-  salir('PUENTE_TOKEN debe tener al menos 32 caracteres (igual que TELEFONIA_PUENTE_TOKEN del backend).');
-}
+cargarEnv(path.join(CARPETA, '.env'));
 
+const mesaUrl = requerida('MESA_URL').replace(/\/+$/, '');   // https://mesa-servicios.coacmagisterio.fin.ec/api
+const token = requerida('PUENTE_TOKEN');                      // generado en Administración → Telefonía
+if (token.length < 32) salir('PUENTE_TOKEN no es válido: genéralo en Administración → Telefonía.');
+
+/** Configuración de la UCM descargada de la mesa. */
+let ucm = { enabled: false, ucmUrl: null, ucmUsuario: null, ucmClave: null, intervaloMs: 2000 };
+let firmaConfig = '';
+let configEn = 0;
 let cookieUcm = null;
+/** "ok" o el último error con la UCM; viaja a la mesa en la cabecera X-Puente-Ucm. */
+let estadoUcm = 'sin probar';
 let activo = true;
 let fallosSeguidos = 0;
 
 // ----------------------------------------------------------------------------- utilidades
 
+/** Lee un .env sencillo (CLAVE=valor). No pisa variables ya definidas en el sistema. */
+function cargarEnv(archivo) {
+  if (!fs.existsSync(archivo)) return;
+  for (const linea of fs.readFileSync(archivo, 'utf8').split(/\r?\n/)) {
+    const m = linea.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (!m || linea.trim().startsWith('#')) continue;
+    if (process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  }
+}
+
 function requerida(nombre) {
   const v = (process.env[nombre] || '').trim();
-  if (!v) salir(`Falta la variable ${nombre} (ver .env.example).`);
+  if (!v) salir(`Falta ${nombre} en el archivo .env (ver .env.example).`);
   return v;
 }
 
@@ -54,6 +72,51 @@ function log(...partes) {
 
 const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
+// ----------------------------------------------------------------------------- API de la mesa
+
+async function pedirMesa(ruta, opciones = {}) {
+  const res = await fetch(`${mesaUrl}${ruta}`, {
+    ...opciones,
+    headers: {
+      'X-Puente-Token': token,
+      'X-Puente-Version': VERSION,
+      'X-Puente-Ucm': String(estadoUcm).slice(0, 300),
+      'Content-Type': 'application/json',
+      ...(opciones.headers || {}),
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error('La mesa rechazó el token del puente (genera uno nuevo en Administración → Telefonía y ponlo en .env)');
+  }
+  if (!res.ok) throw new Error(`La mesa respondió HTTP ${res.status}`);
+  return res.status === 204 ? null : res.json();
+}
+
+/** Descarga la configuración de la UCM cada 30 s; si cambió, cierra la sesión anterior. */
+async function actualizarConfig(forzar = false) {
+  if (!forzar && Date.now() - configEn < 30_000) return;
+  const c = await pedirMesa('/telefonia/puente/config');
+  configEn = Date.now();
+  const firma = JSON.stringify([c.enabled, c.ucmUrl, c.ucmUsuario, c.ucmClave]);
+  if (firma !== firmaConfig) {
+    firmaConfig = firma;
+    ucm = { ...c, intervaloMs: c.intervaloMs || 2000 };
+    cookieUcm = null;
+    log(`Configuración recibida: ${c.enabled ? 'activa' : 'DESACTIVADA'} | UCM ${c.ucmUrl || '(sin URL)'} | usuario ${c.ucmUsuario || '(sin usuario)'}`);
+    if (c.enabled) {
+      await iniciarSesionUcm().catch((e) => log(`No se pudo iniciar sesión en la UCM: ${e.message}`));
+    }
+  }
+}
+
+async function informar(id, ok, error) {
+  await pedirMesa(`/telefonia/puente/llamadas/${id}/resultado`, {
+    method: 'POST',
+    body: JSON.stringify({ ok, error: error || null }),
+  });
+}
+
 // ----------------------------------------------------------------------------- API de la UCM
 
 /**
@@ -61,8 +124,9 @@ const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
  * esta conexión (red interna); las llamadas a la mesa validan el certificado.
  */
 function pedirUcm(request) {
+  if (!ucm.ucmUrl) return Promise.reject(new Error('Falta la URL de la UCM en Administración → Telefonía'));
   const cuerpo = JSON.stringify({ request });
-  const url = new URL(cfg.ucmUrl);
+  const url = new URL(ucm.ucmUrl);
   return new Promise((ok, mal) => {
     const req = https.request(
       {
@@ -88,22 +152,29 @@ function pedirUcm(request) {
       },
     );
     req.on('timeout', () => req.destroy(new Error('La UCM no respondió a tiempo')));
-    req.on('error', mal);
+    req.on('error', (e) => mal(new Error(`No se pudo conectar con la UCM: ${e.message}`)));
     req.end(cuerpo);
   });
 }
 
 async function iniciarSesionUcm() {
-  const reto = await pedirUcm({ action: 'challenge', user: cfg.ucmUsuario, version: '1.0' });
-  const challenge = reto?.response?.challenge;
-  if (!challenge) throw new Error(`La UCM no devolvió el reto (status ${reto?.status})`);
-  const token = crypto.createHash('md5').update(challenge + cfg.ucmClave).digest('hex');
-  const login = await pedirUcm({ action: 'login', user: cfg.ucmUsuario, token });
-  if (login?.status !== 0 || !login?.response?.cookie) {
-    throw new Error(`La UCM rechazó el inicio de sesión (status ${login?.status})`);
+  try {
+    const reto = await pedirUcm({ action: 'challenge', user: ucm.ucmUsuario, version: '1.0' });
+    const challenge = reto?.response?.challenge;
+    if (!challenge) throw new Error(`La UCM no devolvió el reto (status ${reto?.status})`);
+    const md5 = crypto.createHash('md5').update(challenge + (ucm.ucmClave || '')).digest('hex');
+    const login = await pedirUcm({ action: 'login', user: ucm.ucmUsuario, token: md5 });
+    if (login?.status !== 0 || !login?.response?.cookie) {
+      throw new Error(`La UCM rechazó el inicio de sesión (status ${login?.status}): revisa usuario, clave e IP permitida`);
+    }
+    cookieUcm = login.response.cookie;
+    estadoUcm = 'ok';
+    log('Sesión iniciada en la UCM');
+  } catch (e) {
+    cookieUcm = null;
+    estadoUcm = e.message;
+    throw e;
   }
-  cookieUcm = login.response.cookie;
-  log('Sesión iniciada en la UCM');
 }
 
 /** Ordena la llamada; si la sesión caducó, inicia otra y reintenta una vez. */
@@ -111,7 +182,10 @@ async function marcar(origen, destino) {
   for (let intento = 0; intento < 2; intento++) {
     if (!cookieUcm) await iniciarSesionUcm();
     const r = await pedirUcm({ action: 'dialExtension', cookie: cookieUcm, caller: origen, callee: destino });
-    if (r?.status === 0) return;
+    if (r?.status === 0) {
+      estadoUcm = 'ok';
+      return;
+    }
     // -6: cookie caducada o inválida → nueva sesión y otro intento.
     if (r?.status === -6 && intento === 0) {
       cookieUcm = null;
@@ -121,31 +195,10 @@ async function marcar(origen, destino) {
   }
 }
 
-// ----------------------------------------------------------------------------- API de la mesa
-
-async function pedirMesa(ruta, opciones = {}) {
-  const res = await fetch(`${cfg.mesaUrl}${ruta}`, {
-    ...opciones,
-    headers: { 'X-Puente-Token': cfg.token, 'Content-Type': 'application/json', ...(opciones.headers || {}) },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (res.status === 401 || res.status === 403) {
-    throw new Error('La mesa rechazó el token del puente (revisa PUENTE_TOKEN y TELEFONIA_PUENTE_TOKEN)');
-  }
-  if (!res.ok) throw new Error(`La mesa respondió HTTP ${res.status}`);
-  return res.status === 204 ? null : res.json();
-}
-
-async function informar(id, ok, error) {
-  await pedirMesa(`/telefonia/puente/llamadas/${id}/resultado`, {
-    method: 'POST',
-    body: JSON.stringify({ ok, error: error || null }),
-  });
-}
-
 // ----------------------------------------------------------------------------- bucle
 
 async function vuelta() {
+  await actualizarConfig();
   const pendientes = await pedirMesa('/telefonia/puente/pendientes');
   for (const ll of pendientes || []) {
     try {
@@ -160,22 +213,17 @@ async function vuelta() {
 }
 
 async function principal() {
-  log(`Iniciado. Mesa: ${cfg.mesaUrl} | UCM: ${cfg.ucmUrl} | usuario UCM: ${cfg.ucmUsuario}`);
-  try {
-    await iniciarSesionUcm();
-  } catch (e) {
-    log(`Aviso: no se pudo iniciar sesión en la UCM todavía (${e.message}). Se reintentará con la primera llamada.`);
-  }
+  log(`Puente de telefonía ${VERSION}. Mesa: ${mesaUrl}`);
   while (activo) {
     try {
       await vuelta();
-      if (fallosSeguidos > 0) log('Conexión recuperada');
+      if (fallosSeguidos > 0) log('Conexión con la mesa recuperada');
       fallosSeguidos = 0;
-      await esperar(cfg.intervaloMs);
+      await esperar(ucm.intervaloMs || 2000);
     } catch (e) {
       fallosSeguidos++;
       // Espera creciente para no insistir contra un servidor caído (máximo 1 min).
-      const pausa = Math.min(60_000, cfg.intervaloMs * 2 ** Math.min(fallosSeguidos, 5));
+      const pausa = Math.min(60_000, 2000 * 2 ** Math.min(fallosSeguidos, 5));
       if (fallosSeguidos <= 3 || fallosSeguidos % 10 === 0) log(`Error: ${e.message}. Reintento en ${pausa / 1000} s`);
       await esperar(pausa);
     }

@@ -1,0 +1,26 @@
+# Servicio systemd del puente de telefonía (servidor interno con Linux, sin Docker).
+#
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin mesapuente
+#   sudo mkdir -p /opt/mesa-puente-telefonia && sudo cp index.mjs .env /opt/mesa-puente-telefonia/
+#   sudo chown -R mesapuente: /opt/mesa-puente-telefonia && sudo chmod 600 /opt/mesa-puente-telefonia/.env
+#   sudo cp mesa-puente-telefonia.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now mesa-puente-telefonia
+#   journalctl -u mesa-puente-telefonia -f
+[Unit]
+Description=Puente de telefonia de la Mesa de Servicios (UCM)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=mesapuente
+WorkingDirectory=/opt/mesa-puente-telefonia
+ExecStart=/usr/bin/node /opt/mesa-puente-telefonia/index.mjs
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

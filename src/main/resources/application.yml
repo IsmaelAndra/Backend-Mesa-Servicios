@@ -68,10 +68,6 @@ spring:
 
 # ============================ APP (Schedulers, JWT, Uploads, CORS) ============================
 app:
-  # Telefonía (central Grandstream UCM, ver puente-telefonia/). El puente se
-  # identifica con este token (mínimo 32 caracteres). Vacío = telefonía apagada.
-  telefonia:
-    puente-token: ${TELEFONIA_PUENTE_TOKEN:}
   scheduler:
     sla:
       cron: 0 */15 * * * MON-FRI

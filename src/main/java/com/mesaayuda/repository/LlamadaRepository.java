@@ -34,6 +34,9 @@ public interface LlamadaRepository extends JpaRepository<Llamada, UUID> {
             + "WHERE l.statusLlamada = 'ENVIADA' AND l.updatedAtLlamada < :limite")
     int cerrarEnviadasSinRespuesta(@Param("limite") OffsetDateTime limite, @Param("ahora") OffsetDateTime ahora);
 
+    /** Últimas llamadas, para Administración → Telefonía. */
+    List<Llamada> findAllByOrderByCreatedAtLlamadaDesc(org.springframework.data.domain.Pageable pagina);
+
     /** Última llamada del agente, para no duplicar si pulsa dos veces seguidas. */
     Llamada findTopByCallerUserIdOrderByCreatedAtLlamadaDesc(UUID callerUserId);
 }
