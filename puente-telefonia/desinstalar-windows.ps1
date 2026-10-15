@@ -1,4 +1,4 @@
-# Quita la tarea del puente de telefonía (ejecutar en PowerShell como Administrador).
+# Quita la tarea del puente de telefonia (ejecutar en PowerShell como Administrador).
 #   powershell -ExecutionPolicy Bypass -File .\desinstalar-windows.ps1
 $ErrorActionPreference = 'Stop'
 $nombre = 'Mesa - Puente de telefonia'

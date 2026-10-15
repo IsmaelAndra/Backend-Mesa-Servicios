@@ -1,5 +1,5 @@
 # =============================================================================
-# Instala el puente de telefonía como tarea de Windows (sin Docker).
+# Instala el puente de telefonia como tarea de Windows (sin Docker).
 #
 #   1. Instala Node.js 20 LTS o superior (https://nodejs.org).
 #   2. Copia esta carpeta al servidor (por ejemplo C:\MesaPuenteTelefonia).
@@ -8,7 +8,7 @@
 #        powershell -ExecutionPolicy Bypass -File .\instalar-windows.ps1
 #
 # Crea la tarea "Mesa - Puente de telefonia": arranca con Windows (aunque nadie
-# inicie sesión), se reinicia sola si se cae y escribe en puente.log.
+# inicie sesion), se reinicia sola si se cae y escribe en puente.log.
 # Para quitarla: .\desinstalar-windows.ps1
 # =============================================================================
 $ErrorActionPreference = 'Stop'
@@ -19,17 +19,30 @@ $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $admin) { throw 'Ejecuta este script en PowerShell como Administrador.' }
 
+# Node.js: primero en el PATH de esta ventana; si se instalo despues de abrirla,
+# en el PATH guardado del sistema y en las carpetas de instalacion habituales.
 $node = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
-if (-not $node) { throw 'No se encontró Node.js. Instala Node.js 20 LTS o superior desde https://nodejs.org y vuelve a ejecutar.' }
+if (-not $node) {
+    $rutas = ([Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+              [Environment]::GetEnvironmentVariable('Path', 'User')).Split(';') +
+             @("$env:ProgramFiles\nodejs", "${env:ProgramFiles(x86)}\nodejs", "$env:LOCALAPPDATA\Programs\nodejs")
+    $node = $rutas | Where-Object { $_ } | ForEach-Object { Join-Path $_.Trim() 'node.exe' } |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if (-not $node) { throw 'No se encontro Node.js. Instala Node.js 20 LTS o superior desde https://nodejs.org y vuelve a ejecutar.' }
+Write-Host "Node.js: $node"
 $version = (& $node --version).TrimStart('v')
 if ([int]($version.Split('.')[0]) -lt 20) { throw "Se necesita Node.js 20 o superior (tienes $version)." }
 
 if (-not (Test-Path (Join-Path $carpeta '.env'))) {
-    throw 'Falta el archivo .env. Cópialo desde .env.example y pon MESA_URL y PUENTE_TOKEN.'
+    throw 'Falta el archivo .env. Copialo desde .env.example y pon MESA_URL y PUENTE_TOKEN.'
 }
 
 # El .env tiene el token: solo administradores y SYSTEM pueden leerlo.
-icacls (Join-Path $carpeta '.env') /inheritance:r /grant:r 'Administrators:F' 'SYSTEM:F' | Out-Null
+# Se usan los SID (S-1-5-32-544 = Administradores, S-1-5-18 = SYSTEM) porque el
+# nombre del grupo cambia con el idioma de Windows ("Administrators" en ingles).
+icacls (Join-Path $carpeta '.env') /inheritance:r /grant:r '*S-1-5-32-544:F' '*S-1-5-18:F' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'No se pudieron ajustar los permisos del archivo .env.' }
 
 $log = Join-Path $carpeta 'puente.log'
 $accion = New-ScheduledTaskAction -Execute 'cmd.exe' `
@@ -50,4 +63,4 @@ Start-ScheduledTask -TaskName $nombre
 Write-Host ''
 Write-Host "Instalado y en marcha: '$nombre'." -ForegroundColor Green
 Write-Host "Revisa el log en: $log"
-Write-Host 'En la mesa, Administración → Telefonía debe mostrar el puente "En línea" en unos segundos.'
+Write-Host 'En la mesa, Administracion -> Telefonia debe mostrar el puente "En linea" en unos segundos.'

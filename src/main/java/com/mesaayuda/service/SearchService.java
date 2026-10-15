@@ -92,7 +92,10 @@ public class SearchService {
     @Transactional(readOnly = true)
     public GlobalSearchResponse buscar(String query) {
         User actual = userService.getCurrentUser();
-        String termino = escapar(query.trim());
+        // En minúsculas: las columnas se comparan con lower(...). Antes el término
+        // iba tal cual y "Ismael", "TI" o "Quito" no encontraban nada (los tickets
+        // sí, porque TicketService ya lo pasaba a minúsculas).
+        String termino = escapar(query.trim().toLowerCase(java.util.Locale.ROOT));
 
         Pageable limite = PageRequest.of(0, LIMITE_POR_GRUPO);
         boolean personal = accessPolicy.esPersonal(actual);
@@ -106,8 +109,9 @@ public class SearchService {
         List<SearchAssetItem> assets = List.of();
 
         if (personal) {
-            users = buscarPersonas(termino, "USER", limite);
-            agents = buscarPersonas(termino, "AGENT", limite);
+            // Solicitantes: usuarios y jefes de área. Personal: agentes y administradores.
+            users = buscarPersonas(termino, List.of("USER", "AREA_MANAGER"), limite);
+            agents = buscarPersonas(termino, List.of("AGENT", "ADMIN", "SUPER_ADMIN"), limite);
         }
         if (superAdmin) {
             workflows = buscarWorkflows(termino, limite);
@@ -161,11 +165,13 @@ public class SearchService {
      * identificación: la identificación no se debe usar como llave de búsqueda
      * pública porque es dato sensible y porque la búsqueda global no la expone.
      */
-    private List<SearchUserItem> buscarPersonas(String termino, String role, Pageable limite) {
+    private List<SearchUserItem> buscarPersonas(String termino, List<String> roles, Pageable limite) {
         Specification<User> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get("deletedUser")));
-            predicates.add(cb.equal(root.get("rolUser").get("nameRole"), role));
+            // Solo cuentas activas: elegir a alguien abre un ticket a su nombre.
+            predicates.add(cb.equal(root.get("statusUser"), "ACTIVE"));
+            predicates.add(root.get("rolUser").get("nameRole").in(roles));
             predicates.add(cb.or(
                     cb.like(cb.lower(root.get("corporateEmailUser")), "%" + termino + "%"),
                     cb.like(cb.lower(root.get("displayName")), "%" + termino + "%"),

@@ -318,4 +318,18 @@ class SearchServiceTest {
         verify(ticketService, never()).search(any(), any(), any(), any(), org.mockito.ArgumentMatchers.isNull(),
                 org.mockito.ArgumentMatchers.isNull(), any(), any(), any(Integer.class), any(Integer.class));
     }
+
+    @Test
+    void elTerminoSeBuscaEnMinusculas() {
+        como("SUPER_ADMIN");
+        when(accessPolicy.esPersonal(usuario)).thenReturn(true);
+        conPersonas(List.of(), List.of());
+        sinTicketsNiEquiposNiAreas();
+        when(workflowRepository.buscarPorTexto(any(), any())).thenReturn(new PageImpl<>(List.of()));
+
+        searchService.buscar("Ismael");
+
+        // Las columnas se comparan con lower(...): con "Ismael" tal cual no salía nadie.
+        verify(workflowRepository).buscarPorTexto(org.mockito.ArgumentMatchers.eq("ismael"), any(Pageable.class));
+    }
 }
