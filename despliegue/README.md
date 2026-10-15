@@ -289,6 +289,51 @@ tar czf uploads.tar.gz -C /ruta/de/UPLOAD_DIR .
 
 En el nuevo, con los contenedores ya creados, restaura como en el punto 7.2. Al arrancar, Flyway aplica las migraciones que falten.
 
+### 7.4 Copiar producción a una base de pruebas
+
+Sirve para reproducir un problema con datos reales sin tocar producción. La copia
+tiene **datos personales reales**: trátala como producción y bórrala al terminar.
+
+**1. En el EC2, sacar la copia** (base y archivos subidos):
+
+```bash
+mkdir -p ~/copias && cd ~/copias
+docker exec mesa-servicios-db-1 sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > mesa-$(date +%F).dump
+docker run --rm -v mesa-servicios_uploads:/datos:ro -v ~/copias:/c alpine tar czf /c/uploads-$(date +%F).tar.gz -C /datos .
+```
+
+Bájala a tu PC (WinSCP, `scp` o AnyDesk).
+
+**2. En tu PC, restaurar en una base aparte** (no en la de desarrollo de siempre).
+Con el PostgreSQL local y Docker Desktop, en PowerShell, en la carpeta donde está el `.dump`:
+
+```powershell
+docker run --rm -e PGPASSWORD=TU_CLAVE_LOCAL postgres:16-alpine psql -h host.docker.internal -U postgres -c "CREATE DATABASE mesa_pruebas"
+docker run --rm -e PGPASSWORD=TU_CLAVE_LOCAL -v "${PWD}:/d" postgres:16-alpine pg_restore -h host.docker.internal -U postgres -d mesa_pruebas --no-owner --no-privileges /d/mesa-AAAA-MM-DD.dump
+```
+
+**3. Antes de arrancar nada, apagar lo que sale hacia fuera** (correo, Microsoft Graph,
+telefonía y automatizaciones) con `preparar-copia-pruebas.sql`, en esta misma carpeta:
+
+```powershell
+docker run --rm -e PGPASSWORD=TU_CLAVE_LOCAL -v "${PWD}:/d" postgres:16-alpine psql -h host.docker.internal -U postgres -d mesa_pruebas -f /d/preparar-copia-pruebas.sql
+```
+
+La comprobación del final debe salir en `false` / `0`. **Sin este paso, la copia
+envía correos reales a los usuarios** y procesa la cola de correo pendiente.
+
+**4. Arrancar el backend contra la copia.** En el `.env` del backend pon
+`DB_DATABASE=mesa_pruebas` y arranca como siempre (`./gradlew.bat bootRun`). Para ver
+fotos y logos, descomprime `uploads-AAAA-MM-DD.tar.gz` en la carpeta `uploads/` del backend.
+
+Tenlo en cuenta al probar:
+
+- Las contraseñas son las de producción.
+- Los secretos guardados (Microsoft Graph, IA, clave de la UCM) no se pueden leer con tu
+  `SECRET_ENCRYPTION_KEY` local. Es lo esperado: la copia no debe conectarse a nada real.
+- Al terminar, vuelve a poner tu base en `DB_DATABASE` y borra la copia y el `.dump`:
+  `DROP DATABASE mesa_pruebas;`
+
 ## 8. Validar que todo funciona
 
 ```bash

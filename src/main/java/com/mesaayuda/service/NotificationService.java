@@ -103,6 +103,30 @@ public class NotificationService {
         return v;
     }
 
+    /**
+     * Todas las variables del ticket ([id], [titulo], [estado], [prioridad],
+     * [categoria], [area], [tipo], [solicitante], [agente]...) más [nombre] de
+     * quien recibe el correo. Antes varios eventos (actualizado, resuelto,
+     * cerrado, SLA, escalado, calificación) solo pasaban [id] y [titulo], y lo
+     * demás que ofrece el editor de plantillas salía vacío en el correo.
+     */
+    private Map<String, Object> varsTicket(Ticket ticket, User receiver) {
+        Map<String, Object> v = new HashMap<>(ticketVars(ticket));
+        v.put("nombre", nameOf(receiver));
+        return v;
+    }
+
+    /** Acción de una escalación en español, como se ve en la pantalla de SLA. */
+    private static String accionEnEspanol(String accion) {
+        if (accion == null) return "";
+        return switch (accion) {
+            case "NOTIFY_SUPERVISOR" -> "Notificar al supervisor";
+            case "ESCALATE" -> "Escalar";
+            case "REASSIGN" -> "Reasignar";
+            default -> accion;
+        };
+    }
+
     private String nombre(String valor) {
         return valor == null ? "" : valor;
     }
@@ -139,14 +163,9 @@ public class NotificationService {
 
     public void notifyTicketUpdated(Ticket ticket, User receiver, String mensajeHtml) {
         String message = textoDelChat(mensajeHtml);
-        Map<String, Object> variables = Map.of(
-                "id", numeroDe(ticket),
-                "ticketId", ticket.getIdTicket(),
-                "title", ticket.getTitleTicket(),
-                "titulo", ticket.getTitleTicket(),
-                "respuesta", message == null ? "" : message,
-                "mensaje", message == null ? "" : message,
-                "nombre", nameOf(receiver));
+        Map<String, Object> variables = varsTicket(ticket, receiver);
+        variables.put("respuesta", message == null ? "" : message);
+        variables.put("mensaje", message == null ? "" : message);
         String subject = subjectTemplate("TICKET_ACTUALIZADO", variables,
                 "Ticket #%d actualizado".formatted(ticket.getNumberTicket()));
         String body = bodyTemplate("TICKET_ACTUALIZADO", variables,
@@ -206,12 +225,7 @@ public class NotificationService {
     }
 
     public void notifyRatingRequest(Ticket ticket) {
-        Map<String, Object> variables = Map.of(
-                "id", numeroDe(ticket),
-                "ticketId", ticket.getIdTicket(),
-                "title", ticket.getTitleTicket(),
-                "titulo", ticket.getTitleTicket(),
-                "nombre", nameOf(ticket.getUserTicket()));
+        Map<String, Object> variables = varsTicket(ticket, ticket.getUserTicket());
         String subject = subjectTemplate("RATING_REQUEST", variables,
                 "Califique su ticket #%d".formatted(ticket.getNumberTicket()));
         String body = bodyTemplate("RATING_REQUEST", variables,
@@ -221,10 +235,9 @@ public class NotificationService {
     }
 
     public void notifySlaWarning(TicketSla ticketSla, int percentage) {
-        Map<String, Object> variables = Map.of(
-                "id", numeroDe(ticketSla.getTicket()),
-                "ticketId", ticketSla.getTicket().getIdTicket(),
-                "percentage", percentage);
+        Map<String, Object> variables = varsTicket(ticketSla.getTicket(), ticketSla.getTicket().getAgentTicket());
+        variables.put("percentage", percentage);
+        variables.put("porcentaje", percentage);
         String subject = subjectTemplate("SLA_WARNING", variables,
                 "SLA por vencer - Ticket #%d".formatted(ticketSla.getTicket().getNumberTicket()));
         String body = bodyTemplate("SLA_WARNING", variables,
@@ -235,9 +248,7 @@ public class NotificationService {
     }
 
     public void notifySlaBreached(TicketSla ticketSla) {
-        Map<String, Object> variables = Map.of(
-                "id", numeroDe(ticketSla.getTicket()),
-                "ticketId", ticketSla.getTicket().getIdTicket());
+        Map<String, Object> variables = varsTicket(ticketSla.getTicket(), ticketSla.getTicket().getAgentTicket());
         String subject = subjectTemplate("SLA_BREACHED", variables,
                 "SLA vencido - Ticket #%d".formatted(ticketSla.getTicket().getNumberTicket()));
         String body = bodyTemplate("SLA_BREACHED", variables,
@@ -251,10 +262,9 @@ public class NotificationService {
         User receiver = escalation.getDestinationUser() != null
                 ? escalation.getDestinationUser()
                 : (ticket.getAgentTicket() != null ? ticket.getAgentTicket() : ticket.getUserTicket());
-        Map<String, Object> variables = Map.of(
-                "id", numeroDe(ticket),
-                "ticketId", ticket.getIdTicket(),
-                "action", escalation.getActionType() == null ? "" : escalation.getActionType());
+        Map<String, Object> variables = varsTicket(ticket, receiver);
+        variables.put("action", accionEnEspanol(escalation.getActionType()));
+        variables.put("accion", accionEnEspanol(escalation.getActionType()));
         String subject = subjectTemplate("ESCALATION", variables,
                 "Ticket #%d escalado".formatted(ticket.getNumberTicket()));
         String body = bodyTemplate("ESCALATION", variables,
@@ -297,7 +307,8 @@ public class NotificationService {
                 "fecha", fecha,
                 "hora", hora,
                 "estado", task.getStatusTask(),
-                "nombre", nameOf(receiver));
+                "nombre", nameOf(receiver),
+                "agente", nameOf(receiver));
         String subjectTpl = subjectTemplate("TASK_ASIGNADA", variables, subject);
         String bodyTpl = bodyTemplate("TASK_ASIGNADA", variables, body);
         sendNotification(null, receiver, "TASK_ASIGNADA", subjectTpl, bodyTpl);
@@ -466,11 +477,12 @@ public class NotificationService {
 
     private void notifySimple(Ticket ticket, User receiver, String type,
                               String defaultSubject, String title) {
-        Map<String, Object> variables = Map.of(
-                "id", ticket != null ? numeroDe(ticket) : "",
-                "ticketId", ticket != null ? ticket.getIdTicket() : "",
-                "title", title == null ? "" : title,
-                "titulo", title == null ? "" : title);
+        Map<String, Object> variables = ticket != null ? varsTicket(ticket, receiver) : new HashMap<>();
+        if (ticket == null) {
+            variables.put("title", title == null ? "" : title);
+            variables.put("titulo", title == null ? "" : title);
+            variables.put("nombre", nameOf(receiver));
+        }
         String subject = subjectTemplate(type, variables, defaultSubject);
         String body = bodyTemplate(type, variables, "Ticket: " + escaparHtml(title == null ? "" : title));
         sendNotification(ticket, receiver, type, subject, body);

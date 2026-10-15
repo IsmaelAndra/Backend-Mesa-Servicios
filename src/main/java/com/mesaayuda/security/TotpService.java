@@ -157,9 +157,14 @@ public class TotpService {
         return codigo.replaceAll("[\\s-]", "").trim();
     }
 
+    /**
+     * Codificación de URI. URLEncoder es para formularios y cambia los espacios
+     * por "+", que las apps autenticadoras muestran tal cual: "Mesa+de+Servicios".
+     * En una URI el espacio va como %20.
+     */
     private String encode(String valor) {
         return java.net.URLEncoder.encode(valor == null ? "" : valor,
-                java.nio.charset.StandardCharsets.UTF_8);
+                java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     /**

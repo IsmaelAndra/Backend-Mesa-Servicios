@@ -294,7 +294,9 @@ class TotpServiceRfc6238Test {
 
         assertTrue(uri.startsWith("otpauth://totp/"), uri);
         assertTrue(uri.contains("secret=JBSWY3DPEHPK3PXP"), uri);
-        assertTrue(uri.contains("issuer=Mesa+de+Servicios"), uri);
+        // Los espacios van como %20: con "+" la app mostraba "Mesa+de+Servicios".
+        assertTrue(uri.contains("issuer=Mesa%20de%20Servicios"), uri);
+        assertTrue(!uri.contains("+"), uri);
         assertTrue(uri.contains("algorithm=SHA1"), uri);
         assertTrue(uri.contains("digits=6"), uri);
         assertTrue(uri.contains("period=30"), uri);
