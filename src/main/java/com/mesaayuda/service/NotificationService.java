@@ -557,66 +557,20 @@ public class NotificationService {
     }
 
     /**
-     * Correo de restablecimiento: lleva un enlace, no una contraseña.
-     *
-* <p>Cambió el contrato a propósito. Antes esta plantilla incluía
-     * `[password]` con la clave ya generada, lo que llegaba al correo de cualquiera
-     * sin demostrar nada. Ahora el correo solo prueba que se pidió el
-     * enlace; la contraseña la elige el titular en el formulario.
+     * Correo de restablecimiento con la contraseña temporal ([password]), como
+     * el de alta de cuenta. La temporal no reemplaza a la actual hasta que se
+     * usa para entrar (ver AuthService.forgotPassword).
      */
-    public void notifyPasswordReset(User user, String urlReset) {
-        Map<String, Object> variables = new HashMap<>(accountVariables(user, ""));
-        variables.put("urlReset", urlReset == null ? "" : urlReset);
+    public void notifyPasswordReset(User user, String passwordTemporal) {
+        Map<String, Object> variables = new HashMap<>(accountVariables(user, passwordTemporal));
         String subject = subjectTemplate("RESET_PASSWORD", variables,
                 "Restablecimiento de contraseña - Mesa de Servicios");
-        // Se usa SIEMPRE la plantilla configurada. Si es una antigua sin
-        // [urlReset] (la V17 convierte la de fábrica), su botón ([urlLogin])
-        // lleva al formulario de nueva contraseña y [password] explica qué
-        // hacer en vez de quedar vacío.
-        NotificationTemplate plantilla = activeTemplate("RESET_PASSWORD");
-        boolean conEnlace = plantilla != null && plantilla.getBodyTemplate() != null
-                && plantilla.getBodyTemplate().contains("urlReset");
-        if (!conEnlace) {
-            variables.put("urlLogin", urlReset == null ? "" : urlReset);
-            variables.put("password", "Pulse el botón de este correo para crear su nueva contraseña");
-            variables.put("clave", variables.get("password"));
-        }
-        String body = bodyTemplate("RESET_PASSWORD", variables, defaultResetBody(user, urlReset));
+        String body = bodyTemplate("RESET_PASSWORD", variables,
+                defaultAccountBody("Restablecimiento de contraseña", user, passwordTemporal));
+        // Urgente y no se agrupa: la persona está esperando para entrar. El
+        // cuerpo (con la clave) se borra de la cola después de enviarlo.
         mailOutboxService.encolar(user.getCorporateEmailUser(), subject, body, "RESET_PASSWORD",
                 MailOutbox.PRIORIDAD_URGENTE, null, null);
-    }
-
-    /**
-     * Cuerpo de reserva cuando no hay plantilla guardada para el evento.
-     *
-     * <p>Se escribe aparte de {@link #defaultAccountBody} porque la estructura es
-     * distinta: aquí no hay una contraseña que mostrar, hay un botón. Si se
-     * reutilizara el otro, una instalación recién sembrada (sin plantillas
-     * propias) seguiría educating al usuario a copiar una contraseña que ya no
-     * existe.
-     */
-    private String defaultResetBody(User user, String urlReset) {
-        String boton = urlReset == null || urlReset.isBlank()
-                ? ""
-                : String.format(
-                        "<p><a href=\"%s\" style=\"display:inline-block;background:#062e86;color:#ffffff;"
-                                + "text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:bold;\">"
-                                + "Establecer mi nueva contraseña</a></p>", urlReset);
-        return """
-            <div style="background:#f3f4f6;padding:32px 16px;">
-              <div style="max-width:620px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;">
-                <div style="background:#062e86;padding:24px 32px;text-align:center;">%s</div>
-                <div style="padding:28px 36px 12px;font-family:Arial,Helvetica,sans-serif;color:#374151;">
-                  <h2 style="color:#062e86;margin:0 0 18px;">Restablecimiento de contraseña</h2>
-                  <p>Estimado/a <b>%s</b>:</p>
-                  <p>Recibimos una solicitud para restablecer la contraseña de su cuenta.</p>
-                  <p>Pulse el botón para establecer una nueva. El enlace es de un solo uso y vence en 24 horas.</p>
-                  %s
-                  <p>Si usted no solicitó esto, ignore este mensaje: su contraseña actual sigue vigente.</p>
-                </div>
-              </div>
-            </div>
-            """.formatted(logoHtml(), nameOf(user), boton);
     }
 
     private Map<String, Object> accountVariables(User user, String password) {

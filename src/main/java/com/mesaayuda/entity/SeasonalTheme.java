@@ -61,6 +61,10 @@ public class SeasonalTheme {
     @Column(name = "logo_url_theme", length = 500)
     private String logoUrlTheme;
 
+    /** Imagen de fondo del encabezado del inicio (dashboard) mientras dura el tema. */
+    @Column(name = "dashboard_url_theme", length = 500)
+    private String dashboardUrlTheme;
+
     @Column(name = "created_at_theme", nullable = false, updatable = false)
     private OffsetDateTime createdAtTheme;
 

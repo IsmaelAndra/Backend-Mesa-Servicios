@@ -177,10 +177,10 @@ public class SeasonalThemeService {
         SeasonalTheme t = obtener(id);
         String prefijo = "tema_" + t.getCodeTheme().toLowerCase() + "_" + tipoImagen(tipo);
         String url = adminService.guardarImagenPublica(archivo, prefijo).get("url");
-        if ("fondo".equals(tipoImagen(tipo))) {
-            t.setBackgroundUrlTheme(url);
-        } else {
-            t.setLogoUrlTheme(url);
+        switch (tipoImagen(tipo)) {
+            case "fondo" -> t.setBackgroundUrlTheme(url);
+            case "inicio" -> t.setDashboardUrlTheme(url);
+            default -> t.setLogoUrlTheme(url);
         }
         t.setUpdatedAtTheme(OffsetDateTime.now());
         return repository.save(t);
@@ -189,10 +189,10 @@ public class SeasonalThemeService {
     @Transactional
     public SeasonalTheme quitarImagen(UUID id, String tipo) {
         SeasonalTheme t = obtener(id);
-        if ("fondo".equals(tipoImagen(tipo))) {
-            t.setBackgroundUrlTheme(null);
-        } else {
-            t.setLogoUrlTheme(null);
+        switch (tipoImagen(tipo)) {
+            case "fondo" -> t.setBackgroundUrlTheme(null);
+            case "inicio" -> t.setDashboardUrlTheme(null);
+            default -> t.setLogoUrlTheme(null);
         }
         t.setUpdatedAtTheme(OffsetDateTime.now());
         return repository.save(t);
@@ -212,12 +212,24 @@ public class SeasonalThemeService {
         return new Tema(t.getIdTheme(), t.getCodeTheme(), t.getNameTheme(), Boolean.TRUE.equals(t.getActiveTheme()),
                 m1, d1, m2, d2,
                 t.getGreetingTheme(), url.apply(t.getBackgroundUrlTheme()), url.apply(t.getLogoUrlTheme()),
-                vigente(t, hoy), t.getRuleTheme());
+                url.apply(t.getDashboardUrlTheme()), vigente(t, hoy), t.getRuleTheme());
     }
 
     public TemaActual aActual(SeasonalTheme t, java.util.function.UnaryOperator<String> url) {
-        return new TemaActual(t.getCodeTheme(), t.getNameTheme(), t.getGreetingTheme(),
-                url.apply(t.getBackgroundUrlTheme()), url.apply(t.getLogoUrlTheme()));
+        return new TemaActual(t.getCodeTheme(), t.getNameTheme(), saludo(t.getGreetingTheme()),
+                url.apply(t.getBackgroundUrlTheme()), url.apply(t.getLogoUrlTheme()),
+                url.apply(t.getDashboardUrlTheme()));
+    }
+
+    /** Año de fundación de la cooperativa (11 de noviembre de 1968). */
+    static final int ANIO_FUNDACION = 1968;
+
+    /** En el saludo, {anios} son los años que cumple la cooperativa este año. */
+    static String saludo(String texto) {
+        if (texto == null) {
+            return null;
+        }
+        return texto.replace("{anios}", String.valueOf(LocalDate.now(ZONA).getYear() - ANIO_FUNDACION));
     }
 
     private SeasonalTheme obtener(UUID id) {
@@ -225,10 +237,10 @@ public class SeasonalThemeService {
     }
 
     private static String tipoImagen(String tipo) {
-        if ("fondo".equals(tipo) || "logo".equals(tipo)) {
+        if ("fondo".equals(tipo) || "logo".equals(tipo) || "inicio".equals(tipo)) {
             return tipo;
         }
-        throw new BadRequestException("Tipo de imagen no válido: use fondo o logo.");
+        throw new BadRequestException("Tipo de imagen no válido: use fondo, logo o inicio.");
     }
 
     private static void validarFecha(int mes, int dia) {

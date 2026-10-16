@@ -168,76 +168,72 @@ class AuthServiceTest {
     }
 
     /**
-     * El cambio de fondo de 1D.2: pedir el restablecimiento ya NO toca la
-     * contraseña. Antes la generaba, la guardaba y la mandaba en el mismo
-     * instante, así que cualquiera que conociera el correo de un compañero
-     * (en este dominio son consecutivos) le tumbaba la sesión.
+     * Pedir el restablecimiento envía una contraseña temporal por correo, pero
+     * NO reemplaza la actual: queda pendiente. Si la cambiara en el acto,
+     * cualquiera que conociera el correo de un compañero lo dejaría fuera.
      */
-@Test
-    void forgotPassword_noCambiaLaContrasena_soloEmiteEnlace() {
-        user.setStatusUser("ACTIVE");
-        user.setDeletedUser(false);
-        when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
-
-        // El fixture deja mustChangePassword en true, asi que lo que importa es
-        // que forgotPassword no lo toque, no su valor absoluto.
-        boolean mustAntes = user.getMustChangePassword();
-        OffsetDateTime venceAntes = user.getTemporalPasswordExpiresAt();
-
-        authService.forgotPassword(user.getCorporateEmailUser());
-
-        // Lo importante: ni se encripta ni se guarda una contraseña nueva.
-        verify(passwordEncoder, never()).encode(anyString());
-        verify(userRepository, never()).save(any());
-        assertEquals(mustAntes, user.getMustChangePassword(),
-                "no debe marcarse cambio pendiente todavia");
-        assertEquals(venceAntes, user.getTemporalPasswordExpiresAt(),
-                "no debe fijarse caducidad de contraseña temporal");
-
-        // Y se emite un enlace de un solo uso para ese usuario.
-        ArgumentCaptor<PasswordResetToken> enlace = ArgumentCaptor.forClass(PasswordResetToken.class);
-        verify(passwordResetTokenRepository).save(enlace.capture());
-        assertEquals(user, enlace.getValue().getUser());
-        assertNotNull(enlace.getValue().getTokenHash());
-        assertTrue(enlace.getValue().getExpiresAt().isAfter(OffsetDateTime.now()));
-
-        // Lo guardado es el hash, no el token. Se comprueba contra el token real
-        // que salió por correo: si se guardara en claro, leer la tabla bastaría
-        // para resetsar la cuenta de cualquiera.
-        ArgumentCaptor<String> url = ArgumentCaptor.forClass(String.class);
-        verify(notificationService).notifyPasswordReset(eq(user), url.capture());
-        String tokenCrudo = url.getValue().substring(url.getValue().indexOf("token=") + 6);
-        assertNotEquals(tokenCrudo, enlace.getValue().getTokenHash());
-        assertEquals(sha256De(tokenCrudo), enlace.getValue().getTokenHash());
-
-        verify(passwordResetTokenRepository).invalidarPendientes(user.getIdUser());
-    }
-
-    /** Replica el hash que hace AuthService.hashToken, para poder compararlo. */
-    private String sha256De(String raw) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(
-                    md.digest(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    /** El correo lleva el enlace, no una contraseña que copiar. */
     @Test
-    void forgotPassword_mandaElEnlaceYNoLaClave() {
+    void forgotPassword_mandaTemporalSinTocarLaActual() {
         user.setStatusUser("ACTIVE");
         user.setDeletedUser(false);
+        user.setPasswordUser("HASH_ACTUAL");
         when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
+        when(passwordEncoder.encode(anyString())).thenReturn("HASH_TEMPORAL");
+        boolean mustAntes = user.getMustChangePassword();
 
         authService.forgotPassword(user.getCorporateEmailUser());
 
-        ArgumentCaptor<String> url = ArgumentCaptor.forClass(String.class);
-        verify(notificationService).notifyPasswordReset(eq(user), url.capture());
-        assertTrue(url.getValue().contains("token="),
-                "debe ser un enlace con token: " + url.getValue());
-        assertTrue(url.getValue().contains("/restablecer"));
+        assertEquals("HASH_ACTUAL", user.getPasswordUser(), "la contraseña actual sigue valiendo");
+        assertEquals(mustAntes, user.getMustChangePassword());
+        assertEquals("HASH_TEMPORAL", user.getResetPasswordHash());
+        assertTrue(user.getResetPasswordExpiresAt().isAfter(OffsetDateTime.now()));
+
+        // El correo lleva la temporal en claro (la que se encriptó), no un enlace.
+        ArgumentCaptor<String> clave = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).notifyPasswordReset(eq(user), clave.capture());
+        ArgumentCaptor<String> cifrada = ArgumentCaptor.forClass(String.class);
+        verify(passwordEncoder).encode(cifrada.capture());
+        assertEquals(clave.getValue(), cifrada.getValue());
+        assertFalse(clave.getValue().contains("token="));
+    }
+
+    /** Entrar con la temporal la convierte en la contraseña y pide cambiarla. */
+    @Test
+    void login_conLaTemporal_laConvierteEnLaContrasena() {
+        user.setPasswordUser("HASH_ACTUAL");
+        user.setMustChangePassword(false);
+        user.setResetPasswordHash("HASH_TEMPORAL");
+        user.setResetPasswordExpiresAt(OffsetDateTime.now().plusHours(2));
+        when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Temporal1!", "HASH_TEMPORAL")).thenReturn(true);
+        Authentication auth = authWithAuthority("ROLE_USER");
+        when(authenticationManager.authenticate(any())).thenReturn(auth);
+        when(tokenProvider.generateToken(any(), anyLong())).thenReturn("token");
+
+        authService.login(new AuthRequest(user.getCorporateEmailUser(), "Temporal1!"));
+
+        assertEquals("HASH_TEMPORAL", user.getPasswordUser());
+        assertNull(user.getResetPasswordHash());
+        assertTrue(user.getMustChangePassword(), "debe pedir cambiarla al entrar");
+        verify(refreshTokenRepository).revokeAllByUser(user.getIdUser());
+    }
+
+    /** Entrar con la de siempre descarta la temporal pendiente. */
+    @Test
+    void login_conLaDeSiempre_descartaLaTemporal() {
+        user.setPasswordUser("HASH_ACTUAL");
+        user.setResetPasswordHash("HASH_TEMPORAL");
+        user.setResetPasswordExpiresAt(OffsetDateTime.now().plusHours(2));
+        when(userRepository.findByCorporateEmailUser(user.getCorporateEmailUser())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("MiClave1!", "HASH_TEMPORAL")).thenReturn(false);
+        Authentication auth = authWithAuthority("ROLE_USER");
+        when(authenticationManager.authenticate(any())).thenReturn(auth);
+        when(tokenProvider.generateToken(any(), anyLong())).thenReturn("token");
+
+        authService.login(new AuthRequest(user.getCorporateEmailUser(), "MiClave1!"));
+
+        assertEquals("HASH_ACTUAL", user.getPasswordUser());
+        assertNull(user.getResetPasswordHash());
     }
 
     /** Confirmar el enlace: cambia la clave, limpia la marca y tira las sesiones. */

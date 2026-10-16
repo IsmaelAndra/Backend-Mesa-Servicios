@@ -15,6 +15,7 @@ import com.mesaayuda.repository.SucursalRepository;
 import com.mesaayuda.repository.AreaRepository;
 import com.mesaayuda.repository.PasswordResetTokenRepository;
 import com.mesaayuda.repository.RefreshTokenRepository;
+import com.mesaayuda.util.PasswordGenerator;
 import com.mesaayuda.repository.RoleRepository;
 import com.mesaayuda.repository.UserRepository;
 import com.mesaayuda.security.JwtTokenProvider;
@@ -142,6 +143,11 @@ public AuthResponse login(AuthRequest request) {
           rateLimitService.exigir("login-origen", origen,
                   RateLimitService.MAX_LOGIN_ORIGEN, RateLimitService.VENTANA_LOGIN_ORIGEN);
 
+          // Si entra con la contraseña temporal pedida por correo, pasa a ser su
+          // contraseña (y se le pedirá cambiarla). Hasta ese momento la anterior
+          // seguía valiendo.
+          usarPasswordTemporalSiCorresponde(key, request.password());
+
           Authentication authentication;
           try {
               authentication = authenticationManager.authenticate(
@@ -164,6 +170,13 @@ public AuthResponse login(AuthRequest request) {
 
         if (isTemporalPasswordExpired(user)) {
             user.setMustChangePassword(true);
+            userRepository.save(user);
+        }
+        // Entró con su contraseña de siempre: la temporal que hubiera pedido ya
+        // no hace falta y no se deja vigente.
+        if (user.getResetPasswordHash() != null) {
+            user.setResetPasswordHash(null);
+            user.setResetPasswordExpiresAt(null);
             userRepository.save(user);
         }
 
@@ -258,6 +271,8 @@ public AuthResponse login(AuthRequest request) {
         user.setPasswordUser(passwordEncoder.encode(newPassword));
         user.setMustChangePassword(false);
         user.setTemporalPasswordExpiresAt(null);
+        user.setResetPasswordHash(null);
+        user.setResetPasswordExpiresAt(null);
         // Corta también los tokens de acceso ya emitidos: revocar solo los de
         // refresco dejaba a quien tuviera uno 15 minutos más dentro.
         user.setTokensValidAfter(OffsetDateTime.now());
@@ -299,31 +314,58 @@ rateLimitService.registrar("forgot-password", normalized,
           rateLimitService.registrar("forgot-password-origen", origen,
                   RateLimitService.MAX_RESTABLECER * 4, RateLimitService.VENTANA_RESTABLECER);
 
-          // Aquí es donde cambia el comportamiento: antes se generaba una
-          // contraseña temporal, se guardaba y se mandaba por correo en la misma
-          // petición. Eso no probaba nada. Bastaba con conocer el correo de un
-          // compañero (en este dominio son consecutivos y se deducen) para
-          // tumbarle la sesión y forzarle un cambio.
-          //
-          // Ahora la petición solo emite un enlace. La contraseña no se toca
-          // hasta que el titular lo abre, y al abrirlo se revocan todas sus
-          // sesiones: si el motivo del restablecimiento es que sospechan de un
-          // robo, dejar el refresh token vivo sería no hacer nada.
+          // Se envía una contraseña temporal por correo, como al crear la
+          // cuenta. Pero NO reemplaza todavía a la actual: queda pendiente y la
+          // de siempre sigue valiendo. Si se cambiara en el acto, bastaría con
+          // conocer el correo de un compañero (en este dominio se deducen) para
+          // dejarlo fuera. Al entrar con la temporal, pasa a ser su contraseña,
+          // se cierran sus otras sesiones y se le pide cambiarla.
           passwordResetTokenRepository.invalidarPendientes(user.getIdUser());
+          String temporal = PasswordGenerator.generate();
+          user.setResetPasswordHash(passwordEncoder.encode(temporal));
+          user.setResetPasswordExpiresAt(OffsetDateTime.now().plusMinutes(RESET_TOKEN_MINUTES));
+          userRepository.save(user);
 
-          String token = UUID.randomUUID() + "." + UUID.randomUUID();
-          PasswordResetToken enlace = new PasswordResetToken();
-          enlace.setUser(user);
-          enlace.setTokenHash(hashToken(token));
-          enlace.setExpiresAt(OffsetDateTime.now().plusMinutes(RESET_TOKEN_MINUTES));
-          enlace.setCreatedAt(OffsetDateTime.now());
-          passwordResetTokenRepository.save(enlace);
-
-          String urlReset = urlFrontend("/restablecer") + "?token=" + token;
           systemAuditService.record("PASSWORD_RESET_REQUESTED", "User",
                   user.getIdUser(), normalized);
-          notificationService.notifyPasswordReset(user, urlReset);
-          log.info("Enlace de restablecimiento emitido para {}", normalized);
+          notificationService.notifyPasswordReset(user, temporal);
+          log.info("Contraseña temporal enviada a {}", normalized);
+      }
+
+      /**
+       * Si la contraseña escrita es la temporal pendiente (y no venció), la
+       * convierte en la contraseña de la cuenta antes de autenticar. No dice
+       * nada si no coincide: el login sigue y valida la contraseña normal.
+       */
+      private void usarPasswordTemporalSiCorresponde(String email, String password) {
+          if (password == null || password.isEmpty()) {
+              return;
+          }
+          User user = userRepository.findByCorporateEmailUser(email).orElse(null);
+          if (user == null || user.getResetPasswordHash() == null) {
+              return;
+          }
+          if (user.getResetPasswordExpiresAt() != null
+                  && user.getResetPasswordExpiresAt().isBefore(OffsetDateTime.now())) {
+              user.setResetPasswordHash(null);
+              user.setResetPasswordExpiresAt(null);
+              userRepository.save(user);
+              return;
+          }
+          if (!passwordEncoder.matches(password, user.getResetPasswordHash())) {
+              return;
+          }
+          user.setPasswordUser(user.getResetPasswordHash());
+          user.setResetPasswordHash(null);
+          user.setResetPasswordExpiresAt(null);
+          user.setMustChangePassword(true);
+          user.setTemporalPasswordExpiresAt(OffsetDateTime.now().plusMinutes(TEMPORAL_PASSWORD_MINUTES));
+          // Si pidió la temporal porque sospecha de un robo, las sesiones
+          // abiertas con la contraseña anterior se cierran.
+          user.setTokensValidAfter(OffsetDateTime.now().minusSeconds(1));
+          userRepository.save(user);
+          refreshTokenRepository.revokeAllByUser(user.getIdUser());
+          systemAuditService.record("PASSWORD_RESET_USED", "User", user.getIdUser());
       }
 
       /**

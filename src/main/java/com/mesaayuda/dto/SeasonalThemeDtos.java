@@ -17,13 +17,13 @@ public final class SeasonalThemeDtos {
 
     /** Tema que toca hoy, para el login, el navbar y el saludo del inicio. */
     public record TemaActual(String code, String name, String greeting,
-                             String backgroundUrl, String logoUrl) {
+                             String backgroundUrl, String logoUrl, String dashboardUrl) {
     }
 
     /** Un tema en la pantalla de administración. */
     public record Tema(UUID id, String code, String name, boolean active,
                        int startMonth, int startDay, int endMonth, int endDay,
-                       String greeting, String backgroundUrl, String logoUrl,
+                       String greeting, String backgroundUrl, String logoUrl, String dashboardUrl,
                        boolean vigenteHoy,
                        /** CARNAVAL si las fechas se calculan solas (entonces start/end son las próximas). */
                        String rule) {

@@ -110,6 +110,17 @@ public class User {
     @Column(name = "tokens_valid_after")
     private OffsetDateTime tokensValidAfter;
 
+    /**
+     * Contraseña temporal pedida con "¿Olvidó su contraseña?" (hash), pendiente
+     * de usar. La contraseña actual sigue valiendo hasta que se entra con esta:
+     * así nadie puede dejar fuera a otra persona solo con saber su correo.
+     */
+    @Column(name = "reset_password_hash", length = 255)
+    private String resetPasswordHash;
+
+    @Column(name = "reset_password_expires_at")
+    private OffsetDateTime resetPasswordExpiresAt;
+
     @OneToMany(mappedBy = "assignedUser", fetch = FetchType.LAZY)
     private List<Asset> assignedAssets = new ArrayList<>();
 

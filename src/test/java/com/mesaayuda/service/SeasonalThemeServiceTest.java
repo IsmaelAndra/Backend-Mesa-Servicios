@@ -112,6 +112,14 @@ class SeasonalThemeServiceTest {
     }
 
     @Test
+    void elSaludoCuentaLosAniosDeLaCooperativa() {
+        String s = SeasonalThemeService.saludo("¡{anios} años!");
+        int anios = LocalDate.now().getYear() - 1968;
+        assertEquals("¡" + anios + " años!", s);
+        assertNull(SeasonalThemeService.saludo(null));
+    }
+
+    @Test
     void unTemaInactivoNoSale() {
         halloween.setActiveTheme(false);
         assertTrue(service.temaActual(LocalDate.of(2026, 10, 25)).isEmpty());
