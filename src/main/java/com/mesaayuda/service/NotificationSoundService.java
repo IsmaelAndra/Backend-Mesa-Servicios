@@ -30,6 +30,7 @@ public class NotificationSoundService {
 
     private static final Set<String> URGENCIAS = Set.of("urgent", "normal", "soft");
     private static final Pattern TIPO = Pattern.compile("^[A-Z][A-Z0-9_]{1,59}$");
+    private static final Pattern TEMPORADA = Pattern.compile("^[A-Z][A-Z0-9_]{1,29}:(urgent|normal|soft)$");
 
     private final NotificationSoundRepository repository;
     private final UserService userService;
@@ -149,8 +150,9 @@ public class NotificationSoundService {
 
     private static String ambito(String scope) {
         String a = scope == null ? "" : scope.trim().toUpperCase();
-        if (!NotificationSound.AMBITO_URGENCIA.equals(a) && !NotificationSound.AMBITO_TIPO.equals(a)) {
-            throw new BadRequestException("Ámbito no válido: use URGENCIA o TIPO.");
+        if (!NotificationSound.AMBITO_URGENCIA.equals(a) && !NotificationSound.AMBITO_TIPO.equals(a)
+                && !NotificationSound.AMBITO_TEMPORADA.equals(a)) {
+            throw new BadRequestException("Ámbito no válido: use URGENCIA, TIPO o TEMPORADA.");
         }
         return a;
     }
@@ -163,6 +165,16 @@ public class NotificationSoundService {
                 throw new BadRequestException("Urgencia no válida: use urgent, normal o soft.");
             }
             return k;
+        }
+        if (NotificationSound.AMBITO_TEMPORADA.equals(ambito(scope))) {
+            // "NAVIDAD:urgent": tema en mayúsculas, urgencia en minúsculas.
+            int dosPuntos = k.indexOf(':');
+            String normal = dosPuntos < 0 ? k : k.substring(0, dosPuntos).toUpperCase() + ":"
+                    + k.substring(dosPuntos + 1).toLowerCase();
+            if (!TEMPORADA.matcher(normal).matches()) {
+                throw new BadRequestException("Clave de temporada no válida: use TEMA:urgencia.");
+            }
+            return normal;
         }
         k = k.toUpperCase();
         if (!TIPO.matcher(k).matches()) {

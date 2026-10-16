@@ -32,6 +32,9 @@ public class SolicitanteService {
 
     private static final ZoneId ZONE = ZoneId.of("America/Guayaquil");
 
+    @Autowired(required = false)
+    private MicrosoftGraphUserSyncService userSyncService;
+
     @Autowired
     private UserRepository userRepository;
 
@@ -78,6 +81,11 @@ public class SolicitanteService {
             log.warn("Acceso denegado: {} intentó consultar la ficha 360° del usuario {}.",
                     actual.getCorporateEmailUser(), userId);
             throw new AccessDeniedException("No tiene acceso a la ficha de este solicitante");
+        }
+        // Si no tiene foto (o se perdió el archivo), se pide a Microsoft en segundo
+        // plano: la próxima vez que se abra la ficha ya sale.
+        if (userSyncService != null) {
+            userSyncService.asegurarFoto(userId);
         }
         return construirResumen(userId);
     }

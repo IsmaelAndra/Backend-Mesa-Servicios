@@ -466,6 +466,15 @@ private static final Map<String, String> EXTENSION_POR_TIPO = Map.of(
  */
 private static final long IMAGE_MAX_BYTES = 5L * 1024 * 1024;
 
+/**
+ * Guarda una imagen en la zona pública con las mismas comprobaciones que la
+ * marca (firma del archivo, sin SVG, tope de tamaño). La usan también los
+ * temas de temporada para su fondo y su logo.
+ */
+public Map<String, String> guardarImagenPublica(MultipartFile file, String prefix) {
+    return saveImage(file, prefix);
+}
+
 private Map<String, String> saveImage(MultipartFile file, String prefix) {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException("El archivo está vacío");

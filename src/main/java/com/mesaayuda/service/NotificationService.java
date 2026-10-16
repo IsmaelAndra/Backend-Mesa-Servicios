@@ -569,14 +569,18 @@ public class NotificationService {
         variables.put("urlReset", urlReset == null ? "" : urlReset);
         String subject = subjectTemplate("RESET_PASSWORD", variables,
                 "Restablecimiento de contraseña - Mesa de Servicios");
-        // Se usa SIEMPRE la plantilla configurada. Las plantillas antiguas no
-        // traen [urlReset] y muestran [password], que ya no existe (el
-        // restablecimiento va por enlace): para que sigan sirviendo, su botón
-        // ([urlLogin]) lleva al formulario de nueva contraseña y [password]
-        // explica qué hacer en vez de quedar vacío.
-        variables.put("urlLogin", urlReset == null ? "" : urlReset);
-        variables.put("password", "Pulse el botón de este correo para crear su nueva contraseña");
-        variables.put("clave", variables.get("password"));
+        // Se usa SIEMPRE la plantilla configurada. Si es una antigua sin
+        // [urlReset] (la V17 convierte la de fábrica), su botón ([urlLogin])
+        // lleva al formulario de nueva contraseña y [password] explica qué
+        // hacer en vez de quedar vacío.
+        NotificationTemplate plantilla = activeTemplate("RESET_PASSWORD");
+        boolean conEnlace = plantilla != null && plantilla.getBodyTemplate() != null
+                && plantilla.getBodyTemplate().contains("urlReset");
+        if (!conEnlace) {
+            variables.put("urlLogin", urlReset == null ? "" : urlReset);
+            variables.put("password", "Pulse el botón de este correo para crear su nueva contraseña");
+            variables.put("clave", variables.get("password"));
+        }
         String body = bodyTemplate("RESET_PASSWORD", variables, defaultResetBody(user, urlReset));
         mailOutboxService.encolar(user.getCorporateEmailUser(), subject, body, "RESET_PASSWORD",
                 MailOutbox.PRIORIDAD_URGENTE, null, null);

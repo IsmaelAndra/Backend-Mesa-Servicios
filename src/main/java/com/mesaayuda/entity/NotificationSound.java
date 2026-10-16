@@ -22,6 +22,8 @@ public class NotificationSound {
 
     public static final String AMBITO_URGENCIA = "URGENCIA";
     public static final String AMBITO_TIPO = "TIPO";
+    /** Sonido de una urgencia durante un tema de temporada (clave "NAVIDAD:urgent"). */
+    public static final String AMBITO_TEMPORADA = "TEMPORADA";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

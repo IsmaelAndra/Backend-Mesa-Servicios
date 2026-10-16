@@ -54,6 +54,35 @@ public class MicrosoftGraphUserSyncService {
         }
     }
 
+    /** Último intento de traer la foto bajo demanda, por usuario (para no insistir). */
+    private final java.util.Map<UUID, Long> intentosFoto = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Trae la foto de una persona sin esperar a la sincronización periódica, si
+     * no tiene o su archivo no está. Se llama al abrir su ficha: un solicitante
+     * que nunca inició sesión no tenía foto hasta la siguiente vuelta, y si
+     * Microsoft había fallado esa vez, hasta el día siguiente. Como mucho un
+     * intento por persona cada hora.
+     */
+    @Async
+    public void asegurarFoto(UUID userId) {
+        try {
+            User user = userRepository.findById(userId).orElse(null);
+            if (user == null || (user.getPhotoUrl() != null && !user.getPhotoUrl().isBlank() && fotoEnDisco(user))) {
+                return;
+            }
+            long ahora = System.currentTimeMillis();
+            Long previo = intentosFoto.get(userId);
+            if (previo != null && ahora - previo < 3_600_000L) {
+                return;
+            }
+            intentosFoto.put(userId, ahora);
+            syncUser(userId, true);
+        } catch (Exception e) {
+            log.warn("No se pudo traer la foto del usuario {}: {}", userId, e.getMessage());
+        }
+    }
+
     /** Sincroniza a todos los usuarios activos. Devuelve cuántos se actualizaron. */
     public int syncAll() {
         MicrosoftGraphConfig config = enabledConfigOrNull();

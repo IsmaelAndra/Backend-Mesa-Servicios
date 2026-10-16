@@ -83,6 +83,17 @@ class NotificationSoundServiceTest {
     }
 
     @Test
+    void elSonidoDeTemporadaVaPorTemaYUrgencia() {
+        var r = service.subirAudio("TEMPORADA", "navidad:URGENT",
+                new MockMultipartFile("file", "campanas.mp3", "audio/mpeg", mp3()));
+
+        assertEquals("TEMPORADA", r.scope());
+        assertEquals("NAVIDAD:urgent", r.key());
+        assertThrows(BadRequestException.class, () -> service.restablecer("TEMPORADA", "NAVIDAD"));
+        assertThrows(BadRequestException.class, () -> service.restablecer("TEMPORADA", "NAVIDAD:fuerte"));
+    }
+
+    @Test
     void quitarElAudioDeUnTipoSinUrgenciaPropiaBorraLaFila() {
         NotificationSound s = new NotificationSound();
         s.setScopeSound("TIPO");
