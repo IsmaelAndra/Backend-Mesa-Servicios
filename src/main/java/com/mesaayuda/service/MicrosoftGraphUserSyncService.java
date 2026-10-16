@@ -62,7 +62,7 @@ public class MicrosoftGraphUserSyncService {
         }
         int count = 0;
         for (User user : userRepository.findByStatusUserAndDeletedUserFalse("ACTIVE")) {
-            if (!isStale(user, config.getSyncIntervalMinutes())) {
+            if (!isStale(user, config.getSyncIntervalMinutes()) && !fotoPerdida(user)) {
                 continue;
             }
             try {
@@ -94,7 +94,7 @@ public class MicrosoftGraphUserSyncService {
         if (user == null) {
             return 0;
         }
-        if (!force && !isStale(user, config.getSyncIntervalMinutes())) {
+        if (!force && !isStale(user, config.getSyncIntervalMinutes()) && !fotoPerdida(user)) {
             return 0;
         }
 
@@ -157,6 +157,15 @@ public class MicrosoftGraphUserSyncService {
         } catch (IOException e) {
             throw new IllegalStateException("No se pudo guardar la foto: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Tiene foto en la base pero el archivo no está (volumen nuevo, copia
+     * restaurada): se vuelve a sincronizar sin esperar al intervalo, que es de un
+     * día. Mientras tanto la foto salía rota en el detalle del ticket.
+     */
+    private boolean fotoPerdida(User user) {
+        return user.getPhotoUrl() != null && !user.getPhotoUrl().isBlank() && !fotoEnDisco(user);
     }
 
     /** Si la foto que apunta el usuario existe en la carpeta de subidas. */
