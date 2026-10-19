@@ -58,7 +58,15 @@ public class AiAssistantService {
     private static final String DEFAULT_OPENAI_BASE = "https://api.openai.com/v1";
     /** GroqCloud: API compatible con OpenAI; la capa gratuita basta para la mesa. */
     private static final String DEFAULT_GROQ_BASE = "https://api.groq.com/openai/v1";
-    private static final String DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant";
+    /** Recomendado por Groq para la capa gratuita: rápido y sigue bien instrucciones. */
+    private static final String DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b";
+    /**
+     * Tope de tokens de respuesta en Groq. Los gpt-oss cuentan también el
+     * razonamiento, así que se deja margen sobre los 500 de su ejemplo para que
+     * un resumen no salga cortado. Con el cupo de 50 consultas diarias queda muy
+     * lejos de los 200.000 tokens al día de la capa gratuita.
+     */
+    private static final int GROQ_MAX_TOKENS = 800;
     /**
      * Versión vigente del modelo por defecto. Las series 1.x y 2.x fueron deprecadas
      * por Google (responden 404/error) y se normalizan a este modelo.
@@ -426,6 +434,20 @@ private void exigirAccion(AiConfig cfg, String accion) {
     }
 
     /**
+     * Parámetros para GroqCloud: respuestas precisas (temperatura baja, conviene
+     * para clasificar), tope de tokens y, en los modelos gpt-oss, razonamiento
+     * "low" para que respondan antes y gasten menos.
+     */
+    static String opcionesGroq(String modelo) {
+        StringBuilder o = new StringBuilder("\"temperature\":0.2,\"max_completion_tokens\":")
+                .append(GROQ_MAX_TOKENS);
+        if (modelo != null && modelo.toLowerCase().contains("gpt-oss")) {
+            o.append(",\"reasoning_effort\":\"low\"");
+        }
+        return o.toString();
+    }
+
+    /**
      * Cuenta una consulta del día y corta si se pasó del límite configurado.
      * Se cuenta en la base (una fila por día) para que valga con varias
      * instancias y tras reiniciar. Sin tabla o sin JDBC no limita.
@@ -530,7 +552,7 @@ private void exigirAccion(AiConfig cfg, String accion) {
         String json = "{\"model\":" + mapper.writeValueAsString(modelo)
                 + ",\"messages\":[{\"role\":\"system\",\"content\":\"Eres un asistente experto de una mesa de servicios COAC.\"},"
                 + "{\"role\":\"user\",\"content\":" + mapper.writeValueAsString(prompt) + "}],"
-                + "\"temperature\":0.7}";
+                + (groq ? opcionesGroq(modelo) : "\"temperature\":0.7") + "}";
 
         String body = postJson(url, Map.of("Authorization", "Bearer " + secretCryptoService.decryptIfNeeded(cfg.getApiKey())), json);
         JsonNode node = mapper.readTree(body);
