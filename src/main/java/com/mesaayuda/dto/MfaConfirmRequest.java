@@ -21,6 +21,16 @@ public record MfaConfirmRequest(
          * dos, un código de recuperación quemado en el mismo intento que un código
          * válido serviría para algo.
          */
-        String codigoRecuperacion
+        String codigoRecuperacion,
+
+        /**
+         * Recordar este equipo (no volver a pedir el código en él durante 30
+         * días). Si no viene, se recuerda: pedirlo en cada acceso era invasivo.
+         */
+        Boolean recordar
 ) {
+    /** Compatibilidad con los clientes que no envían "recordar". */
+    public MfaConfirmRequest(String challenge, String codigo, String codigoRecuperacion) {
+        this(challenge, codigo, codigoRecuperacion, null);
+    }
 }

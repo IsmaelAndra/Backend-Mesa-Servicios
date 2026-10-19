@@ -61,13 +61,16 @@ public class AuthController {
                     + "factor está activo, devuelve un desafío en lugar de tokens: hay que confirmar el "
                     + "código en /auth/mfa/confirm")
     public ResponseEntity<?> login(@Valid @RequestBody AuthRequest request,
+                                   @CookieValue(name = RefreshTokenCookie.COOKIE_EQUIPO, required = false)
+                                   String equipo,
                                    HttpServletResponse response) {
         // Se autentica primero. El MFA va después: si fallara el código, la
         // contraseña ya era correcta, y el orden inverso filtraría información.
         AuthResponse res = authService.login(request);
 
+        // Un equipo recordado (cookie) no vuelve a pedir el código durante 30 días.
         MfaChallengeResponse desafio = mfaService.prepararDesafio(
-                authService.buscarPorCorreo(request.email()));
+                authService.buscarPorCorreo(request.email()), equipo);
         if (desafio != null) {
             return ResponseEntity.ok(desafio);
         }
@@ -93,12 +96,18 @@ public class AuthController {
             description = "Completa el alta del doble factor o verifica el inicio de sesión y devuelve "
                     + "la sesión. Es pública porque quien todavía no tiene sesión es quien la usa")
     public ResponseEntity<?> confirmarMfa(@Valid @RequestBody MfaConfirmRequest request,
+                                          HttpServletRequest httpRequest,
                                           HttpServletResponse response) {
         List<String> recuperacion = mfaService.confirmar(
                 request.challenge(), request.codigo(), request.codigoRecuperacion());
 
         AuthResponse res = authService.sesionTrasMfa(request.challenge());
         refreshTokenCookie.emitir(response, res.refreshToken());
+        if (!Boolean.FALSE.equals(request.recordar())) {
+            String equipo = mfaService.recordarEquipo(res.userId(), httpRequest.getHeader("User-Agent"));
+            refreshTokenCookie.emitirEquipo(response, equipo,
+                    java.time.Duration.ofDays(mfaService.diasRecordar()));
+        }
 
         if (recuperacion.isEmpty()) {
             return ResponseEntity.ok(res.sinRefreshToken());
@@ -181,9 +190,22 @@ public class AuthController {
     @PostMapping("/change-password")
     @Operation(summary = "Cambiar contraseña", description = "Cambiar contraseña del usuario autenticado")
     public ResponseEntity<AuthResponse> changePassword(@Valid @RequestBody ChangePasswordRequest request,
+                                                       HttpServletRequest httpRequest,
                                                        HttpServletResponse response) {
-        UUID userId = userService.getCurrentUser().getIdUser();
+        var actual = userService.getCurrentUser();
+        UUID userId = actual.getIdUser();
+        // Con doble factor, cambiar la contraseña pide también el código de la app.
+        mfaService.exigirCodigoSiCorresponde(actual, request.codigoMfa());
         authService.changePassword(userId, request.currentPassword(), request.newPassword());
+        // Los equipos recordados se olvidan (si se cambia por sospecha de robo, el
+        // otro equipo vuelve a pedir el código). Este, que acaba de dar el código,
+        // queda recordado otra vez.
+        mfaService.olvidarEquipos(userId);
+        if (mfaService.activo() && mfaService.estadoDe(userId).map(m -> m.isEnrolled()).orElse(false)) {
+            refreshTokenCookie.emitirEquipo(response,
+                    mfaService.recordarEquipo(userId, httpRequest.getHeader("User-Agent")),
+                    java.time.Duration.ofDays(mfaService.diasRecordar()));
+        }
         // El cambio invalida todos los tokens, también los de esta sesión. Se
         // devuelve un par nuevo para que quien acaba de cambiarla siga dentro.
         AuthResponse res = authService.sesionNueva(userId);

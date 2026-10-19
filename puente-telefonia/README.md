@@ -66,6 +66,18 @@ Crea la tarea **"Mesa - Puente de telefonia"**: arranca con Windows aunque nadie
 inicie sesión, se reinicia sola si se cae y escribe en `puente.log`.
 Para quitarla: `.\desinstalar-windows.ps1`.
 
+#### Actualizar el puente
+
+Copiar el `index.mjs` nuevo sobre el anterior (el `.env` no se toca) y reiniciar
+la tarea en PowerShell como Administrador:
+
+```powershell
+Stop-ScheduledTask -TaskName "Mesa - Puente de telefonia"
+Start-ScheduledTask -TaskName "Mesa - Puente de telefonia"
+```
+
+En `puente.log` debe salir la versión nueva al arrancar.
+
 ### Linux
 
 Seguir las instrucciones del encabezado de `mesa-puente-telefonia.service`

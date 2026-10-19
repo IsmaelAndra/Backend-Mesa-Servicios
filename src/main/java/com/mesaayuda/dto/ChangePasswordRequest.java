@@ -9,6 +9,13 @@ public record ChangePasswordRequest(
 
         @NotBlank(message = "La nueva contraseña es obligatoria")
         @Size(min = 8, message = "La nueva contraseña debe tener al menos 8 caracteres")
-        String newPassword
+        String newPassword,
+
+        /** Código de la app de autenticación, si la persona tiene el doble factor. */
+        String codigoMfa
 ) {
+    /** Compatibilidad: cambio sin código (cuentas sin doble factor). */
+    public ChangePasswordRequest(String currentPassword, String newPassword) {
+        this(currentPassword, newPassword, null);
+    }
 }

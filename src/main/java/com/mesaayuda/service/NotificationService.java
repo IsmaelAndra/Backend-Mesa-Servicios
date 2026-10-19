@@ -106,6 +106,10 @@ public class NotificationService {
     @Value("${app.frontend-base-url:}")
     private String frontendBaseUrl;
 
+    /** Minutos sin otro correo del chat para la misma persona y ticket (solo campana). */
+    @Value("${app.mail.chat-espera-minutos:20}")
+    private long chatEsperaMinutos = 20;
+
     // ============================ DISPARADORES ============================
 
     /**
@@ -712,6 +716,13 @@ public class NotificationService {
         // A la cola de correo, en la misma transacción que la notificación. Sale
         // al ritmo que permite el buzón; en un pico, se agrupa por persona.
         for (String email : emailRecipients(ticket, receiver, type)) {
+            // Chat: un correo avisa de que hay mensajes; los que lleguen en los
+            // minutos siguientes solo van a la campana. Antes salía un correo por
+            // cada mensaje y una conversación llenaba la bandeja.
+            if ("CHAT_MENSAJE".equals(type) && ticket != null
+                    && mailOutboxService.hayCorreoReciente(email, type, ticket.getIdTicket(), chatEsperaMinutos)) {
+                continue;
+            }
             mailOutboxService.encolar(email, subject, wrapEmailBody(body), type, MailOutbox.PRIORIDAD_NORMAL,
                     notification.getIdNotification(), ticket == null ? null : ticket.getIdTicket());
         }

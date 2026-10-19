@@ -53,6 +53,13 @@ public class RefreshTokenCookie {
      */
     public static final String COOKIE_CSRF = "mesa_xsrf";
 
+    /**
+     * Equipo recordado tras el doble factor (HttpOnly, en /api/auth). Con ella el
+     * login no vuelve a pedir el código en este navegador durante su vigencia.
+     * No se borra al cerrar sesión: recordar el equipo es justo para eso.
+     */
+    public static final String COOKIE_EQUIPO = "mesa_mfa_equipo";
+
     /** Cabecera donde el frontend devuelve el token CSRF. */
     public static final String CABECERA_CSRF = "X-XSRF-TOKEN";
 
@@ -94,6 +101,13 @@ public class RefreshTokenCookie {
 
         response.addHeader("Set-Cookie", construir(COOKIE_REFRESH, refreshToken, true, vigencia));
         response.addHeader("Set-Cookie", construir(COOKIE_CSRF, csrf, false, vigencia));
+    }
+
+    /** Emite la cookie del equipo recordado por el doble factor. */
+    public void emitirEquipo(HttpServletResponse response, String token, Duration duracion) {
+        if (token != null && !token.isBlank()) {
+            response.addHeader("Set-Cookie", construir(COOKIE_EQUIPO, token, true, duracion));
+        }
     }
 
     /** Borra las dos cookies. Se llama en logout y en error de refresh. */

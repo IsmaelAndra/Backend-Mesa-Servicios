@@ -84,7 +84,9 @@ public class NexaHandler implements WorkflowNodeHandler {
             String motivo = "NEXA no pudo completar la acción en el nodo '" + nodo.id() + "': " + e.getMessage();
             // Saturación o timeout del proveedor: pasajero, se reintenta. Con la IA
             // apagada en la configuración, reintentar no arregla nada.
-            boolean pasajero = e.getMessage() == null || !e.getMessage().toLowerCase().contains("deshabilitad");
+            // Tampoco el límite diario: reintentar en minutos solo gastaría intentos.
+            String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+            boolean pasajero = !msg.contains("deshabilitad") && !msg.contains("límite diario");
             return pasajero ? WorkflowResult.fallarReintentable(motivo) : WorkflowResult.fallar(motivo);
         } catch (RuntimeException e) {
             log.warn("NEXA falló en el nodo '{}' para el ticket #{}: {}", nodo.id(), ticketId, e.getMessage());

@@ -56,6 +56,9 @@ public class AiAssistantService {
 
     private static final String DEFAULT_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
     private static final String DEFAULT_OPENAI_BASE = "https://api.openai.com/v1";
+    /** GroqCloud: API compatible con OpenAI; la capa gratuita basta para la mesa. */
+    private static final String DEFAULT_GROQ_BASE = "https://api.groq.com/openai/v1";
+    private static final String DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant";
     /**
      * Versión vigente del modelo por defecto. Las series 1.x y 2.x fueron deprecadas
      * por Google (responden 404/error) y se normalizan a este modelo.
@@ -90,6 +93,9 @@ public class AiAssistantService {
      */
     @Autowired
     private SecretCryptoService secretCryptoService;
+
+    @Autowired(required = false)
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
     private final ObjectMapper mapper = new ObjectMapper();
@@ -419,7 +425,36 @@ private void exigirAccion(AiConfig cfg, String accion) {
         return sb.toString();
     }
 
+    /**
+     * Cuenta una consulta del día y corta si se pasó del límite configurado.
+     * Se cuenta en la base (una fila por día) para que valga con varias
+     * instancias y tras reiniciar. Sin tabla o sin JDBC no limita.
+     */
+    private void consumirCupo(AiConfig cfg) {
+        Integer limite = cfg.getDailyLimit();
+        if (limite == null || limite <= 0 || jdbcTemplate == null) {
+            return;
+        }
+        java.time.LocalDate hoy = java.time.LocalDate.now(java.time.ZoneId.of("America/Guayaquil"));
+        Integer usadas;
+        try {
+            usadas = jdbcTemplate.queryForObject(
+                    "INSERT INTO ai_daily_usage (day_usage, count_usage) VALUES (?, 1) "
+                            + "ON CONFLICT (day_usage) DO UPDATE SET count_usage = ai_daily_usage.count_usage + 1 "
+                            + "RETURNING count_usage",
+                    Integer.class, hoy);
+        } catch (RuntimeException e) {
+            log.warn("No se pudo contar la consulta diaria de la IA: {}", e.getMessage());
+            return;
+        }
+        if (usadas != null && usadas > limite) {
+            throw new AiException("Se alcanzó el límite diario de NEXA (" + limite
+                    + " consultas). Vuelve a estar disponible mañana.");
+        }
+    }
+
     private GeminiResult callGemini(AiConfig cfg, String prompt, String previousInteractionId) throws Exception {
+        consumirCupo(cfg);
         String base = stripSlash(cfg.getBaseUrl() == null || cfg.getBaseUrl().isBlank()
                 ? DEFAULT_GEMINI_BASE : cfg.getBaseUrl());
         String model = geminiModel(cfg);
@@ -484,11 +519,15 @@ private void exigirAccion(AiConfig cfg, String accion) {
     }
 
     private String callOpenAiCompatible(AiConfig cfg, String prompt) throws Exception {
+        consumirCupo(cfg);
+        boolean groq = "GROQ".equalsIgnoreCase(cfg.getProvider());
         String base = stripSlash(cfg.getBaseUrl() == null || cfg.getBaseUrl().isBlank()
-                ? DEFAULT_OPENAI_BASE : cfg.getBaseUrl());
+                ? (groq ? DEFAULT_GROQ_BASE : DEFAULT_OPENAI_BASE) : cfg.getBaseUrl());
         String url = base + "/chat/completions";
+        String modelo = cfg.getModel() == null || cfg.getModel().isBlank()
+                ? (groq ? DEFAULT_GROQ_MODEL : "gpt-4o-mini") : cfg.getModel();
 
-        String json = "{\"model\":" + mapper.writeValueAsString(cfg.getModel())
+        String json = "{\"model\":" + mapper.writeValueAsString(modelo)
                 + ",\"messages\":[{\"role\":\"system\",\"content\":\"Eres un asistente experto de una mesa de servicios COAC.\"},"
                 + "{\"role\":\"user\",\"content\":" + mapper.writeValueAsString(prompt) + "}],"
                 + "\"temperature\":0.7}";

@@ -76,6 +76,11 @@ public class MfaService {
     @Autowired private RateLimitService rateLimitService;
     @Autowired private SystemAuditService systemAuditService;
     @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired(required = false) private com.mesaayuda.repository.MfaTrustedDeviceRepository equipoRepository;
+
+    /** Días que un equipo queda recordado tras confirmar el código (no vuelve a pedirlo). */
+    @org.springframework.beans.factory.annotation.Value("${app.mfa.recordar-dias:30}")
+    private int diasRecordar = 30;
 
     private final SecureRandom aleatorio = new SecureRandom();
 
@@ -168,6 +173,106 @@ log.info("Doble factor {} por el usuario {}", habilitado ? "activado" : "desacti
      *
      * @return null si el usuario no necesita segundo factor
      */
+    /**
+     * Igual que {@link #prepararDesafio(User)}, pero si el navegador trae la
+     * cookie de un equipo recordado (y la persona ya tiene el doble factor
+     * configurado) no se pide el código: se pidió hace menos de un mes en este
+     * mismo equipo. Pedirlo en cada acceso resultaba invasivo.
+     */
+    @Transactional
+    public MfaChallengeResponse prepararDesafio(User user, String tokenEquipo) {
+        if (activo() && user != null && tokenEquipo != null && !tokenEquipo.isBlank()
+                && estadoDe(user.getIdUser()).map(UserMfa::isEnrolled).orElse(false)
+                && equipoConfiable(user.getIdUser(), tokenEquipo)) {
+            systemAuditService.record("MFA_TRUSTED_DEVICE", "User", user.getIdUser());
+            return null;
+        }
+        return prepararDesafio(user);
+    }
+
+    /** Días que se recuerda un equipo (para la caducidad de la cookie). */
+    public int diasRecordar() {
+        return Math.max(1, diasRecordar);
+    }
+
+    /**
+     * Recuerda este equipo tras confirmar el código. Devuelve el token en claro
+     * para la cookie; aquí solo se guarda su SHA-256.
+     */
+    @Transactional
+    public String recordarEquipo(UUID userId, String userAgent) {
+        if (equipoRepository == null || userId == null) {
+            return null;
+        }
+        String token = UUID.randomUUID() + "." + UUID.randomUUID();
+        com.mesaayuda.entity.MfaTrustedDevice equipo = new com.mesaayuda.entity.MfaTrustedDevice();
+        equipo.setUserTrustedDevice(userId);
+        equipo.setTokenHash(hash(token));
+        equipo.setUserAgentDevice(userAgent == null ? null
+                : userAgent.length() > 200 ? userAgent.substring(0, 200) : userAgent);
+        equipo.setCreatedAtDevice(OffsetDateTime.now());
+        equipo.setExpiresAtDevice(OffsetDateTime.now().plusDays(diasRecordar()));
+        equipoRepository.save(equipo);
+        return token;
+    }
+
+    /** Si el token corresponde a un equipo recordado y vigente de esa persona. */
+    @Transactional
+    public boolean equipoConfiable(UUID userId, String token) {
+        if (equipoRepository == null || userId == null || token == null || token.isBlank()) {
+            return false;
+        }
+        return equipoRepository.findByTokenHash(hash(token.trim()))
+                .filter(e -> userId.equals(e.getUserTrustedDevice()))
+                .filter(e -> e.getExpiresAtDevice().isAfter(OffsetDateTime.now()))
+                .map(e -> {
+                    e.setLastUsedAtDevice(OffsetDateTime.now());
+                    equipoRepository.save(e);
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    /** Olvida todos los equipos recordados (cambio de contraseña, MFA desactivado). */
+    @Transactional
+    public void olvidarEquipos(UUID userId) {
+        if (equipoRepository != null && userId != null) {
+            equipoRepository.olvidarDe(userId);
+        }
+    }
+
+    /**
+     * Pide el código de la app para un cambio sensible (contraseña, datos
+     * personales) a quien tiene el doble factor configurado. Sin MFA activo o sin
+     * alta, no pide nada.
+     */
+    @Transactional
+    public void exigirCodigoSiCorresponde(User user, String codigo) {
+        if (user == null || !activo()) {
+            return;
+        }
+        UserMfa mfa = estadoDe(user.getIdUser()).orElse(null);
+        if (mfa == null || !mfa.isEnrolled() || mfa.getSecretAlmacenado() == null) {
+            return;
+        }
+        if (codigo == null || codigo.isBlank()) {
+            throw new BadRequestException(
+                    "Escriba el código de 6 dígitos de su app de autenticación para confirmar el cambio.");
+        }
+        rateLimitService.exigir("mfa", String.valueOf(user.getIdUser()),
+                RateLimitService.MAX_MFA, RateLimitService.VENTANA_MFA);
+        String secreto = secretCrypto.decrypt(mfa.getSecretAlmacenado());
+        long paso = totp.pasoDelCodigo(secreto, codigo, mfa.getUltimoContador());
+        if (paso < 0) {
+            systemAuditService.record("MFA_STEP_UP_FAILED", "User", user.getIdUser());
+            contarFalloMfa(user);
+            throw new BadRequestException("El código de verificación no es correcto o ya se usó.");
+        }
+        mfa.setUltimoContador(paso);
+        mfa.setVerificadoAtUserMfa(OffsetDateTime.now());
+        userMfaRepository.save(mfa);
+    }
+
     @Transactional
     public MfaChallengeResponse prepararDesafio(User user) {
         if (!activo()) {
@@ -462,6 +567,7 @@ List<String> enClaro = new ArrayList<>();
         recoveryCodeRepository.findByUser_IdUserAndUsadoAtIsNull(user.getIdUser())
                 .forEach(recoveryCodeRepository::delete);
 
+        olvidarEquipos(user.getIdUser());
         systemAuditService.record("MFA_DISABLED", "User", user.getIdUser());
         log.info("Doble factor desactivado para el usuario {}", user.getIdUser());
     }

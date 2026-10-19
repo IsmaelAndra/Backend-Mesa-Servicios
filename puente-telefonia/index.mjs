@@ -24,7 +24,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const CARPETA = path.dirname(fileURLToPath(import.meta.url));
 
 cargarEnv(path.join(CARPETA, '.env'));
@@ -38,6 +38,35 @@ let ucm = { enabled: false, ucmUrl: null, ucmUsuario: null, ucmClave: null, inte
 let firmaConfig = '';
 let configEn = 0;
 let cookieUcm = null;
+/** Último uso correcto de la sesión con la UCM (ms). Una sesión parada caduca sola. */
+let ultimoUsoUcm = 0;
+/** Sin uso durante este tiempo se abre una sesión nueva antes de marcar. */
+const SESION_UCM_MAX_INACTIVA_MS = 4 * 60 * 1000;
+/**
+ * Códigos de la UCM que indican una sesión vieja o un fallo pasajero: se abre
+ * otra sesión y se reintenta una vez. -8 (tiempo agotado) salía en la primera
+ * llamada tras un rato sin usar la central; las siguientes ya funcionaban.
+ */
+const STATUS_REINTENTABLES = new Set([-5, -6, -7, -8]);
+/** Significado de los códigos más habituales de la API de la UCM. */
+const STATUS_UCM = {
+  '-1': 'parámetros no válidos',
+  '-5': 'la sesión requiere autenticación',
+  '-6': 'la sesión caducó',
+  '-7': 'la central cerró la conexión',
+  '-8': 'la central no respondió a tiempo',
+  '-9': 'error interno de la central',
+  '-15': 'valor no válido (¿existe la extensión?)',
+  '-16': 'la extensión no existe',
+  '-37': 'usuario o clave de la API incorrectos',
+  '-47': 'el usuario de la API no tiene permiso',
+  '-68': 'inicio de sesión restringido (IP no permitida)',
+  '-69': 'inicio de sesión bloqueado por intentos fallidos',
+};
+function textoStatus(status) {
+  const t = STATUS_UCM[String(status)];
+  return t ? `status ${status}: ${t}` : `status ${status}`;
+}
 /** "ok" o el último error con la UCM; viaja a la mesa en la cabecera X-Puente-Ucm. */
 let estadoUcm = 'sin probar';
 let activo = true;
@@ -168,6 +197,7 @@ async function iniciarSesionUcm() {
       throw new Error(`La UCM rechazó el inicio de sesión (status ${login?.status}): revisa usuario, clave e IP permitida`);
     }
     cookieUcm = login.response.cookie;
+    ultimoUsoUcm = Date.now();
     estadoUcm = 'ok';
     log('Sesión iniciada en la UCM');
   } catch (e) {
@@ -177,21 +207,27 @@ async function iniciarSesionUcm() {
   }
 }
 
-/** Ordena la llamada; si la sesión caducó, inicia otra y reintenta una vez. */
+/** Ordena la llamada; si la sesión caducó o la central tardó, inicia otra y reintenta una vez. */
 async function marcar(origen, destino) {
+  // Una sesión que lleva un rato sin usarse se renueva antes: la central la
+  // descarta por su cuenta y la primera orden fallaba.
+  if (cookieUcm && Date.now() - ultimoUsoUcm > SESION_UCM_MAX_INACTIVA_MS) {
+    cookieUcm = null;
+  }
   for (let intento = 0; intento < 2; intento++) {
     if (!cookieUcm) await iniciarSesionUcm();
     const r = await pedirUcm({ action: 'dialExtension', cookie: cookieUcm, caller: origen, callee: destino });
     if (r?.status === 0) {
+      ultimoUsoUcm = Date.now();
       estadoUcm = 'ok';
       return;
     }
-    // -6: cookie caducada o inválida → nueva sesión y otro intento.
-    if (r?.status === -6 && intento === 0) {
+    if (STATUS_REINTENTABLES.has(r?.status) && intento === 0) {
+      log(`La UCM respondió ${textoStatus(r?.status)}; nueva sesión y otro intento`);
       cookieUcm = null;
       continue;
     }
-    throw new Error(`La UCM respondió status ${r?.status}`);
+    throw new Error(`La UCM respondió ${textoStatus(r?.status)}`);
   }
 }
 

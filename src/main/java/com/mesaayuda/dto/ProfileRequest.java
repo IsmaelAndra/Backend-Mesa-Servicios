@@ -25,6 +25,14 @@ public record ProfileRequest(
 
         String lastName,
 
-        String displayName
+        String displayName,
+
+        /** Código de la app de autenticación, si la persona tiene el doble factor. */
+        String codigoMfa
 ) {
+    /** Compatibilidad: cambio sin código (cuentas sin doble factor). */
+    public ProfileRequest(String identificationUser, String phoneUser, String firstName,
+                          String lastName, String displayName) {
+        this(identificationUser, phoneUser, firstName, lastName, displayName, null);
+    }
 }

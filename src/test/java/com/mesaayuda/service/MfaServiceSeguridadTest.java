@@ -126,6 +126,69 @@ Role rol = new Role();
     // ============================ interruptor ============================
 
     @Test
+    @DisplayName("un equipo recordado no vuelve a pedir el código")
+    void equipoRecordadoNoPideCodigo() {
+        mfaActivado();
+        enrolado(totpReal.generarSecreto());
+        com.mesaayuda.repository.MfaTrustedDeviceRepository equipos =
+                org.mockito.Mockito.mock(com.mesaayuda.repository.MfaTrustedDeviceRepository.class);
+        ReflectionTestUtils.setField(mfa, "equipoRepository", equipos);
+        org.mockito.Mockito.when(equipos.save(org.mockito.ArgumentMatchers.any())).thenAnswer(inv -> inv.getArgument(0));
+
+        String token = mfa.recordarEquipo(usuario.getIdUser(), "Navegador de prueba");
+        org.mockito.ArgumentCaptor<com.mesaayuda.entity.MfaTrustedDevice> guardado =
+                org.mockito.ArgumentCaptor.forClass(com.mesaayuda.entity.MfaTrustedDevice.class);
+        org.mockito.Mockito.verify(equipos).save(guardado.capture());
+        // Se guarda el hash, nunca el token.
+        assertFalse(token.equals(guardado.getValue().getTokenHash()));
+        org.mockito.Mockito.when(equipos.findByTokenHash(guardado.getValue().getTokenHash()))
+                .thenReturn(Optional.of(guardado.getValue()));
+
+        assertNull(mfa.prepararDesafio(usuario, token), "con el equipo recordado no hay desafío");
+        assertNotNull(mfa.prepararDesafio(usuario, "otro-token"), "con otro token sí");
+        assertNotNull(mfa.prepararDesafio(usuario, (String) null), "sin cookie sí");
+    }
+
+    @Test
+    @DisplayName("un equipo recordado de otra persona no sirve")
+    void equipoDeOtraPersonaNoSirve() {
+        mfaActivado();
+        enrolado(totpReal.generarSecreto());
+        com.mesaayuda.repository.MfaTrustedDeviceRepository equipos =
+                org.mockito.Mockito.mock(com.mesaayuda.repository.MfaTrustedDeviceRepository.class);
+        ReflectionTestUtils.setField(mfa, "equipoRepository", equipos);
+        com.mesaayuda.entity.MfaTrustedDevice ajeno = new com.mesaayuda.entity.MfaTrustedDevice();
+        ajeno.setUserTrustedDevice(id(999));
+        ajeno.setExpiresAtDevice(OffsetDateTime.now().plusDays(10));
+        org.mockito.Mockito.when(equipos.findByTokenHash(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(Optional.of(ajeno));
+
+        assertNotNull(mfa.prepararDesafio(usuario, "token-ajeno"));
+    }
+
+    @Test
+    @DisplayName("un cambio sensible pide el código a quien tiene doble factor")
+    void cambioSensiblePideCodigo() {
+        mfaActivado();
+        String secreto = totpReal.generarSecreto();
+        enrolado(secreto);
+
+        assertThrows(com.mesaayuda.exception.BadRequestException.class,
+                () -> mfa.exigirCodigoSiCorresponde(usuario, ""));
+        assertThrows(com.mesaayuda.exception.BadRequestException.class,
+                () -> mfa.exigirCodigoSiCorresponde(usuario, "000000"));
+        String valido = totpReal.calcularCodigo(secreto);
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> mfa.exigirCodigoSiCorresponde(usuario, valido));
+    }
+
+    @Test
+    @DisplayName("sin doble factor activo, un cambio sensible no pide código")
+    void sinMfaNoPideCodigo() {
+        mfaApagado();
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> mfa.exigirCodigoSiCorresponde(usuario, null));
+    }
+
+    @Test
     @DisplayName("repetir el acceso con el alta a medias muestra el MISMO QR")
     void altaPendienteReutilizaElSecreto() {
         // Antes cada login generaba un secreto nuevo: quien escaneaba, volvía

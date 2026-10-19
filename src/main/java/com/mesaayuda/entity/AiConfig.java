@@ -60,6 +60,13 @@ public class AiConfig {
     @Column(name = "enabled_actions", nullable = false, length = 200)
     private String enabledActions = "SUMMARY,ANSWER";
 
+    /**
+     * Máximo de consultas a la IA por día (todas las acciones juntas). Pensado
+     * para la capa gratuita de GroqCloud. Null o 0 = sin límite.
+     */
+    @Column(name = "daily_limit")
+    private Integer dailyLimit = 50;
+
     @Column(name = "updated_by")
     private UUID updatedBy;
     @CreationTimestamp

@@ -16,5 +16,8 @@ public record AiConfigResponse(
         String baseUrl,
         String providerIcon,
         String rulesText,
-        String enabledActions
+        String enabledActions,
+        /** Máximo de consultas por día (null = sin límite) y las usadas hoy. */
+        Integer dailyLimit,
+        Integer usedToday
 ) {}

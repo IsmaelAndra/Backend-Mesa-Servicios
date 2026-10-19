@@ -17,6 +17,9 @@ public interface WorkflowRepository extends JpaRepository<Workflow, UUID> {
 
     Optional<Workflow> findByNameWorkflowAndDeletedWorkflowFalse(String name);
 
+    /** Incluye los borrados: las automatizaciones de fábrica no se recrean si alguien las borró. */
+    boolean existsByNameWorkflow(String name);
+
     List<Workflow> findByDeletedWorkflowFalseOrderByNameWorkflowAsc();
 
     List<Workflow> findByStatusWorkflowAndDeletedWorkflowFalseOrderByNameWorkflowAsc(String status);

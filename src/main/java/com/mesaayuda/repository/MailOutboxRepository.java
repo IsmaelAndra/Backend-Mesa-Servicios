@@ -38,6 +38,10 @@ public interface MailOutboxRepository extends JpaRepository<MailOutbox, UUID>, J
 
     long countByStatusMail(String status);
 
+    /** Si a esa persona ya se le encoló un correo de ese tipo y ticket desde cierto momento. */
+    boolean existsByToMailIgnoreCaseAndTypeMailAndTicketIdAndCreatedAtMailAfter(
+            String toMail, String typeMail, java.util.UUID ticketId, java.time.OffsetDateTime desde);
+
     long countByStatusMailAndSentAtMailAfter(String status, OffsetDateTime desde);
 
     long countByStatusMailAndCreatedAtMailAfter(String status, OffsetDateTime desde);

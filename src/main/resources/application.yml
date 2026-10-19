@@ -122,7 +122,15 @@ app:
     # que no venga por HTTPS, y sin esto no se podría iniciar sesión en desarrollo.
     secure-cookie: "${APP_SECURE_COOKIE:false}"
 
+  mfa:
+    # Tras confirmar el código, el equipo queda recordado estos días y el login
+    # no lo vuelve a pedir en él (cookie HttpOnly). Pedirlo siempre era invasivo.
+    recordar-dias: ${APP_MFA_RECORDAR_DIAS:30}
+
   mail:
+    # Chat: tras un correo de aviso, los mensajes siguientes del mismo ticket a la
+    # misma persona solo van a la campana durante estos minutos.
+    chat-espera-minutos: ${APP_MAIL_CHAT_ESPERA_MINUTOS:20}
     outbox:
       # Cola de correo (V10). Exchange Online limita cada buzón a unos 30
       # mensajes por minuto: se deja margen. Subirlo provoca 429 de Graph.

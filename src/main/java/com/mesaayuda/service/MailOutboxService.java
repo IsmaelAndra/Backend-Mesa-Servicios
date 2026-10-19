@@ -137,6 +137,20 @@ public class MailOutboxService {
         return repository.saveAll(lote);
     }
 
+    /**
+     * Si ya salió (o está en cola) un correo de ese tipo para esa persona y ese
+     * ticket en los últimos minutos. Lo usa el aviso del chat para no mandar un
+     * correo por cada mensaje.
+     */
+    @Transactional(readOnly = true)
+    public boolean hayCorreoReciente(String to, String tipo, java.util.UUID ticketId, long minutos) {
+        if (to == null || tipo == null || ticketId == null || minutos <= 0) {
+            return false;
+        }
+        return repository.existsByToMailIgnoreCaseAndTypeMailAndTicketIdAndCreatedAtMailAfter(
+                to.trim(), tipo, ticketId, OffsetDateTime.now().minusMinutes(minutos));
+    }
+
     /** Marca enviados. Con {@code agrupados}, los demás salieron dentro del resumen del primero. */
     @Transactional
     public void marcarEnviados(MailOutbox principal, Collection<MailOutbox> agrupados) {

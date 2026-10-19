@@ -26,6 +26,9 @@ public class UserController {
     @Autowired
     private UserService userService;
 
+    @Autowired
+    private com.mesaayuda.service.MfaService mfaService;
+
     private boolean isAdminOrSuperAdmin() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || auth.getAuthorities() == null) return false;
@@ -77,6 +80,8 @@ public class UserController {
     @PutMapping("/me")
     @Operation(summary = "Actualizar mi perfil")
     public ResponseEntity<UserResponse> updateMe(@Valid @RequestBody ProfileRequest request) {
+        // Con doble factor, cambiar los datos personales pide también el código.
+        mfaService.exigirCodigoSiCorresponde(userService.getCurrentUser(), request.codigoMfa());
         return ResponseEntity.ok(userService.updateMyProfile(request));
     }
 

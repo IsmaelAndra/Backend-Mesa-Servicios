@@ -47,6 +47,7 @@ public class AdminService {
     @Autowired private TicketTypeRepository ticketTypeRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private BrandingConfigRepository brandingConfigRepository;
+    @Autowired(required = false) private org.springframework.jdbc.core.JdbcTemplate jdbcTemplateIa;
     @Autowired private AuditLogRepository auditLogRepository;
     @Autowired private com.mesaayuda.repository.AiConfigRepository aiConfigRepository;
     @Autowired private com.mesaayuda.security.UrlSafetyValidator urlSafetyValidator;
@@ -1325,6 +1326,9 @@ private boolean esRutaDeImagenDePlantilla(String valor) {
         if (request.enabledActions() != null && !request.enabledActions().isBlank()) {
             cfg.setEnabledActions(normalizarAccionesIa(request.enabledActions()));
         }
+        if (request.dailyLimit() != null) {
+            cfg.setDailyLimit(request.dailyLimit() <= 0 ? null : request.dailyLimit());
+        }
 if (request.apiKey() != null && !request.apiKey().isBlank()) {
               cfg.setApiKey(secretCryptoService.encrypt(request.apiKey().trim()));
           }
@@ -1381,8 +1385,22 @@ private AiConfigResponse toAiResponse(AiConfig cfg) {
                   cfg.getBaseUrl(),
                   cfg.getProviderIcon(),
                   cfg.getRulesText() == null ? "" : cfg.getRulesText(),
-                  cfg.getEnabledActions() == null ? "SUMMARY,ANSWER" : cfg.getEnabledActions());
+                  cfg.getEnabledActions() == null ? "SUMMARY,ANSWER" : cfg.getEnabledActions(),
+                  cfg.getDailyLimit(),
+                  consultasIaHoy());
       }
+
+    /** Consultas a la IA de hoy (zona de Guayaquil), para mostrarlas junto al límite. */
+    private Integer consultasIaHoy() {
+        try {
+            return jdbcTemplateIa == null ? null : jdbcTemplateIa.query(
+                    "SELECT count_usage FROM ai_daily_usage WHERE day_usage = ?",
+                    rs -> rs.next() ? rs.getInt(1) : 0,
+                    java.time.LocalDate.now(java.time.ZoneId.of("America/Guayaquil")));
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
 
     private String maskKey(String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
