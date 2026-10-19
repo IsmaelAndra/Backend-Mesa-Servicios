@@ -54,6 +54,8 @@ public final class WorkflowCatalogo {
                     "prioridadId", "Id de la prioridad sugerida",
                     "categoria", "Categoría sugerida",
                     "categoriaId", "Id de la categoría sugerida",
+                    "tipo", "Tipo de ticket sugerido",
+                    "tipoId", "Id del tipo sugerido",
                     "equipo", "Equipo sugerido",
                     "equipoId", "Id del equipo sugerido",
                     "resumen", "Resumen corto",

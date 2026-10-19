@@ -66,6 +66,9 @@ public enum WorkflowNodeType {
     /** Cambiar categoría. */
     TICKET_CATEGORY(true),
 
+    /** Cambiar tipo (INCIDENTE, REQUERIMIENTO, CONSULTA...). */
+    TICKET_TYPE(true),
+
     /** Cerrar. Azúcar sobre TICKET_STATUS con el estado fijo. */
     TICKET_CLOSE(true),
 

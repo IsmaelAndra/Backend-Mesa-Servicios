@@ -25,4 +25,27 @@ class AiAssistantGroqTest {
         assertTrue(o.path("reasoning_effort").isMissingNode());
         assertEquals(0.2, o.path("temperature").asDouble());
     }
+
+    @Test
+    void elChatHablaDistintoAUnSolicitanteQueAlPersonal() {
+        String usuario = AiAssistantService.instruccionesPorRol("USER");
+        assertTrue(usuario.contains("usuario final"));
+        assertTrue(usuario.contains("No le des"));
+        assertTrue(AiAssistantService.instruccionesPorRol("AREA_MANAGER").contains("usuario final"));
+        assertTrue(AiAssistantService.instruccionesPorRol(null).contains("usuario final"));
+        assertTrue(AiAssistantService.instruccionesPorRol("AGENT").contains("personal de TI"));
+        assertTrue(AiAssistantService.instruccionesPorRol("SUPER_ADMIN").contains("personal de TI"));
+    }
+
+    @Test
+    void laCategoriaLlevaSuDescripcionYEquipoParaLaIa() {
+        com.mesaayuda.entity.Category c = new com.mesaayuda.entity.Category();
+        c.setNameCategory("Correo");
+        c.setDescriptionCategory("Problemas con correo corporativo");
+        com.mesaayuda.entity.SupportTeam t = new com.mesaayuda.entity.SupportTeam();
+        t.setNameTeam("Equipo TI");
+        c.setTeamCategory(t);
+        assertEquals("- Correo: Problemas con correo corporativo (equipo: Equipo TI)",
+                AiAssistantService.describirCategoria(c));
+    }
 }

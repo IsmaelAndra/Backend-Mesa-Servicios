@@ -1390,4 +1390,25 @@ log.info("Ticket #{} cambió de categoría {} -> {}", ticketId, anterior, nueva.
           workflowEventPublisher.ticketCambioCategoria(ticket, anterior);
           return ticketMapper.toResponse(ticket);
     }
+
+    /** Cambia el tipo del ticket (INCIDENTE, REQUERIMIENTO...). Lo usa el nodo TICKET_TYPE. */
+    @Transactional
+    public TicketResponse changeType(UUID ticketId, UUID typeId) {
+        Ticket ticket = getTicketGestionable(ticketId, "cambiar el tipo");
+        User current = userService.getCurrentUser();
+
+        TicketType nuevo = ticketTypeRepository.findById(typeId)
+                .filter(t -> !t.getDeletedTicketType())
+                .orElseThrow(() -> new BadRequestException("Tipo de ticket inválido: " + typeId));
+
+        String anterior = ticket.getTypeTicket() == null ? null : ticket.getTypeTicket().getNameTicketType();
+        ticket.setTypeTicket(nuevo);
+        ticket = ticketRepository.save(ticket);
+
+        auditService.record(ticket, "TYPE_CHANGE", anterior, nuevo.getNameTicketType(), null);
+        publishSse("TICKET_UPDATED", ticket, current.getIdUser(), current.getCorporateEmailUser());
+        log.info("Ticket #{} cambió de tipo {} -> {}", ticketId, anterior, nuevo.getNameTicketType());
+        workflowEventPublisher.ticketActualizado(ticket);
+        return ticketMapper.toResponse(ticket);
+    }
 }

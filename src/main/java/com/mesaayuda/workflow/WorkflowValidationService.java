@@ -94,6 +94,7 @@ public class WorkflowValidationService {
     private static final Set<WorkflowNodeType> NODOS_CON_TICKET = Set.of(
             WorkflowNodeType.TICKET_ASSIGN, WorkflowNodeType.TICKET_ASSIGN_TEAM, WorkflowNodeType.TICKET_STATUS,
             WorkflowNodeType.TICKET_COMMENT, WorkflowNodeType.TICKET_PRIORITY, WorkflowNodeType.TICKET_CATEGORY,
+            WorkflowNodeType.TICKET_TYPE,
             WorkflowNodeType.TICKET_CLOSE, WorkflowNodeType.TICKET_REOPEN, WorkflowNodeType.SLA_APPLY,
             WorkflowNodeType.NEXA);
 
@@ -173,6 +174,11 @@ public class WorkflowValidationService {
                 case TICKET_CATEGORY -> {
                     if (vacio(n, "categoriaId")) {
                         errores.add("El cambio de categoría '" + nom + "' no indica la categoría.");
+                    }
+                }
+                case TICKET_TYPE -> {
+                    if (vacio(n, "tipoId")) {
+                        errores.add("El cambio de tipo '" + nom + "' no indica el tipo.");
                     }
                 }
                 case TICKET_COMMENT -> {

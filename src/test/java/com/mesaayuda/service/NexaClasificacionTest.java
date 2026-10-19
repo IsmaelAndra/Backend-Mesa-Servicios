@@ -44,6 +44,19 @@ class NexaClasificacionTest {
     }
 
     @Test
+    void tambienReconoceElTipoDeTicket() {
+        com.mesaayuda.entity.TicketType req = new com.mesaayuda.entity.TicketType();
+        req.setIdTicketType(id(7));
+        req.setNameTicketType("REQUERIMIENTO");
+        Map<String, Object> r = servicio.interpretarClasificacion(
+                "{\"prioridad\":\"BAJA\",\"tipo\":\"requerimiento\",\"confianza\":0.8}",
+                prioridades, categorias, equipos, List.of(req));
+
+        assertEquals("REQUERIMIENTO", r.get("tipo"));
+        assertEquals(id(7), r.get("tipoId"));
+    }
+
+    @Test
     void unValorQueNoEstaEnElCatalogoSeDescarta() {
         Map<String, Object> r = servicio.interpretarClasificacion(
                 "{\"prioridad\":\"URGENTISIMA\",\"categoria\":null,\"equipo\":\"Marketing\",\"confianza\":7}",

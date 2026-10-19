@@ -122,6 +122,8 @@ public class AdminService {
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getIdCategory());
             m.put("name", c.getNameCategory());
+            // La usa la IA para elegir bien la categoría al crear un ticket.
+            m.put("description", orEmpty(c.getDescriptionCategory()));
             m.put("icon", orEmpty(c.getIconCategory()));
             m.put("color", orEmpty(c.getColorCategory()));
             m.put("teamId", c.getTeamCategory() != null ? c.getTeamCategory().getIdTeam() : null);

@@ -90,6 +90,9 @@ public class AiAssistantService {
     @Autowired
     private com.mesaayuda.repository.SupportTeamRepository supportTeamRepository;
 
+    @Autowired(required = false)
+    private com.mesaayuda.repository.TicketTypeRepository ticketTypeRepository;
+
     @Autowired
     private com.mesaayuda.security.UrlSafetyValidator urlSafetyValidator;
 
@@ -166,18 +169,25 @@ private final ExpiringStateMap<String, String> chatState = new ExpiringStateMap<
         List<com.mesaayuda.entity.Priority> prioridades = priorityRepository.findAllActive();
         List<com.mesaayuda.entity.Category> categorias = categoryRepository.findByDeletedCategoryFalse();
         List<com.mesaayuda.entity.SupportTeam> equipos = supportTeamRepository.findByActiveTeamTrue();
+        List<com.mesaayuda.entity.TicketType> tipos = ticketTypeRepository == null ? List.of()
+                : ticketTypeRepository.findByDeletedTicketTypeFalseOrderByNameTicketTypeAsc();
 
         TicketResponse ticket = ticketService.findById(ticketId);
         StringBuilder sb = new StringBuilder("Actúa como analista de una mesa de servicios (COAC). ")
                 .append("Clasifica el ticket. Responde SOLO con un objeto JSON, sin texto alrededor ni Markdown, ")
-                .append("con estas claves: \"prioridad\", \"categoria\", \"equipo\" (cada una exactamente uno ")
+                .append("con estas claves: \"prioridad\", \"categoria\", \"tipo\", \"equipo\" (cada una exactamente uno ")
                 .append("de los valores permitidos, o null si no puedes decidir), \"resumen\" (máximo 40 palabras ")
                 .append("en español) y \"confianza\" (número de 0 a 1).\n\n");
         agregarReglas(sb);
         sb.append("\nPrioridades permitidas: ")
                 .append(String.join(", ", prioridades.stream().map(com.mesaayuda.entity.Priority::getNamePriority).toList()))
-                .append("\nCategorías permitidas: ")
-                .append(String.join(", ", categorias.stream().map(com.mesaayuda.entity.Category::getNameCategory).toList()))
+                .append("\nCategorías permitidas (nombre: para qué sirve). Elige la MÁS ESPECÍFICA que encaje; ")
+                .append("usa una genérica solo si ninguna otra corresponde:\n")
+                .append(String.join("\n", categorias.stream().map(AiAssistantService::describirCategoria).toList()))
+                .append("\nTipos permitidos (nombre: para qué sirve):\n")
+                .append(String.join("\n", tipos.stream().map(t -> "- " + t.getNameTicketType()
+                        + (t.getDescriptionTicketType() == null || t.getDescriptionTicketType().isBlank()
+                                ? "" : ": " + t.getDescriptionTicketType().trim())).toList()))
                 .append("\nEquipos permitidos: ")
                 .append(String.join(", ", equipos.stream().map(com.mesaayuda.entity.SupportTeam::getNameTeam).toList()))
                 .append("\n\nTICKET #").append(ticket.numberTicket())
@@ -197,7 +207,19 @@ private final ExpiringStateMap<String, String> chatState = new ExpiringStateMap<
         } catch (Exception e) {
             throw new AiException("No se pudo contactar al proveedor de IA: " + e.getMessage());
         }
-        return interpretarClasificacion(respuesta, prioridades, categorias, equipos);
+        return interpretarClasificacion(respuesta, prioridades, categorias, equipos, tipos);
+    }
+
+    /** "Correo: Problemas con correo corporativo (equipo: Equipo TI)" para el prompt. */
+    static String describirCategoria(com.mesaayuda.entity.Category c) {
+        StringBuilder s = new StringBuilder("- ").append(c.getNameCategory());
+        if (c.getDescriptionCategory() != null && !c.getDescriptionCategory().isBlank()) {
+            s.append(": ").append(c.getDescriptionCategory().trim());
+        }
+        if (c.getTeamCategory() != null && c.getTeamCategory().getNameTeam() != null) {
+            s.append(" (equipo: ").append(c.getTeamCategory().getNameTeam()).append(")");
+        }
+        return s.toString();
     }
 
     /** Lee el JSON de la IA y lo contrasta con los catálogos. Paquete para poder probarlo. */
@@ -205,6 +227,15 @@ private final ExpiringStateMap<String, String> chatState = new ExpiringStateMap<
                                                  List<com.mesaayuda.entity.Priority> prioridades,
                                                  List<com.mesaayuda.entity.Category> categorias,
                                                  List<com.mesaayuda.entity.SupportTeam> equipos) {
+        return interpretarClasificacion(respuesta, prioridades, categorias, equipos, List.of());
+    }
+
+    /** Igual, contrastando también el tipo de ticket con su catálogo. */
+    Map<String, Object> interpretarClasificacion(String respuesta,
+                                                 List<com.mesaayuda.entity.Priority> prioridades,
+                                                 List<com.mesaayuda.entity.Category> categorias,
+                                                 List<com.mesaayuda.entity.SupportTeam> equipos,
+                                                 List<com.mesaayuda.entity.TicketType> tipos) {
         JsonNode json = null;
         if (respuesta != null) {
             int inicio = respuesta.indexOf('{');
@@ -229,6 +260,10 @@ private final ExpiringStateMap<String, String> chatState = new ExpiringStateMap<
         var categoria = categorias.stream().filter(c -> igual(c.getNameCategory(), ca)).findFirst().orElse(null);
         r.put("categoria", categoria == null ? null : categoria.getNameCategory());
         r.put("categoriaId", categoria == null ? null : categoria.getIdCategory());
+        String ti = json.path("tipo").asText(null);
+        var tipo = tipos.stream().filter(t -> igual(t.getNameTicketType(), ti)).findFirst().orElse(null);
+        r.put("tipo", tipo == null ? null : tipo.getNameTicketType());
+        r.put("tipoId", tipo == null ? null : tipo.getIdTicketType());
         String eq = json.path("equipo").asText(null);
         var equipo = equipos.stream().filter(t -> igual(t.getNameTeam(), eq)).findFirst().orElse(null);
         r.put("equipo", equipo == null ? null : equipo.getNameTeam());
@@ -329,11 +364,53 @@ private final ExpiringStateMap<String, String> chatState = new ExpiringStateMap<
                 .append("Responde en español, de forma clara, directa y útil en Markdown. ")
                 .append("Si la consulta requiere información de tickets o usuarios, ")
                 .append("indica que debe consultarse desde el módulo correspondiente.");
+        sb.append("\n\n").append(instruccionesPorRol(rolActual()));
         agregarReglas(sb);
         if (context != null && !context.isBlank()) {
             sb.append("\n\nCONTEXTO ACTUAL (debes usarlo para responder):\n").append(context);
         }
         return sb.append("\n\n").append(message).toString();
+    }
+
+    /** Rol de quien hace la consulta (USER si no se puede saber: lo más restrictivo). */
+    private String rolActual() {
+        try {
+            var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null) {
+                for (var a : auth.getAuthorities()) {
+                    String r = a.getAuthority();
+                    if (r != null && r.startsWith("ROLE_")) {
+                        return r.substring(5);
+                    }
+                }
+            }
+        } catch (RuntimeException e) {
+            // Sin sesión legible se trata como solicitante.
+        }
+        return "USER";
+    }
+
+    /**
+     * Cómo responder según quién pregunta. Antes el chat hablaba igual a todos y
+     * a un solicitante le daba indicaciones de agente (asignar, cambiar estados,
+     * tocar servidores o configuraciones internas).
+     */
+    static String instruccionesPorRol(String rol) {
+        String r = rol == null ? "USER" : rol.trim().toUpperCase(java.util.Locale.ROOT);
+        return switch (r) {
+            case "AGENT", "ADMIN", "SUPER_ADMIN" -> "QUIÉN PREGUNTA: personal de TI de la mesa de servicios ("
+                    + r + "). Puedes dar diagnóstico técnico, pasos de resolución, comandos, comprobaciones y "
+                    + "redactar respuestas para el solicitante. Distingue claramente lo que hace el agente de lo "
+                    + "que debe hacer el usuario.";
+            default -> "QUIÉN PREGUNTA: un usuario final (solicitante), no personal de TI. Dale solo pasos "
+                    + "sencillos y seguros que pueda hacer por sí mismo sin permisos de administrador (reiniciar, "
+                    + "revisar cables, cerrar y abrir sesión, comprobar el mensaje de error). No le des "
+                    + "instrucciones de agente: no le digas cómo asignar, cambiar estados, prioridades o "
+                    + "categorías de tickets, ni le des comandos de servidor, configuraciones de red, de Active "
+                    + "Directory o de sistemas internos, ni procedimientos internos de TI. No redactes respuestas "
+                    + "\"del agente\". Si el problema necesita al equipo de TI, dile que lo atenderán por su ticket "
+                    + "o que cree uno con los datos necesarios.";
+        };
     }
 
     /**
