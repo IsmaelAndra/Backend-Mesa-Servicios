@@ -2,15 +2,19 @@ package com.mesaayuda.dto;
 
 import java.time.OffsetDateTime;
 
-import java.util.UUID;
+/**
+ * Plazos del SLA de un ticket, para mostrarlos en su detalle (vencimiento y
+ * cuenta regresiva). Antes solo se veían en agregado, en el dashboard.
+ */
 public record TicketSlaResponse(
-        UUID idTicketSla,
-        String slaPolicy,
-        OffsetDateTime responseDueAt,
-        OffsetDateTime resolutionDueAt,
-        OffsetDateTime responseCompletedAt,
-        OffsetDateTime resolutionCompletedAt,
-        boolean responseBreached,
-        boolean resolutionBreached,
-        int totalPausedMinutes
+        String politica,
+        OffsetDateTime respuestaVence,
+        OffsetDateTime resolucionVence,
+        OffsetDateTime respondidoEn,
+        OffsetDateTime resueltoEn,
+        boolean respuestaVencida,
+        boolean resolucionVencida,
+        OffsetDateTime pausadoDesde,
+        /** La prioridad la eligió una persona: NEXA no la cambia. */
+        boolean prioridadManual
 ) {}

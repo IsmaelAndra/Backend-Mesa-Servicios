@@ -1,7 +1,6 @@
 package com.mesaayuda.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import java.util.UUID;
 import jakarta.validation.constraints.Size;
 
 import java.util.UUID;
@@ -30,11 +29,17 @@ public record TicketRequest(
          * Solicitante, cuando el personal abre el ticket a nombre de otra persona
          * (por ejemplo desde la búsqueda global). Vacío = quien lo crea.
          */
-        UUID requesterId
+        UUID requesterId,
+
+        /**
+         * true si la persona eligió la prioridad a mano (no dejó la de por
+         * defecto). Así NEXA no la cambia después.
+         */
+        Boolean priorityManual
 ) {
     /** Compatibilidad: ticket a nombre de quien lo crea. */
     public TicketRequest(String title, String description, UUID categoryId, UUID priorityId,
                          UUID typeId, UUID sucursalId) {
-        this(title, description, categoryId, priorityId, typeId, sucursalId, null);
+        this(title, description, categoryId, priorityId, typeId, sucursalId, null, null);
     }
 }

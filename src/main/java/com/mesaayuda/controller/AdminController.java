@@ -290,8 +290,29 @@ public class AdminController {
 
     @GetMapping("/catalog")
     @Operation(summary = "Obtener catálogos del sistema (áreas, equipos, categorías, SLA)")
-    public ResponseEntity<Map<String, Object>> catalog() {
-        return ResponseEntity.ok(adminService.getCatalog());
+    public ResponseEntity<Map<String, Object>> catalog(HttpServletRequest request) {
+        // Es público porque el registro necesita las áreas antes de tener sesión.
+        // Sin sesión solo se entregan áreas y sedes: roles, equipos, categorías
+        // (con sus descripciones) y demás son información interna.
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        boolean conSesion = auth != null && auth.isAuthenticated()
+                && !(auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken);
+        String cabecera = request.getHeader("Authorization");
+        if (!conSesion && cabecera != null && cabecera.startsWith("Bearer ")) {
+            // Trae token pero caducado: 401 para que el frontend renueve la sesión
+            // y vuelva a pedir el catálogo completo, en vez de quedarse con el
+            // recortado.
+            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
+        }
+        Map<String, Object> catalogo = adminService.getCatalog();
+        if (!conSesion) {
+            Map<String, Object> publico = new java.util.LinkedHashMap<>();
+            publico.put("areas", catalogo.getOrDefault("areas", List.of()));
+            publico.put("sucursales", catalogo.getOrDefault("sucursales", List.of()));
+            return ResponseEntity.ok(publico);
+        }
+        return ResponseEntity.ok(catalogo);
     }
 
     // ============================ ÁREAS ============================

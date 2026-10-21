@@ -169,6 +169,15 @@ public class TicketController {
         return ResponseEntity.ok(ratingService.getByTicket(id));
     }
 
+    // ============================ SLA ============================
+
+    @GetMapping("/{id}/sla")
+    @Operation(summary = "Plazos del SLA de un ticket (204 si no tiene)")
+    public ResponseEntity<TicketSlaResponse> sla(@PathVariable UUID id) {
+        TicketSlaResponse sla = ticketService.sla(id);
+        return sla == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(sla);
+    }
+
     // ============================ AUDITORÍA ============================
 
     @GetMapping("/{id}/audit")

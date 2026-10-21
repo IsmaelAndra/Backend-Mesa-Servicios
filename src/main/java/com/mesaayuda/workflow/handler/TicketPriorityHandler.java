@@ -57,6 +57,14 @@ public class TicketPriorityHandler extends TicketActionSupport implements Workfl
                     + "' no indica la prioridad de destino.");
         }
 
+        // La prioridad que eligió una persona no la pisa una automatización
+        // (salvo "forzar"): de ella depende el plazo del SLA.
+        if (Boolean.TRUE.equals(ticket.getPriorityManualTicket())
+                && !Boolean.TRUE.equals(config.get("forzar"))) {
+            contexto.resultado(nodo, "omitido", "La prioridad la eligió el usuario; no se cambia.");
+            return WorkflowResult.avanzar();
+        }
+
         ticketService.changePriority(ticket.getIdTicket(), prioridadId);
         return WorkflowResult.avanzar();
     }

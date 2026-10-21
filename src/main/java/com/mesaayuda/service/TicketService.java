@@ -96,6 +96,9 @@ public class TicketService {
     @Autowired
     private SlaService slaService;
 
+    @Autowired
+    private com.mesaayuda.repository.TicketSlaRepository ticketSlaRepository;
+
     /**
      * Engancha los cambios de ticket con el motor de workflows.
      *
@@ -188,6 +191,7 @@ public TicketResponse create(TicketRequest request) {
         ticket.setTypeTicket(type);
         ticket.setStatusTicket(newStatus);
         ticket.setPriorityTicket(priority);
+        ticket.setPriorityManualTicket(request.priorityId() != null && Boolean.TRUE.equals(request.priorityManual()));
         ticket.setTeamTicket(category.getTeamCategory());
         ticket.setDeletedTicket(false);
         ticket = ticketRepository.save(ticket);
@@ -1335,6 +1339,36 @@ private Ticket getTicketGestionable(UUID id, String queSeHacia) {
     return ticket;
 }
 
+    /**
+     * El plazo del SLA depende de prioridad, categoría y tipo. Antes se fijaba
+     * solo al crear: si después cambiaba la prioridad (a mano o por NEXA), el
+     * ticket seguía con el plazo de la prioridad original. No se toca un ticket
+     * ya terminado.
+     */
+    /** Plazos del SLA del ticket; null si no tiene ninguno aplicado. */
+    @Transactional(readOnly = true)
+    public com.mesaayuda.dto.TicketSlaResponse sla(UUID ticketId) {
+        Ticket ticket = getTicketLegible(ticketId);
+        boolean manual = Boolean.TRUE.equals(ticket.getPriorityManualTicket());
+        return ticketSlaRepository.findByTicketIdTicket(ticketId)
+                .map(ts -> new com.mesaayuda.dto.TicketSlaResponse(
+                        ts.getSlaPolicy() == null ? null : ts.getSlaPolicy().getNameSlaPolicy(),
+                        ts.getResponseDueAt(), ts.getResolutionDueAt(),
+                        ts.getResponseCompletedAt(), ts.getResolutionCompletedAt(),
+                        Boolean.TRUE.equals(ts.getResponseBreached()),
+                        Boolean.TRUE.equals(ts.getResolutionBreached()),
+                        ts.getPausedAt(), manual))
+                .orElse(null);
+    }
+
+    private void recalcularSla(Ticket ticket) {
+        String estado = ticket.getStatusTicket() == null ? "" : ticket.getStatusTicket().getNameStatus();
+        if ("RESUELTO".equals(estado) || "CERRADO".equals(estado)) {
+            return;
+        }
+        slaService.applySlaToTicket(ticket);
+    }
+
     private Status statusByName(String name) {
         return statusRepository.findByNameStatus(name)
                 .filter(s -> !s.getDeletedStatus())
@@ -1362,9 +1396,16 @@ private Ticket getTicketGestionable(UUID id, String queSeHacia) {
         String anterior = ticket.getPriorityTicket() == null
                 ? null : ticket.getPriorityTicket().getNamePriority();
         ticket.setPriorityTicket(nueva);
+        boolean automatico = com.mesaayuda.workflow.WorkflowOrigen.actual() != null;
+        if (!automatico) {
+            // La fijó una persona del personal: desde ahora manda sobre la IA.
+            ticket.setPriorityManualTicket(true);
+        }
         ticket = ticketRepository.save(ticket);
+        recalcularSla(ticket);
 
-        auditService.record(ticket, "PRIORITY_CHANGE", anterior, nueva.getNamePriority(), null);
+        auditService.record(ticket, "PRIORITY_CHANGE", anterior, nueva.getNamePriority(),
+                automatico ? "Ajustada por una automatización (NEXA)" : null);
         publishSse("TICKET_UPDATED", ticket, current.getIdUser(), current.getCorporateEmailUser());
         log.info("Ticket #{} cambió de prioridad {} -> {}", ticketId, anterior, nueva.getNamePriority());
         // Antes no se publicaba nada: un workflow con "Cambio de prioridad" no se
@@ -1394,6 +1435,7 @@ private Ticket getTicketGestionable(UUID id, String queSeHacia) {
         ticket.setCategoryTicket(nueva);
         ticket = ticketRepository.save(ticket);
 
+        recalcularSla(ticket);
         auditService.record(ticket, "CATEGORY_CHANGE", anterior, nueva.getNameCategory(), null);
         publishSse("TICKET_UPDATED", ticket, current.getIdUser(), current.getCorporateEmailUser());
 log.info("Ticket #{} cambió de categoría {} -> {}", ticketId, anterior, nueva.getNameCategory());
@@ -1415,6 +1457,7 @@ log.info("Ticket #{} cambió de categoría {} -> {}", ticketId, anterior, nueva.
         ticket.setTypeTicket(nuevo);
         ticket = ticketRepository.save(ticket);
 
+        recalcularSla(ticket);
         auditService.record(ticket, "TYPE_CHANGE", anterior, nuevo.getNameTicketType(), null);
         publishSse("TICKET_UPDATED", ticket, current.getIdUser(), current.getCorporateEmailUser());
         log.info("Ticket #{} cambió de tipo {} -> {}", ticketId, anterior, nuevo.getNameTicketType());

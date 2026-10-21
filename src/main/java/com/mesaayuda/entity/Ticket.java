@@ -96,4 +96,11 @@ public class Ticket {
 
     @Column(name = "deleted_ticket", nullable = false)
     private Boolean deletedTicket = false;
+
+    /**
+     * La prioridad la fijó una persona (al crear o al gestionar el ticket). Las
+     * automatizaciones no la cambian salvo que el nodo diga "forzar".
+     */
+    @Column(name = "priority_manual_ticket", nullable = false)
+    private Boolean priorityManualTicket = false;
 }
