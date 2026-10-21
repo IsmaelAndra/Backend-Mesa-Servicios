@@ -191,6 +191,10 @@ public TicketResponse create(TicketRequest request) {
         ticket.setTeamTicket(category.getTeamCategory());
         ticket.setDeletedTicket(false);
         ticket = ticketRepository.save(ticket);
+        // El número (#43) lo pone la secuencia al insertar. Con id uuid el INSERT
+        // se aplaza hasta el commit, y el aviso "Ticket #[id] creado" salía sin
+        // número: se fuerza aquí para que Hibernate lo lea antes de notificar.
+        ticketRepository.flush();
 
         User routedAgent = routingService.routeTicket(category);
         if (routedAgent != null) {
@@ -1187,6 +1191,12 @@ if (!Files.isRegularFile(candidato)) {
     }
 
 private String nombreVisible(User u) {
+        // Lo que escribe una automatización corre con la sesión del SUPER_ADMIN
+        // que la programó, pero no lo escribió esa persona: los avisos decían
+        // "superadmin respondió". Se firma como el sistema.
+        if (com.mesaayuda.workflow.WorkflowOrigen.actual() != null) {
+            return "Automatización (Sistema)";
+        }
         // La resolución vive en NombreVisible porque la usa también
         // NotificationService, que es quien compone los correos.
         return NombreVisible.de(u);

@@ -27,6 +27,10 @@ public class AuditService {
     @Autowired
     private TicketAccessPolicy accessPolicy;
 
+    /** Entradas cuyo valor es el texto de un mensaje (posible nota interna). */
+    static final java.util.Set<String> ACCIONES_DE_MENSAJE =
+            java.util.Set.of("ANSWER", "ANSWER_EDITED", "ANSWER_DELETED");
+
     @Transactional
     public void record(Ticket ticket, String actionType, String oldValue, String newValue, String metadata) {
         TicketAudit audit = new TicketAudit();
@@ -54,8 +58,13 @@ public class AuditService {
                 .filter(t -> !t.getDeletedTicket())
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket", "id", ticketId));
         accessPolicy.exigirLectura(ticket, "ver la auditoría", ticketId);
+        // El solicitante puede leer su ticket, pero el historial guarda el texto
+        // de cada mensaje, también de las notas internas: para quien no es
+        // personal se quitan las entradas de mensajes.
+        boolean personal = accessPolicy.esPersonal(userService.getCurrentUser());
 
         return auditRepository.findByTicketIdTicketOrderByCreatedAtAuditDesc(ticketId).stream()
+                .filter(a -> personal || !ACCIONES_DE_MENSAJE.contains(a.getActionType()))
                 .map(a -> new com.mesaayuda.dto.AuditLogResponse(
                         a.getIdAudit(),
                         a.getActionType(),

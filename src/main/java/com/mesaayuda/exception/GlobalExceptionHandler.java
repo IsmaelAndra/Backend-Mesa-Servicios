@@ -127,7 +127,14 @@ public class GlobalExceptionHandler {
         for (FieldError error : ex.getBindingResult().getFieldErrors()) {
             errors.put(error.getField(), error.getDefaultMessage());
         }
-        return build(HttpStatus.BAD_REQUEST, "Errores de validación", errors, request);
+        // El mensaje dice qué falta: el frontend muestra "message" en el aviso y
+        // un "Errores de validación" a secas no ayudaba a corregir nada.
+        String detalle = errors.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(Map.Entry::getValue)
+                .collect(java.util.stream.Collectors.joining("; "));
+        String mensaje = detalle.isEmpty() ? "Errores de validación" : "Revise los datos: " + detalle;
+        return build(HttpStatus.BAD_REQUEST, mensaje, errors, request);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
