@@ -128,7 +128,7 @@ public class DashboardService {
                 .count();
 
         Double slaCompliance = cumplimientoSla(filtered, slas);
-        Double avgResolutionHours = horasMediasResolucion(filtered);
+        Double avgResolutionHours = horasMediasResolucion(filtered, slas);
 
         // Alertas SLA sobre tickets abiertos
         OffsetDateTime ahora = OffsetDateTime.now();
@@ -184,7 +184,7 @@ public class DashboardService {
         Long prevTotal = hayAnterior ? (long) anterior.size() : null;
         Long prevResolved = hayAnterior
                 ? anterior.stream().filter(t -> "RESUELTO".equals(estado(t))).count() : null;
-        Double prevAvgResolution = hayAnterior ? horasMediasResolucion(anterior) : null;
+        Double prevAvgResolution = hayAnterior ? horasMediasResolucion(anterior, slas) : null;
         Double prevSla = hayAnterior ? cumplimientoSla(anterior, slas) : null;
 
         // ---- Antigüedad de lo pendiente ----
@@ -229,7 +229,7 @@ public class DashboardService {
         // ---- Carga por agente: solo la administración compara agentes ----
         List<DashboardStats.AgentLoad> agentLoad = List.of();
         if ("ADMIN".equals(role) || "SUPER_ADMIN".equals(role)) {
-            agentLoad = cargaPorAgente(filtered);
+            agentLoad = cargaPorAgente(filtered, slas);
         }
 
         List<DashboardStats.TicketAtencion> attention = requierenAtencion(filtered, slas, ahora);
@@ -272,14 +272,35 @@ public class DashboardService {
     }
 
     /** Horas medias entre la creación y el cierre; null si ninguno está cerrado. */
-    private Double horasMediasResolucion(List<Ticket> tickets) {
+    private Double horasMediasResolucion(List<Ticket> tickets, Map<UUID, TicketSla> slas) {
         List<Duration> duraciones = tickets.stream()
-                .filter(t -> t.getClosingDateTicket() != null && t.getCreatedAtTicket() != null)
-                .map(t -> Duration.between(t.getCreatedAtTicket(), t.getClosingDateTicket()))
+                .filter(t -> t.getCreatedAtTicket() != null)
+                .map(t -> {
+                    OffsetDateTime fin = finDeResolucion(t, slas);
+                    return fin == null ? null : Duration.between(t.getCreatedAtTicket(), fin);
+                })
+                .filter(java.util.Objects::nonNull)
                 .toList();
         return duraciones.isEmpty() ? null
                 : Math.round(duraciones.stream().mapToLong(Duration::toMinutes)
                         .average().orElse(0) / 60.0 * 100) / 100.0;
+    }
+
+    /**
+     * Cuándo quedó resuelto el ticket. La fecha de cierre solo se pone al pasar a
+     * CERRADO; un ticket en RESUELTO no la tiene y el KPI "Resolución media"
+     * salía vacío ("— h") aunque hubiera tickets resueltos. Para esos se usa el
+     * momento en que el SLA dio la resolución por cumplida.
+     */
+    private OffsetDateTime finDeResolucion(Ticket t, Map<UUID, TicketSla> slas) {
+        if (t.getClosingDateTicket() != null) {
+            return t.getClosingDateTicket();
+        }
+        if (!TERMINADOS.contains(estado(t))) {
+            return null;
+        }
+        TicketSla ts = slas == null ? null : slas.get(t.getIdTicket());
+        return ts == null ? null : ts.getResolutionCompletedAt();
     }
 
     private Map<UUID, TicketSla> slaPorTicket(List<Ticket> tickets) {
@@ -315,7 +336,7 @@ public class DashboardService {
     }
 
     /** Los agentes con más trabajo (abierto + resuelto) del periodo, hasta ocho. */
-    private List<DashboardStats.AgentLoad> cargaPorAgente(List<Ticket> tickets) {
+    private List<DashboardStats.AgentLoad> cargaPorAgente(List<Ticket> tickets, Map<UUID, TicketSla> slas) {
         Map<UUID, List<Ticket>> porAgente = tickets.stream()
                 .filter(t -> t.getAgentTicket() != null)
                 .collect(Collectors.groupingBy(t -> t.getAgentTicket().getIdUser()));
@@ -325,7 +346,7 @@ public class DashboardService {
             long abiertos = suyos.stream().filter(t -> !TERMINADOS.contains(estado(t))).count();
             long resueltos = suyos.size() - abiertos;
             carga.add(new DashboardStats.AgentLoad(agente.getIdUser(), agente.getFullName(),
-                    agente.getPhotoUrl(), abiertos, resueltos, horasMediasResolucion(suyos)));
+                    agente.getPhotoUrl(), abiertos, resueltos, horasMediasResolucion(suyos, slas)));
         }
         carga.sort(java.util.Comparator
                 .comparingLong((DashboardStats.AgentLoad c) -> c.openTickets() + c.resolvedTickets())
