@@ -803,6 +803,11 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
 
     // ============================ EQUIPOS ============================
 
+    /** Perezoso: RoutingService no debe formar un ciclo de arranque con este servicio. */
+    @Autowired
+    @org.springframework.context.annotation.Lazy
+    private RoutingService routingService;
+
     @Transactional(readOnly = true)
     public List<SupportTeam> getTeams() {
         return teamRepository.findByActiveTeamTrue();
@@ -810,6 +815,11 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
 
     public SupportTeam saveTeam(UUID id, String name, String description, String method, Boolean active,
                                 String icon, String color) {
+        return saveTeam(id, name, description, method, active, icon, color, null);
+    }
+
+    public SupportTeam saveTeam(UUID id, String name, String description, String method, Boolean active,
+                                String icon, String color, Boolean autoMembers) {
         SupportTeam team = id != null
                 ? teamRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Equipo", "id", id))
                 : new SupportTeam();
@@ -819,10 +829,16 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
         if (active != null) team.setActiveTeam(active);
         if (icon != null) team.setIconTeam(icon.isBlank() ? null : icon.trim());
         if (color != null) team.setColorTeam(color.isBlank() ? null : color.trim());
+        if (autoMembers != null) team.setAutoMembersTeam(autoMembers);
         if (team.getIdTeam() == null && teamRepository.existsByNameTeam(name)) {
             throw new BadRequestException("El equipo ya existe: " + name);
         }
-        return teamRepository.save(team);
+        SupportTeam guardado = teamRepository.save(team);
+        if (Boolean.TRUE.equals(guardado.getAutoMembersTeam()) && routingService != null) {
+            // Se llenan ya para que el panel de miembros los muestre.
+            routingService.sincronizarAgentes(guardado);
+        }
+        return guardado;
     }
 
     public void addMemberToTeam(UUID teamId, UUID userId) {

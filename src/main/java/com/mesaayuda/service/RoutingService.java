@@ -34,6 +34,41 @@ public class RoutingService {
     @Autowired
     private RoutingConfigService routingConfigService;
 
+    @Autowired
+    private com.mesaayuda.repository.UserRepository userRepository;
+
+    /**
+     * Equipo "con todos los agentes": añade como miembro a cada agente activo que
+     * aún no tenga fila en el equipo. Quien fue quitado (fila inactiva) no se
+     * vuelve a añadir: quitar a alguien a mano se respeta.
+     */
+    public void sincronizarAgentes(SupportTeam team) {
+        if (team == null || team.getIdTeam() == null || !Boolean.TRUE.equals(team.getAutoMembersTeam())
+                || userRepository == null) {
+            return;
+        }
+        java.util.Set<UUID> yaEstan = new java.util.HashSet<>();
+        for (TeamUser tu : teamUserRepository.findByTeamIdTeam(team.getIdTeam())) {
+            if (tu.getUser() != null) {
+                yaEstan.add(tu.getUser().getIdUser());
+            }
+        }
+        for (User agente : userRepository.findByRoleName("AGENT")) {
+            if (yaEstan.contains(agente.getIdUser())
+                    || Boolean.TRUE.equals(agente.getDeletedUser())
+                    || !"ACTIVE".equals(agente.getStatusUser())) {
+                continue;
+            }
+            TeamUser nuevo = new TeamUser();
+            nuevo.setTeam(team);
+            nuevo.setUser(agente);
+            nuevo.setActiveTeamUser(true);
+            teamUserRepository.save(nuevo);
+            log.info("Agente {} añadido al equipo '{}' (incluye a todos los agentes)",
+                    agente.getCorporateEmailUser(), team.getNameTeam());
+        }
+    }
+
     /**
      * Enrutamiento automático: determina el equipo destino según la categoría,
      * luego asigna un agente según el método de asignación del equipo.
@@ -76,6 +111,8 @@ public class RoutingService {
         if (team == null || !Boolean.TRUE.equals(team.getActiveTeam())) {
             return null;
         }
+        // Los agentes creados después de configurar el equipo entran aquí.
+        sincronizarAgentes(team);
 
         // Orden estable por id: la rotación no puede depender del orden en que
         // la base devuelva las filas.
@@ -120,10 +157,12 @@ public class RoutingService {
     }
 
     /**
-     * Rotación pura: se salta al último agente al que se le asignó y toma el
-     * siguiente de la lista estable. Si solo hay un agente, se mantiene.
+     * Rotación: toma el siguiente, en la lista estable, al último agente al que se
+     * le asignó. Antes tomaba "el primero que no fuera el último", y con tres o
+     * más agentes la rotación quedaba entre los dos primeros: el tercero no
+     * recibía nunca un ticket.
      */
-    private TeamUser pickRoundRobin(List<TeamUser> members) {
+    static TeamUser pickRoundRobin(List<TeamUser> members) {
         if (members.size() == 1) {
             return members.get(0);
         }
@@ -131,13 +170,15 @@ public class RoutingService {
         if (lastAssignedId == null) {
             return members.get(0);
         }
-        return members.stream()
-                .filter(tu -> !Objects.equals(tu.getIdTeamUser(), lastAssignedId))
-                .findFirst()
-                .orElse(members.get(0));
+        for (int i = 0; i < members.size(); i++) {
+            if (Objects.equals(members.get(i).getIdTeamUser(), lastAssignedId)) {
+                return members.get((i + 1) % members.size());
+            }
+        }
+        return members.get(0);
     }
 
-    private UUID getLastAssignedId(List<TeamUser> members) {
+    private static UUID getLastAssignedId(List<TeamUser> members) {
         return members.stream()
                 .filter(tu -> tu.getLastAssignedAt() != null)
                 .max(Comparator.comparing(TeamUser::getLastAssignedAt))

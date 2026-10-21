@@ -133,6 +133,40 @@ class RoutingServiceTest {
         assertEquals(id(2), elegido.getIdUser());
     }
 
+    @Test
+    @DisplayName("La rotación llega también al tercer agente (antes alternaba entre los dos primeros)")
+    void roundRobinLlegaAlTercero() {
+        SupportTeam team = team("ROUND_ROBIN");
+        markAssigned(id(2), OffsetDateTime.now());
+        User siguiente = routingService.routeTicket(category(team));
+        assertEquals(id(3), siguiente.getIdUser(), "tras el segundo va el tercero");
+
+        markAssigned(id(3), OffsetDateTime.now());
+        assertEquals(id(1), routingService.routeTicket(category(team)).getIdUser(), "tras el último vuelve al primero");
+    }
+
+    @Test
+    @DisplayName("Un equipo con todos los agentes añade a los que faltan, pero no a quien se quitó")
+    void equipoConTodosLosAgentesSincroniza() {
+        com.mesaayuda.repository.UserRepository userRepository = mock(com.mesaayuda.repository.UserRepository.class);
+        ReflectionTestUtils.setField(routingService, "userRepository", userRepository);
+        SupportTeam team = team("ROUND_ROBIN");
+        team.setAutoMembersTeam(true);
+
+        TeamUser quitado = membership(id(9), agent(id(2), "b"), null);
+        quitado.setActiveTeamUser(false);
+        when(teamUserRepository.findByTeamIdTeam(id(1)))
+                .thenReturn(List.of(membership(id(8), agent(id(1), "a"), null), quitado));
+        when(userRepository.findByRoleName("AGENT"))
+                .thenReturn(List.of(agent(id(1), "a"), agent(id(2), "b"), agent(id(3), "c")));
+
+        routingService.sincronizarAgentes(team);
+
+        ArgumentCaptor<TeamUser> nuevo = ArgumentCaptor.forClass(TeamUser.class);
+        verify(teamUserRepository, times(1)).save(nuevo.capture());
+        assertEquals(id(3), nuevo.getValue().getUser().getIdUser(), "solo entra el agente que no tenía fila");
+    }
+
     // ============================ helpers ============================
 
     /** El repositorio devuelve las membresías con la fecha ya persistida. */

@@ -1361,6 +1361,23 @@ private Ticket getTicketGestionable(UUID id, String queSeHacia) {
                 .orElse(null);
     }
 
+    /** Asigna agente con el enrutamiento de la categoría si el ticket no tiene ninguno. */
+    private void enrutarSiSinAgente(Ticket ticket, Category categoria) {
+        String estado = ticket.getStatusTicket() == null ? "" : ticket.getStatusTicket().getNameStatus();
+        if (ticket.getAgentTicket() != null || "RESUELTO".equals(estado) || "CERRADO".equals(estado)) {
+            return;
+        }
+        User agente = routingService.routeTicket(categoria);
+        if (agente == null) {
+            return;
+        }
+        Ticket asignado = assignAgent(ticket, agente, true);
+        auditService.record(asignado, "ASSIGN", null, agente.getCorporateEmailUser(),
+                "Asignación automática por la categoría " + categoria.getNameCategory());
+        notificationService.notifyTicketAssigned(asignado);
+        publishSse("TICKET_ASSIGNED", asignado, agente.getIdUser(), agente.getCorporateEmailUser());
+    }
+
     private void recalcularSla(Ticket ticket) {
         String estado = ticket.getStatusTicket() == null ? "" : ticket.getStatusTicket().getNameStatus();
         if ("RESUELTO".equals(estado) || "CERRADO".equals(estado)) {
@@ -1433,7 +1450,16 @@ private Ticket getTicketGestionable(UUID id, String queSeHacia) {
         String anterior = ticket.getCategoryTicket() == null
                 ? null : ticket.getCategoryTicket().getNameCategory();
         ticket.setCategoryTicket(nueva);
+        // La categoría decide el equipo. Antes solo se usaba al crear: los
+        // tickets de usuarios llegan sin categoría (se toma la primera) y NEXA la
+        // corrige después, así que se quedaban en el equipo equivocado y sin
+        // agente. Ahora el equipo sigue a la categoría y, si nadie lo atiende
+        // aún, se enruta otra vez.
+        if (nueva.getTeamCategory() != null) {
+            ticket.setTeamTicket(nueva.getTeamCategory());
+        }
         ticket = ticketRepository.save(ticket);
+        enrutarSiSinAgente(ticket, nueva);
 
         recalcularSla(ticket);
         auditService.record(ticket, "CATEGORY_CHANGE", anterior, nueva.getNameCategory(), null);

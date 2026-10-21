@@ -463,7 +463,7 @@ public class AdminController {
         return ResponseEntity.status(HttpStatus.CREATED).body(adminService.saveTeam(null,
                 value(body, "name"), value(body, "description"),
                 value(body, "method"), toBool(body.get("active")),
-                value(body, "icon"), value(body, "color")));
+                value(body, "icon"), value(body, "color"), toBool(body.get("autoMembers"))));
     }
 
     @PutMapping("/teams/{id}")
@@ -472,7 +472,7 @@ public class AdminController {
         return ResponseEntity.ok(adminService.saveTeam(id,
                 value(body, "name"), value(body, "description"),
                 value(body, "method"), toBool(body.get("active")),
-                value(body, "icon"), value(body, "color")));
+                value(body, "icon"), value(body, "color"), toBool(body.get("autoMembers"))));
     }
 
     @PostMapping("/teams/{id}/members/{userId}")

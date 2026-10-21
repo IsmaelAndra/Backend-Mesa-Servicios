@@ -41,6 +41,13 @@ public class SupportTeam {
     @Column(name = "active_team", nullable = false)
     private Boolean activeTeam = true;
 
+    /**
+     * Incluye automáticamente a todos los agentes activos, también a los que se
+     * creen después (se sincroniza al guardar y al enrutar).
+     */
+    @Column(name = "auto_members_team", nullable = false)
+    private Boolean autoMembersTeam = false;
+
     @CreationTimestamp
     @Column(name = "created_at_team", nullable = false, updatable = false)
     private OffsetDateTime createdAtTeam;

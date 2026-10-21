@@ -19,6 +19,9 @@ public interface TeamUserRepository extends JpaRepository<TeamUser, UUID> {
 
     List<TeamUser> findByTeamIdTeamAndActiveTeamUserTrue(UUID teamId);
 
+    /** Todas las filas del equipo, también las desactivadas (para no volver a añadir a quien se quitó). */
+    List<TeamUser> findByTeamIdTeam(UUID teamId);
+
     Optional<TeamUser> findByTeamIdTeamAndUserIdUser(UUID teamId, UUID userId);
 
     boolean existsByTeamIdTeamAndUserIdUser(UUID teamId, UUID userId);
