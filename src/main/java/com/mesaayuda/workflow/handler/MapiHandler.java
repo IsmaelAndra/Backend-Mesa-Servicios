@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * NEXA, la IA de la mesa, como un paso del workflow.
+ * MAPI, la IA de la mesa, como un paso del workflow.
  *
  * <p>No es otra IA: delega en {@link AiAssistantService}, con el proveedor, la
  * configuración y las reglas de la institución que ya tiene. El nodo solo elige
@@ -25,27 +25,27 @@ import java.util.UUID;
  * <ul>
  *   <li><b>CLASIFICAR</b>: deja en {@code nodos.<id>.*} prioridad, prioridadId,
  *       categoria, categoriaId, equipo, equipoId, resumen y confianza, todos
- *       contrastados con los catálogos. Es lo que permite "si NEXA dice CRÍTICA...".</li>
+ *       contrastados con los catálogos. Es lo que permite "si MAPI dice CRÍTICA...".</li>
  *   <li><b>RESUMIR</b> / <b>RESPONDER</b>: texto en {@code nodos.<id>.texto}.</li>
  * </ul>
  * Se aceptan también los nombres de la API de IA (CLASSIFY, SUMMARY, ANSWER).
  */
 @Component
-public class NexaHandler implements WorkflowNodeHandler {
+public class MapiHandler implements WorkflowNodeHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(NexaHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(MapiHandler.class);
 
     private static final int MAX_CARACTERES = 20_000;
 
     private final AiAssistantService aiAssistantService;
 
-    public NexaHandler(AiAssistantService aiAssistantService) {
+    public MapiHandler(AiAssistantService aiAssistantService) {
         this.aiAssistantService = aiAssistantService;
     }
 
     @Override
     public WorkflowNodeType tipo() {
-        return WorkflowNodeType.NEXA;
+        return WorkflowNodeType.MAPI;
     }
 
     @Override
@@ -77,7 +77,7 @@ public class NexaHandler implements WorkflowNodeHandler {
             contexto.resultado(nodo, "texto", recortada);
             // Compatibilidad con grafos anteriores, que leían la variable plana.
             String variable = contexto.configTexto(nodo, "variable");
-            contexto.escribir(variable == null ? "nexaResultado" : variable, recortada);
+            contexto.escribir(variable == null ? "mapiResultado" : variable, recortada);
             return WorkflowResult.avanzar();
         } catch (com.mesaayuda.exception.AiException e) {
             log.warn("MAPI falló en el nodo '{}' para el ticket #{}: {}", nodo.id(), ticketId, e.getMessage());

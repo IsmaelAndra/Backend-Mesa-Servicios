@@ -15,8 +15,8 @@ import java.util.UUID;
 /**
  * Cambia el tipo del ticket (INCIDENTE, REQUERIMIENTO, CONSULTA...).
  *
- * <p>Admite una variable, p. ej. {@code {{nodos.nexa.tipoId}}} (el que propuso
- * NEXA). El cambio se delega en el servicio para que quede auditado.
+ * <p>Admite una variable, p. ej. {@code {{nodos.mapi.tipoId}}} (el que propuso
+ * MAPI). El cambio se delega en el servicio para que quede auditado.
  */
 @Component
 public class TicketTypeHandler extends TicketActionSupport implements WorkflowNodeHandler {

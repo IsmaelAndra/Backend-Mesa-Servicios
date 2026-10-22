@@ -16,11 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * CLASIFICAR de NEXA: la respuesta de la IA se contrasta con los catálogos reales.
- * Un workflow decide con esto ("si NEXA dice CRÍTICA, escalar"), así que un valor
+ * CLASIFICAR de MAPI: la respuesta de la IA se contrasta con los catálogos reales.
+ * Un workflow decide con esto ("si MAPI dice CRÍTICA, escalar"), así que un valor
  * inventado no puede pasar.
  */
-class NexaClasificacionTest {
+class MapiClasificacionTest {
 
     private final AiAssistantService servicio = new AiAssistantService();
 

@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 /**
  * Pasa el ticket a un equipo; el agente lo elige el método del propio equipo.
  *
- * <p>Config: {@code equipoId} (número o variable, p. ej. {@code {{nodos.nexa1.equipoId}}}).
+ * <p>Config: {@code equipoId} (número o variable, p. ej. {@code {{nodos.mapi1.equipoId}}}).
  * Delega en {@link TicketService#assignTeam}, que audita, notifica y publica los
  * mismos eventos que una asignación hecha a mano.
  */

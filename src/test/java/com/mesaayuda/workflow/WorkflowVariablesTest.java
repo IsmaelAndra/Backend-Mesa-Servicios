@@ -36,9 +36,9 @@ class WorkflowVariablesTest {
     @Test
     void interpolaVariablesYDejaVaciasLasQueNoExisten() {
         WorkflowContext c = contexto();
-        c.escribir("nodos.nexa1.resumen", "Falla de hardware");
+        c.escribir("nodos.mapi1.resumen", "Falla de hardware");
         assertEquals("Ticket #77 (CRITICA): Falla de hardware. []",
-                c.interpolar("Ticket #{{ticketId}} ({{ ticket.prioridad }}): {{nodos.nexa1.resumen}}. [{{no.existe}}]"));
+                c.interpolar("Ticket #{{ticketId}} ({{ ticket.prioridad }}): {{nodos.mapi1.resumen}}. [{{no.existe}}]"));
     }
 
     @Test
@@ -51,9 +51,9 @@ class WorkflowVariablesTest {
     @Test
     void laConfiguracionAdmiteVariablesEnLosIds() {
         WorkflowContext c = contexto();
-        c.escribir("nodos.nexa1.equipoId", id(4));
+        c.escribir("nodos.mapi1.equipoId", id(4));
         WorkflowNodeDef nodo = new WorkflowNodeDef("asignar", "TICKET_ASSIGN_TEAM", "Asignar",
-                Map.of("equipoId", "{{nodos.nexa1.equipoId}}", "vacio", "  "), 0.0, 0.0);
+                Map.of("equipoId", "{{nodos.mapi1.equipoId}}", "vacio", "  "), 0.0, 0.0);
 
         assertEquals(id(4), c.configUuid(nodo, "equipoId"));
         assertNull(c.configTexto(nodo, "vacio"));

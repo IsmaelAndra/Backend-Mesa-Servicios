@@ -1361,7 +1361,7 @@ if (request.apiKey() != null && !request.apiKey().isBlank()) {
      * comprobar si una acción está activa.
      */
     private String normalizarAccionesIa(String valor) {
-        // CLASSIFY la usa el nodo NEXA de los workflows (Fase 2); sin ella en la
+        // CLASSIFY la usa el nodo MAPI de los workflows (Fase 2); sin ella en la
         // lista, la casilla de la pantalla se descartaba al guardar.
         Set<String> permitidas = Set.of("SUMMARY", "ANSWER", "CHAT", AiAssistantService.ACCION_CLASIFICAR);
         Set<String> salidas = new java.util.LinkedHashSet<>();

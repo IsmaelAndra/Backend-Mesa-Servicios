@@ -46,12 +46,12 @@ public class WorkflowProperties {
  * Hilos del pool del motor.
  *
      * <p>Separado del pool de correo a propósito, y no por capricho: un lote de
-     * llamadas a NEXA puede tardar 60 segundos cada una. Si compartieran pool, los
+     * llamadas a MAPI puede tardar 60 segundos cada una. Si compartieran pool, los
      * correos del help desk se quedarían sin hilos mientras el motor trabaja.
      */
     private int threads = 2;
 
-    /** Reintentos ante fallo transitorio. NEXA caída, Graph caído. */
+    /** Reintentos ante fallo transitorio. MAPI caída, Graph caído. */
     private int maxReintentos = 1;
 
     /**

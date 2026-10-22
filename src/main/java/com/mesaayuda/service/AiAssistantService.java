@@ -147,7 +147,7 @@ private final ExpiringStateMap<String, String> chatState = new ExpiringStateMap<
         }
     }
 
-    /** Acción de clasificación. Se usa desde el nodo NEXA de los workflows. */
+    /** Acción de clasificación. Se usa desde el nodo MAPI de los workflows. */
     public static final String ACCION_CLASIFICAR = "CLASSIFY";
 
     /**
@@ -360,16 +360,60 @@ private final ExpiringStateMap<String, String> chatState = new ExpiringStateMap<
     }
 
     private String buildChatPrompt(String message, String context) {
-        StringBuilder sb = new StringBuilder("Actúa como asistente especializado de una mesa de servicios (COAC). ")
+        StringBuilder sb = new StringBuilder("Eres MAPI, la asistente de la mesa de servicios (COAC). ")
                 .append("Responde en español, de forma clara, directa y útil en Markdown. ")
                 .append("Si la consulta requiere información de tickets o usuarios, ")
                 .append("indica que debe consultarse desde el módulo correspondiente.");
+        sb.append("\n\n").append(REGLAS_CHAT);
         sb.append("\n\n").append(instruccionesPorRol(rolActual()));
+        sb.append("\n\n").append(catalogoParaChat());
         agregarReglas(sb);
         if (context != null && !context.isBlank()) {
             sb.append("\n\nCONTEXTO ACTUAL (debes usarlo para responder):\n").append(context);
         }
         return sb.append("\n\n").append(message).toString();
+    }
+
+    /**
+     * Reglas fijas del chat. En una prueba la asistente respondió "Ticket creado"
+     * sin haber creado nada (el chat no puede crear tickets) y con una categoría
+     * y un equipo inventados; además tuteaba, cuando el personal escribe de usted.
+     */
+    static final String REGLAS_CHAT = "REGLAS DEL CHAT:\n"
+            + "- Trata siempre de usted (\"usted\", \"su\"), nunca de tú, también en las respuestas que "
+            + "redactes para el solicitante.\n"
+            + "- Tú NO puedes crear, modificar ni cerrar tickets: no tienes acceso al sistema. Nunca digas "
+            + "que creaste, registraste o enviaste un ticket ni inventes un número de ticket. Si conviene "
+            + "crear uno, di que preparaste un BORRADOR y que la persona debe revisarlo y crearlo con el botón "
+            + "\"Crear ticket con este borrador\".\n"
+            + "- Cuando prepares un borrador, añade al final un bloque ```json con las claves \"titulo\", "
+            + "\"descripcion\", \"categoria\", \"prioridad\" y \"tipo\". Usa SOLO valores del catálogo de "
+            + "abajo, escritos igual; si ninguno encaja, déjalo vacío (\"\"). Nunca inventes categorías, "
+            + "equipos, prioridades ni tipos.\n"
+            + "- Si redactas una respuesta para el solicitante, ponla bajo el encabezado "
+            + "\"### Respuesta al solicitante\" para que el agente pueda usarla tal cual.";
+
+    /**
+     * Catálogo real (categorías con su equipo, prioridades y tipos) para que la
+     * asistente no proponga valores que no existen.
+     */
+    private String catalogoParaChat() {
+        try {
+            List<com.mesaayuda.entity.Category> categorias = categoryRepository.findByDeletedCategoryFalse();
+            List<com.mesaayuda.entity.Priority> prioridades = priorityRepository.findAllActive();
+            List<com.mesaayuda.entity.TicketType> tipos = ticketTypeRepository == null ? List.of()
+                    : ticketTypeRepository.findByDeletedTicketTypeFalseOrderByNameTicketTypeAsc();
+            return "CATÁLOGO DEL SISTEMA (los únicos valores válidos):\n"
+                    + "Categorías (nombre: para qué sirve, y su equipo):\n"
+                    + String.join("\n", categorias.stream().map(AiAssistantService::describirCategoria).toList())
+                    + "\nPrioridades: "
+                    + String.join(", ", prioridades.stream().map(com.mesaayuda.entity.Priority::getNamePriority).toList())
+                    + "\nTipos: "
+                    + String.join(", ", tipos.stream().map(com.mesaayuda.entity.TicketType::getNameTicketType).toList());
+        } catch (RuntimeException e) {
+            log.warn("No se pudo leer el catálogo para el chat: {}", e.getMessage());
+            return "";
+        }
     }
 
     /** Rol de quien hace la consulta (USER si no se puede saber: lo más restrictivo). */
@@ -400,8 +444,8 @@ private final ExpiringStateMap<String, String> chatState = new ExpiringStateMap<
         return switch (r) {
             case "AGENT", "ADMIN", "SUPER_ADMIN" -> "QUIÉN PREGUNTA: personal de TI de la mesa de servicios ("
                     + r + "). Puedes dar diagnóstico técnico, pasos de resolución, comandos, comprobaciones y "
-                    + "redactar respuestas para el solicitante. Distingue claramente lo que hace el agente de lo "
-                    + "que debe hacer el usuario.";
+                    + "redactar respuestas para el solicitante (de usted, bajo \"### Respuesta al solicitante\"). "
+                    + "Distingue claramente lo que hace el agente de lo que debe hacer el usuario.";
             default -> "QUIÉN PREGUNTA: un usuario final (solicitante), no personal de TI. Dale solo pasos "
                     + "sencillos y seguros que pueda hacer por sí mismo sin permisos de administrador (reiniciar, "
                     + "revisar cables, cerrar y abrir sesión, comprobar el mensaje de error). No le des "

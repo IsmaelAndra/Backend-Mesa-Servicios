@@ -6,7 +6,7 @@ import com.mesaayuda.workflow.handler.EmailHandler;
 import com.mesaayuda.workflow.handler.FinHandler;
 import com.mesaayuda.workflow.handler.IfHandler;
 import com.mesaayuda.workflow.handler.InicioHandler;
-import com.mesaayuda.workflow.handler.NexaHandler;
+import com.mesaayuda.workflow.handler.MapiHandler;
 import com.mesaayuda.workflow.handler.NotifyHandler;
 import com.mesaayuda.workflow.handler.SlaApplyHandler;
 import com.mesaayuda.workflow.handler.SwitchHandler;

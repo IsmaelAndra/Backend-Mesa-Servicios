@@ -96,7 +96,7 @@ public class WorkflowValidationService {
             WorkflowNodeType.TICKET_COMMENT, WorkflowNodeType.TICKET_PRIORITY, WorkflowNodeType.TICKET_CATEGORY,
             WorkflowNodeType.TICKET_TYPE,
             WorkflowNodeType.TICKET_CLOSE, WorkflowNodeType.TICKET_REOPEN, WorkflowNodeType.SLA_APPLY,
-            WorkflowNodeType.NEXA);
+            WorkflowNodeType.MAPI);
 
     private static final java.util.regex.Pattern ID_VALIDO = java.util.regex.Pattern.compile("^[A-Za-z0-9_-]{1,60}$");
 
@@ -209,9 +209,9 @@ public class WorkflowValidationService {
                         errores.add("La aprobación '" + nom + "' solo la puede decidir un SUPER_ADMIN.");
                     }
                 }
-                case NEXA -> {
+                case MAPI -> {
                     Object accion = valor(n, "accion");
-                    if (accion != null && com.mesaayuda.workflow.handler.NexaHandler.accion(String.valueOf(accion)) == null) {
+                    if (accion != null && com.mesaayuda.workflow.handler.MapiHandler.accion(String.valueOf(accion)) == null) {
                         errores.add("El nodo MAPI '" + nom + "' pide una acción que no existe. "
                                 + "Use CLASIFICAR, RESUMIR o RESPONDER.");
                     }

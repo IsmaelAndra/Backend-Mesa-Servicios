@@ -33,7 +33,7 @@ public record TicketRequest(
 
         /**
          * true si la persona eligió la prioridad a mano (no dejó la de por
-         * defecto). Así NEXA no la cambia después.
+         * defecto). Así MAPI no la cambia después.
          */
         Boolean priorityManual
 ) {

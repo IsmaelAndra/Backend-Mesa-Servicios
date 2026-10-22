@@ -89,12 +89,12 @@ public enum WorkflowNodeType {
     SLA_APPLY(true),
 
     /**
-     * NEXA, la IA existente.
+     * MAPI, la IA existente.
      *
      * <p>Solo genera texto: analiza, clasifica o resume. No modifica nada por su
      * cuenta; cualquier efecto pasa por un nodo de acción posterior.
      */
-    NEXA(true),
+    MAPI(true),
 
     /** Registrar un evento en la auditoría del sistema. */
     AUDIT(true);
@@ -120,13 +120,24 @@ public enum WorkflowNodeType {
         return this == IF || this == SWITCH;
     }
 
+    /**
+     * Nombre anterior del nodo de IA. Las versiones publicadas antes del cambio
+     * (y sus ejecuciones) lo guardan así; se resuelve como {@link #MAPI} para no
+     * tener que editar versiones publicadas, que nunca se modifican.
+     */
+    static final String NOMBRE_ANTERIOR_MAPI = "NEXA";
+
     /** Resuelve un nombre del JSON. Devuelve {@code null} si no existe. */
     public static WorkflowNodeType desde(String nombre) {
         if (nombre == null || nombre.isBlank()) {
             return null;
         }
+        String limpio = nombre.trim().toUpperCase(java.util.Locale.ROOT);
+        if (NOMBRE_ANTERIOR_MAPI.equals(limpio)) {
+            return MAPI;
+        }
         try {
-            return valueOf(nombre.trim().toUpperCase(java.util.Locale.ROOT));
+            return valueOf(limpio);
         } catch (IllegalArgumentException e) {
             return null;
         }

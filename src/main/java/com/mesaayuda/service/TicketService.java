@@ -1341,7 +1341,7 @@ private Ticket getTicketGestionable(UUID id, String queSeHacia) {
 
     /**
      * El plazo del SLA depende de prioridad, categoría y tipo. Antes se fijaba
-     * solo al crear: si después cambiaba la prioridad (a mano o por NEXA), el
+     * solo al crear: si después cambiaba la prioridad (a mano o por MAPI), el
      * ticket seguía con el plazo de la prioridad original. No se toca un ticket
      * ya terminado.
      */
@@ -1451,7 +1451,7 @@ private Ticket getTicketGestionable(UUID id, String queSeHacia) {
                 ? null : ticket.getCategoryTicket().getNameCategory();
         ticket.setCategoryTicket(nueva);
         // La categoría decide el equipo. Antes solo se usaba al crear: los
-        // tickets de usuarios llegan sin categoría (se toma la primera) y NEXA la
+        // tickets de usuarios llegan sin categoría (se toma la primera) y MAPI la
         // corrige después, así que se quedaban en el equipo equivocado y sin
         // agente. Ahora el equipo sigue a la categoría y, si nadie lo atiende
         // aún, se enruta otra vez.

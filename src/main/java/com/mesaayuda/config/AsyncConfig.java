@@ -16,7 +16,7 @@ import java.util.concurrent.Executor;
  * transacción que notifica. Su trabajo es rápido y constante.
  *
  * <p>El del motor de workflows ("workflowExecutor") es lento y a ráfagas: una
- * llamada a NEXA puede tardar 60 segundos, y un lote de diez ejecuciones que todas
+ * llamada a MAPI puede tardar 60 segundos, y un lote de diez ejecuciones que todas
  * usen la IA deja ese pool ocupado un minuto entero.
  *
  * <p>Si compartieran pool, un lote de automatizaciones detendría el envío de

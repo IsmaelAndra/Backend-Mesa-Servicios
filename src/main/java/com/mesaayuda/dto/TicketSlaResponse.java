@@ -15,6 +15,6 @@ public record TicketSlaResponse(
         boolean respuestaVencida,
         boolean resolucionVencida,
         OffsetDateTime pausadoDesde,
-        /** La prioridad la eligió una persona: NEXA no la cambia. */
+        /** La prioridad la eligió una persona: MAPI no la cambia. */
         boolean prioridadManual
 ) {}

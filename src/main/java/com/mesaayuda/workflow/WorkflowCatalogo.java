@@ -49,7 +49,7 @@ public final class WorkflowCatalogo {
 
     /** Lo que cada tipo de nodo deja en {@code nodos.<id>.*}. */
     public static final Map<String, Map<String, String>> SALIDAS_NODO = Map.ofEntries(
-            Map.entry("NEXA", orden(
+            Map.entry("MAPI", orden(
                     "prioridad", "Prioridad sugerida (CLASIFICAR)",
                     "prioridadId", "Id de la prioridad sugerida",
                     "categoria", "Categoría sugerida",

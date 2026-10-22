@@ -235,7 +235,7 @@ public class WorkflowController {
     public ResponseEntity<WorkflowExecutionResponse> ejecutar(
             @PathVariable UUID id,
             @RequestBody(required = false) Map<String, Object> payload) {
-        // Se encola, no se ejecuta aquí: una llamada a NEXA tarda hasta un minuto y
+        // Se encola, no se ejecuta aquí: una llamada a MAPI tarda hasta un minuto y
         // colgar de la petición pararía el help desk. La respuesta es la ejecución
         // encolada, y el resultado se mira en el historial.
         Workflow w = service.obtener(id);

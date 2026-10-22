@@ -368,8 +368,8 @@ class WorkflowValidationServiceTest {
     @DisplayName("un id con punto se rechaza: rompería nodos.<id>.<clave>")
     void idConPuntoSeRechaza() {
         WorkflowGraphDef grafo = grafo(
-                List.of(nodo("ini", "INICIO"), nodo("nexa.1", "NOTIFY"), nodo("fin", "FIN")),
-                List.of(e("ini", "nexa.1"), e("nexa.1", "fin")));
+                List.of(nodo("ini", "INICIO"), nodo("mapi.1", "NOTIFY"), nodo("fin", "FIN")),
+                List.of(e("ini", "mapi.1"), e("mapi.1", "fin")));
 
         assertTrue(validador.validar(grafo).stream().anyMatch(x -> x.contains("identificador no válido")));
     }

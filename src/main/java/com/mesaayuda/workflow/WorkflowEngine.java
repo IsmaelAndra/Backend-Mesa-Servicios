@@ -698,7 +698,7 @@ public class WorkflowEngine {
     /**
      * Guarda las variables en la ejecución. Antes no se llamaba nunca, así que una
      * ejecución que volvía de una espera perdía todo lo que habían dejado los nodos
-     * anteriores (por ejemplo, la clasificación de NEXA).
+     * anteriores (por ejemplo, la clasificación de MAPI).
      */
     private void guardarVariables(WorkflowExecution ejecucion, WorkflowContext contexto) {
         Map<String, Object> vars = contexto.variables();

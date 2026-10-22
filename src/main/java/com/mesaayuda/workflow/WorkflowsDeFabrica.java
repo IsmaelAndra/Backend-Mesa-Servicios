@@ -58,14 +58,18 @@ public class WorkflowsDeFabrica {
             if (superAdmins.isEmpty()) {
                 return; // Se creará en un arranque posterior, cuando exista.
             }
+            User autor = superAdmins.get(0);
             if (workflowRepository.existsByNameWorkflow(CLASIFICACION_IA_ANTERIOR)) {
-                comoSuperAdmin(superAdmins.get(0), this::renombrarAMapi);
+                comoSuperAdmin(autor, this::renombrarAMapi);
             }
             if (workflowRepository.existsByNameWorkflow(CLASIFICACION_IA)) {
-                comoSuperAdmin(superAdmins.get(0), this::actualizarClasificacionIa);
-                return;
+                // Primero la mejora de la versión 1 (se reconoce por sus nodos
+                // con el nombre viejo) y después el paso a MAPI.
+                comoSuperAdmin(autor, this::actualizarClasificacionIa);
+            } else {
+                comoSuperAdmin(autor, this::crearClasificacionIa);
             }
-            comoSuperAdmin(superAdmins.get(0), this::crearClasificacionIa);
+            comoSuperAdmin(autor, this::migrarWorkflowsAMapi);
         } catch (RuntimeException e) {
             // Nunca impide arrancar: es una ayuda, no algo imprescindible.
             log.warn("No se pudo crear la automatización de fábrica '{}': {}", CLASIFICACION_IA, e.getMessage());
@@ -103,13 +107,7 @@ public class WorkflowsDeFabrica {
                 }));
     }
 
-    /**
-     * La asistente pasó a llamarse MAPI. Se renombra la automatización y, si su
-     * versión vigente aún dice "NEXA" en nombres de nodos o mensajes, se publica
-     * una versión nueva con el texto cambiado. Solo se cambia ese texto: tipos de
-     * nodo, ids, variables ({{nodos.nexa.*}}) y la configuración que haya
-     * ajustado el administrador se quedan como estaban.
-     */
+    /** La asistente pasó a llamarse MAPI: nombre y descripción de la automatización de fábrica. */
     private void renombrarAMapi() {
         workflowRepository.findByNameWorkflowAndDeletedWorkflowFalse(CLASIFICACION_IA_ANTERIOR).ifPresent(w -> {
             w.setNameWorkflow(CLASIFICACION_IA);
@@ -117,55 +115,94 @@ public class WorkflowsDeFabrica {
                 w.setDescriptionWorkflow(cambiarNombre(w.getDescriptionWorkflow()));
             }
             workflowRepository.save(w);
-            workflowService.versionVigente(w.getIdWorkflow()).ifPresent(version -> {
-                WorkflowGraphDef nuevo = conTextosMapi(version.getDefinitionWorkflow());
-                if (nuevo != null) {
-                    workflowService.publicarVersion(w.getIdWorkflow(), nuevo);
-                }
-            });
             log.info("Automatización de fábrica renombrada a '{}'", CLASIFICACION_IA);
         });
     }
 
-    /** "NEXA" como palabra (no dentro de {{nodos.nexa.x}}, que va en minúsculas). */
+    /**
+     * Toda automatización cuya versión vigente aún use el nodo de IA con el
+     * nombre viejo (tipo "NEXA", id "nexa", variables {{nodos.nexa.*}}, textos
+     * "NEXA") recibe una versión nueva convertida a MAPI. Las versiones ya
+     * publicadas no se editan (el historial de ejecuciones las referencia): el
+     * motor sigue entendiendo "NEXA" como MAPI, así que siguen funcionando.
+     */
+    private void migrarWorkflowsAMapi() {
+        for (com.mesaayuda.entity.Workflow w : workflowRepository.findByDeletedWorkflowFalseOrderByNameWorkflowAsc()) {
+            try {
+                workflowService.versionVigente(w.getIdWorkflow()).ifPresent(version -> {
+                    WorkflowGraphDef nuevo = aMapi(version.getDefinitionWorkflow());
+                    if (nuevo != null) {
+                        workflowService.publicarVersion(w.getIdWorkflow(), nuevo);
+                        log.info("Automatización '{}' convertida a MAPI (versión nueva)", w.getNameWorkflow());
+                    }
+                });
+            } catch (RuntimeException e) {
+                // Una que no se pueda convertir sigue funcionando con el alias.
+                log.warn("No se pudo convertir a MAPI la automatización '{}': {}", w.getNameWorkflow(), e.getMessage());
+            }
+        }
+    }
+
+    /** "NEXA" como palabra, en textos visibles. */
     static String cambiarNombre(String texto) {
         return texto == null ? null : texto.replaceAll("\\bNEXA\\b", "MAPI");
     }
 
     /**
-     * El grafo con "NEXA" cambiado a "MAPI" en el nombre de cada nodo y en sus
-     * textos de configuración; null si no había nada que cambiar.
+     * El grafo convertido a MAPI: tipo de nodo NEXA → MAPI, ids "nexa…" →
+     * "mapi…" (y sus conectores), referencias {{nodos.nexa….}} y la variable
+     * nexaResultado, y la palabra NEXA en nombres y textos. Null si no había nada
+     * que cambiar o no se pudo leer.
      */
-    static WorkflowGraphDef conTextosMapi(String definicion) {
+    static WorkflowGraphDef aMapi(String definicion) {
         try {
             WorkflowGraphDef g = new com.fasterxml.jackson.databind.ObjectMapper()
                     .readValue(definicion, WorkflowGraphDef.class);
             if (g.nodes() == null) {
                 return null;
             }
-            boolean cambio = false;
-            List<WorkflowNodeDef> nodos = new java.util.ArrayList<>();
+            Set<String> ids = g.nodes().stream().map(WorkflowNodeDef::id).collect(Collectors.toSet());
+            Map<String, String> nuevosIds = new LinkedHashMap<>();
             for (WorkflowNodeDef n : g.nodes()) {
-                String nombre = cambiarNombre(n.name());
-                Map<String, Object> config = new LinkedHashMap<>();
-                if (n.config() != null) {
-                    for (Map.Entry<String, Object> e : n.config().entrySet()) {
-                        Object v = e.getValue();
-                        if (v instanceof String texto) {
-                            String nuevo = cambiarNombre(texto);
-                            cambio |= !nuevo.equals(texto);
-                            v = nuevo;
-                        }
-                        config.put(e.getKey(), v);
+                if (n.id() != null && n.id().startsWith("nexa")) {
+                    String nuevo = "mapi" + n.id().substring(4);
+                    if (!ids.contains(nuevo)) {
+                        nuevosIds.put(n.id(), nuevo);
                     }
                 }
-                cambio |= nombre != null && !nombre.equals(n.name());
-                nodos.add(new WorkflowNodeDef(n.id(), n.type(), nombre, config, n.positionX(), n.positionY()));
             }
-            if (!cambio) {
+            boolean[] cambio = {false};
+            java.util.function.UnaryOperator<String> texto = t -> {
+                if (t == null) return null;
+                String r = cambiarNombre(t).replace("nexaResultado", "mapiResultado");
+                for (Map.Entry<String, String> e : nuevosIds.entrySet()) {
+                    r = r.replace("nodos." + e.getKey() + ".", "nodos." + e.getValue() + ".");
+                }
+                cambio[0] |= !r.equals(t);
+                return r;
+            };
+            List<WorkflowNodeDef> nodos = new java.util.ArrayList<>();
+            for (WorkflowNodeDef n : g.nodes()) {
+                String tipo = "NEXA".equalsIgnoreCase(n.type()) ? "MAPI" : n.type();
+                String id = nuevosIds.getOrDefault(n.id(), n.id());
+                cambio[0] |= !java.util.Objects.equals(tipo, n.type()) || !java.util.Objects.equals(id, n.id());
+                Map<String, Object> config = new LinkedHashMap<>();
+                if (n.config() != null) {
+                    n.config().forEach((k, v) -> config.put(k, v instanceof String t ? texto.apply(t) : v));
+                }
+                nodos.add(new WorkflowNodeDef(id, tipo, texto.apply(n.name()), config, n.positionX(), n.positionY()));
+            }
+            List<WorkflowEdgeDef> aristas = new java.util.ArrayList<>();
+            if (g.edges() != null) {
+                for (WorkflowEdgeDef a : g.edges()) {
+                    aristas.add(new WorkflowEdgeDef(nuevosIds.getOrDefault(a.from(), a.from()),
+                            nuevosIds.getOrDefault(a.to(), a.to()), a.sourcePort(), texto.apply(a.label())));
+                }
+            }
+            if (!cambio[0]) {
                 return null;
             }
-            return new WorkflowGraphDef(CLASIFICACION_IA, nodos, g.edges(), g.variables());
+            return new WorkflowGraphDef(texto.apply(g.name()), nodos, aristas, g.variables());
         } catch (Exception e) {
             return null;
         }
@@ -184,37 +221,37 @@ public class WorkflowsDeFabrica {
         }
     }
 
-    /** INICIO → NEXA → ¿segura? → prioridad → categoría → tipo → nota interna → FIN. */
+    /** INICIO → MAPI → ¿segura? → prioridad → categoría → tipo → nota interna → FIN. */
     static WorkflowGraphDef grafoClasificacion() {
         List<WorkflowNodeDef> nodos = List.of(
                 nodo("inicio", "INICIO", "Ticket creado", Map.of(), 80, 200),
-                nodo("nexa", "NEXA", "MAPI clasifica", Map.of(
+                nodo("mapi", "MAPI", "MAPI clasifica", Map.of(
                         "accion", "CLASIFICAR",
                         "instrucciones", "Clasifica el ticket con las reglas de la institución. "
                                 + "Si dudas, deja la prioridad en MEDIA."), 280, 200),
                 nodo("segura", "IF", "¿MAPI está segura?", Map.of(
-                        "campo", "nodos.nexa.confianza", "operador", ">=", "valor", 0.6), 480, 200),
+                        "campo", "nodos.mapi.confianza", "operador", ">=", "valor", 0.6), 480, 200),
                 nodo("hayPrioridad", "IF", "¿Propuso prioridad?", Map.of(
-                        "campo", "nodos.nexa.prioridadId", "operador", "no_vacio"), 680, 120),
+                        "campo", "nodos.mapi.prioridadId", "operador", "no_vacio"), 680, 120),
                 nodo("prioridad", "TICKET_PRIORITY", "Aplicar prioridad", Map.of(
-                        "prioridadId", "{{nodos.nexa.prioridadId}}"), 880, 60),
+                        "prioridadId", "{{nodos.mapi.prioridadId}}"), 880, 60),
                 nodo("hayCategoria", "IF", "¿Propuso categoría?", Map.of(
-                        "campo", "nodos.nexa.categoriaId", "operador", "no_vacio"), 1080, 120),
+                        "campo", "nodos.mapi.categoriaId", "operador", "no_vacio"), 1080, 120),
                 nodo("categoria", "TICKET_CATEGORY", "Aplicar categoría", Map.of(
-                        "categoriaId", "{{nodos.nexa.categoriaId}}"), 1280, 60),
+                        "categoriaId", "{{nodos.mapi.categoriaId}}"), 1280, 60),
                 nodo("hayTipo", "IF", "¿Propuso tipo?", Map.of(
-                        "campo", "nodos.nexa.tipoId", "operador", "no_vacio"), 1480, 120),
+                        "campo", "nodos.mapi.tipoId", "operador", "no_vacio"), 1480, 120),
                 nodo("tipo", "TICKET_TYPE", "Aplicar tipo", Map.of(
-                        "tipoId", "{{nodos.nexa.tipoId}}"), 1680, 60),
+                        "tipoId", "{{nodos.mapi.tipoId}}"), 1680, 60),
                 nodo("nota", "TICKET_COMMENT", "Nota interna de MAPI", Map.of(
-                        "mensaje", "MAPI: {{nodos.nexa.resumen}} (prioridad sugerida: {{nodos.nexa.prioridad}}, "
-                                + "categoría: {{nodos.nexa.categoria}}, tipo: {{nodos.nexa.tipo}}, "
-                                + "confianza: {{nodos.nexa.confianza}})",
+                        "mensaje", "MAPI: {{nodos.mapi.resumen}} (prioridad sugerida: {{nodos.mapi.prioridad}}, "
+                                + "categoría: {{nodos.mapi.categoria}}, tipo: {{nodos.mapi.tipo}}, "
+                                + "confianza: {{nodos.mapi.confianza}})",
                         "interno", true), 1880, 200),
                 nodo("fin", "FIN", "Fin", Map.of(), 2080, 200));
         List<WorkflowEdgeDef> aristas = List.of(
-                arista("inicio", "nexa", WorkflowEdgeDef.PUERTO_UNICO, null),
-                arista("nexa", "segura", WorkflowEdgeDef.PUERTO_UNICO, null),
+                arista("inicio", "mapi", WorkflowEdgeDef.PUERTO_UNICO, null),
+                arista("mapi", "segura", WorkflowEdgeDef.PUERTO_UNICO, null),
                 arista("segura", "hayPrioridad", "SI", "Sí"),
                 arista("segura", "nota", "NO", "No"),
                 arista("hayPrioridad", "prioridad", "SI", "Sí"),

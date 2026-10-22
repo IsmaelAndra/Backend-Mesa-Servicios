@@ -1,6 +1,6 @@
 # Mesa de Ayuda COAC — Backend
 
-API REST de la mesa de servicios de la COAC Magisterio de Pichincha: tickets con SLA, chat en tiempo real (SSE), notificaciones por Microsoft Graph, reportes PDF (JasperReports), asistente NEXA y un motor de automatizaciones (workflows).
+API REST de la mesa de servicios de la COAC Magisterio de Pichincha: tickets con SLA, chat en tiempo real (SSE), notificaciones por Microsoft Graph, reportes PDF (JasperReports), asistente MAPI y un motor de automatizaciones (workflows).
 
 El frontend vive en [Frontend-Mesa-Servicios](https://github.com/IsmaelAndra/Frontend-Mesa-Servicios).
 

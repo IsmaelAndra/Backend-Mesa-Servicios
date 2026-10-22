@@ -526,18 +526,18 @@ class WorkflowEngineRecorridoTest {
         WorkflowProperties props = new WorkflowProperties();
         props.setMaxPasos(20);
         engine = motor(registroCon(WorkflowNodeType.NOTIFY, (ctx, nodo) -> {
-            ctx.escribir("nodos.nexa1.prioridad", "CRITICA");
+            ctx.escribir("nodos.mapi1.prioridad", "CRITICA");
             return WorkflowResult.avanzar();
         }), props);
         guardarVersion("""
                 {"name":"g","nodes":[
                   {"id":"ini","type":"INICIO","name":"I","config":{},"positionX":0,"positionY":0},
-                  {"id":"nexa1","type":"NOTIFY","name":"N","config":{},"positionX":100,"positionY":0},
+                  {"id":"mapi1","type":"NOTIFY","name":"N","config":{},"positionX":100,"positionY":0},
                   {"id":"espera","type":"WAIT","name":"E","config":{"minutos":60},"positionX":200,"positionY":0},
                   {"id":"fin","type":"FIN","name":"F","config":{},"positionX":300,"positionY":0}],
                  "edges":[
-                   {"from":"ini","to":"nexa1","sourcePort":"NEXT"},
-                   {"from":"nexa1","to":"espera","sourcePort":"NEXT"},
+                   {"from":"ini","to":"mapi1","sourcePort":"NEXT"},
+                   {"from":"mapi1","to":"espera","sourcePort":"NEXT"},
                    {"from":"espera","to":"fin","sourcePort":"NEXT"}],
                  "variables":{}}
                 """);
@@ -617,11 +617,11 @@ class WorkflowEngineRecorridoTest {
     private static final String GRAFO_IA = """
             {"name":"g","nodes":[
               {"id":"ini","type":"INICIO","name":"I","config":{},"positionX":0,"positionY":0},
-              {"id":"nexa","type":"NEXA","name":"N","config":{},"positionX":100,"positionY":0},
+              {"id":"mapi","type":"MAPI","name":"N","config":{},"positionX":100,"positionY":0},
               {"id":"fin","type":"FIN","name":"F","config":{},"positionX":200,"positionY":0}],
              "edges":[
-               {"from":"ini","to":"nexa","sourcePort":"NEXT"},
-               {"from":"nexa","to":"fin","sourcePort":"NEXT"}],
+               {"from":"ini","to":"mapi","sourcePort":"NEXT"},
+               {"from":"mapi","to":"fin","sourcePort":"NEXT"}],
              "variables":{}}
             """;
 
@@ -629,7 +629,7 @@ class WorkflowEngineRecorridoTest {
     @DisplayName("un fallo pasajero deja la ejecución esperando un reintento del mismo nodo")
     void falloPasajeroSeReintenta() {
         WorkflowProperties props = new WorkflowProperties();
-        engine = motor(registroCon(WorkflowNodeType.NEXA,
+        engine = motor(registroCon(WorkflowNodeType.MAPI,
                 (ctx, nodo) -> WorkflowResult.fallarReintentable("IA saturada")), props);
         guardarVersion(GRAFO_IA);
 
@@ -638,7 +638,7 @@ class WorkflowEngineRecorridoTest {
         WorkflowExecution salida = capturada();
         assertEquals(WorkflowExecution.ESTADO_ESPERANDO, salida.getStatusExecution(),
                 "un pico de demanda de la IA no debe dar la ejecución por perdida");
-        assertEquals("nexa", salida.getCurrentNodeExecution());
+        assertEquals("mapi", salida.getCurrentNodeExecution());
         ArgumentCaptor<com.mesaayuda.entity.WorkflowWait> espera =
                 ArgumentCaptor.forClass(com.mesaayuda.entity.WorkflowWait.class);
         verify(esperas).save(espera.capture());
@@ -651,7 +651,7 @@ class WorkflowEngineRecorridoTest {
     void reintentoVuelveAEjecutarElNodo() {
         guardarVersion(GRAFO_IA);
         WorkflowExecution despertada = ejecucion();
-        despertada.setCurrentNodeExecution("nexa");
+        despertada.setCurrentNodeExecution("mapi");
         despertada.setResumePortExecution(WorkflowExecution.PUERTO_REINTENTO);
         when(executionRepository.findById(id(500))).thenReturn(Optional.of(despertada));
 
@@ -661,7 +661,7 @@ class WorkflowEngineRecorridoTest {
         ArgumentCaptor<com.mesaayuda.entity.WorkflowNodeRun> pasos =
                 ArgumentCaptor.forClass(com.mesaayuda.entity.WorkflowNodeRun.class);
         verify(nodeRunRepository, org.mockito.Mockito.times(2)).save(pasos.capture());
-        assertEquals(List.of("nexa", "fin"),
+        assertEquals(List.of("mapi", "fin"),
                 pasos.getAllValues().stream().map(com.mesaayuda.entity.WorkflowNodeRun::getNodeIdNodeRun).toList());
     }
 
@@ -670,13 +670,13 @@ class WorkflowEngineRecorridoTest {
     void reintentosAgotadosVanAError() {
         WorkflowProperties props = new WorkflowProperties();
         props.setMaxReintentosNodo(3);
-        engine = motor(registroCon(WorkflowNodeType.NEXA,
+        engine = motor(registroCon(WorkflowNodeType.MAPI,
                 (ctx, nodo) -> WorkflowResult.fallarReintentable("IA saturada")), props);
         guardarVersion(GRAFO_IA);
         WorkflowExecution tercera = ejecucion();
-        tercera.setCurrentNodeExecution("nexa");
+        tercera.setCurrentNodeExecution("mapi");
         tercera.setResumePortExecution(WorkflowExecution.PUERTO_REINTENTO);
-        tercera.setVariablesExecution("{\"reintentos\":{\"nexa\":3}}");
+        tercera.setVariablesExecution("{\"reintentos\":{\"mapi\":3}}");
         when(executionRepository.findById(id(500))).thenReturn(Optional.of(tercera));
 
         engine.ejecutar(id(500));

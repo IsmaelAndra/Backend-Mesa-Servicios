@@ -20,7 +20,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Una automatización (NEXA) no pisa la prioridad que eligió una persona: de ella
+ * Una automatización (MAPI) no pisa la prioridad que eligió una persona: de ella
  * depende el plazo del SLA. Solo la cambia si el nodo dice "forzar".
  */
 class TicketPriorityHandlerTest {

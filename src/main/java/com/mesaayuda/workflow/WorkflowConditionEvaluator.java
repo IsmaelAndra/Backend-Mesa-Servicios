@@ -46,7 +46,7 @@ public class WorkflowConditionEvaluator {
         String operador = texto(config.get("operador"));
         Object esperado = config.get("valor");
         // El valor esperado también puede ser una variable: "prioridad del ticket
-        // == {{nodos.nexa1.prioridad}}".
+        // == {{nodos.mapi1.prioridad}}".
         if (esperado instanceof String texto) {
             esperado = contexto.interpolar(texto);
         }

@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * El que recoge las ejecuciones pendientes y las ejecuta.
  *
  * <p><b>Nunca ejecuta nada dentro de la petición HTTP.</b> Un disparador encola y
- * este worker la recoge. La razón no es de estilo: una petición que espera a NEXA
+ * este worker la recoge. La razón no es de estilo: una petición que espera a MAPI
  * puede tardar un minuto, y si eso colgara del hilo que atiende la creación de un
  * ticket, el help desk entero se pararía cada vez que una automatización usara la
  * IA.

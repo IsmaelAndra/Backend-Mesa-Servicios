@@ -15,7 +15,7 @@ import java.util.concurrent.Executor;
  * revés: el motor no arrastra al correo.
  *
  * <p>Además, el pool del correo ("taskExecutor") es para trabajo rápido y
- * constante. Este es lento y a ráfagas: una llamada a NEXA puede tardar 60
+ * constante. Este es lento y a ráfagas: una llamada a MAPI puede tardar 60
  * segundos, y un lote de diez ejecuciones que todas usen la IA deja este pool
  * ocupado un minuto entero. Si compartieran, un lote de automatizaciones
  * detendría los correos del help desk. Es el mismo problema que en la Fase 1 hizo

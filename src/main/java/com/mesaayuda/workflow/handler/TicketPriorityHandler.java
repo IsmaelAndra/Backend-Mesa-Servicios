@@ -43,7 +43,7 @@ public class TicketPriorityHandler extends TicketActionSupport implements Workfl
         }
 
         Map<String, Object> config = nodo.config() == null ? Map.of() : nodo.config();
-        // Admite variable, p. ej. {{nodos.nexa1.prioridadId}} (la que sugirió NEXA).
+        // Admite variable, p. ej. {{nodos.mapi1.prioridadId}} (la que sugirió MAPI).
         java.util.UUID prioridadIdCfg = contexto.configUuid(nodo, "prioridadId");
         java.util.UUID prioridadId = null;
         if (prioridadIdCfg != null) {

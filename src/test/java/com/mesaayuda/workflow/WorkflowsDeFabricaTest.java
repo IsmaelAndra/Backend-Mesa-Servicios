@@ -40,20 +40,43 @@ class WorkflowsDeFabricaTest {
     }
 
     @Test
-    void alRenombrarAMapiSoloCambiaElTextoVisible() {
-        String v = "{\"name\":\"x\",\"nodes\":["
+    void elGrafoDeFabricaUsaMapi() {
+        WorkflowGraphDef grafo = WorkflowsDeFabrica.grafoClasificacion();
+        assertTrue(grafo.nodes().stream().anyMatch(n -> "mapi".equals(n.id()) && "MAPI".equals(n.type())));
+        assertTrue(grafo.nodes().stream().noneMatch(n -> String.valueOf(n.config()).contains("nexa")));
+    }
+
+    @Test
+    void unaVersionConNexaSeConvierteEnteraAMapi() {
+        String v = "{\"name\":\"Flujo NEXA\",\"nodes\":["
+                + "{\"id\":\"inicio\",\"type\":\"INICIO\",\"name\":\"Inicio\",\"config\":{}},"
                 + "{\"id\":\"nexa\",\"type\":\"NEXA\",\"name\":\"NEXA clasifica\",\"config\":{\"accion\":\"CLASIFICAR\"}},"
+                + "{\"id\":\"segura\",\"type\":\"IF\",\"name\":\"¿Segura?\",\"config\":{\"campo\":\"nodos.nexa.confianza\",\"valor\":0.6}},"
                 + "{\"id\":\"nota\",\"type\":\"TICKET_COMMENT\",\"name\":\"Nota\","
-                + "\"config\":{\"mensaje\":\"NEXA: {{nodos.nexa.resumen}}\",\"interno\":true}}],\"edges\":[]}";
-        WorkflowGraphDef g = WorkflowsDeFabrica.conTextosMapi(v);
+                + "\"config\":{\"mensaje\":\"NEXA: {{nodos.nexa.resumen}} {{nexaResultado}}\",\"interno\":true}}],"
+                + "\"edges\":[{\"from\":\"inicio\",\"to\":\"nexa\",\"sourcePort\":\"NEXT\"},"
+                + "{\"from\":\"nexa\",\"to\":\"segura\",\"sourcePort\":\"NEXT\"}]}";
+        WorkflowGraphDef g = WorkflowsDeFabrica.aMapi(v);
         org.junit.jupiter.api.Assertions.assertNotNull(g);
-        WorkflowNodeDef nexa = g.nodes().get(0);
-        org.junit.jupiter.api.Assertions.assertEquals("NEXA", nexa.type(), "el tipo de nodo no cambia");
-        org.junit.jupiter.api.Assertions.assertEquals("nexa", nexa.id(), "el id tampoco");
-        org.junit.jupiter.api.Assertions.assertEquals("MAPI clasifica", nexa.name());
-        org.junit.jupiter.api.Assertions.assertEquals("MAPI: {{nodos.nexa.resumen}}", g.nodes().get(1).config().get("mensaje"));
-        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, g.nodes().get(1).config().get("interno"));
-        // Sin nada que cambiar no se publica versión nueva.
-        org.junit.jupiter.api.Assertions.assertNull(WorkflowsDeFabrica.conTextosMapi(v.replace("NEXA clasifica", "MAPI clasifica").replace("NEXA:", "MAPI:")));
+        WorkflowNodeDef mapi = g.nodes().get(1);
+        org.junit.jupiter.api.Assertions.assertEquals("MAPI", mapi.type());
+        org.junit.jupiter.api.Assertions.assertEquals("mapi", mapi.id());
+        org.junit.jupiter.api.Assertions.assertEquals("MAPI clasifica", mapi.name());
+        org.junit.jupiter.api.Assertions.assertEquals("nodos.mapi.confianza", g.nodes().get(2).config().get("campo"));
+        org.junit.jupiter.api.Assertions.assertEquals(0.6, g.nodes().get(2).config().get("valor"));
+        org.junit.jupiter.api.Assertions.assertEquals("MAPI: {{nodos.mapi.resumen}} {{mapiResultado}}",
+                g.nodes().get(3).config().get("mensaje"));
+        org.junit.jupiter.api.Assertions.assertEquals("mapi", g.edges().get(0).to());
+        org.junit.jupiter.api.Assertions.assertEquals("mapi", g.edges().get(1).from());
+        org.junit.jupiter.api.Assertions.assertEquals("Flujo MAPI", g.name());
+        // El resultado ya convertido no cambia más: no se publica otra versión.
+        org.junit.jupiter.api.Assertions.assertNull(WorkflowsDeFabrica.aMapi(
+                "{\"name\":\"x\",\"nodes\":[{\"id\":\"mapi\",\"type\":\"MAPI\",\"name\":\"MAPI\",\"config\":{}}],\"edges\":[]}"));
+    }
+
+    @Test
+    void elTipoViejoNexaSeResuelveComoMapi() {
+        org.junit.jupiter.api.Assertions.assertEquals(WorkflowNodeType.MAPI, WorkflowNodeType.desde("NEXA"));
+        org.junit.jupiter.api.Assertions.assertEquals(WorkflowNodeType.MAPI, WorkflowNodeType.desde("mapi"));
     }
 }

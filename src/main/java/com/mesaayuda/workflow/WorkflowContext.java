@@ -137,7 +137,7 @@ public class WorkflowContext {
 
     /**
      * Número de la configuración de un nodo. Admite un número, un texto con un
-     * número o una variable ({@code {{nodos.nexa1.equipoId}}}). Null si no hay o
+     * número o una variable ({@code {{nodos.mapi1.equipoId}}}). Null si no hay o
      * no es un número.
      */
     public Long configNumero(WorkflowNodeDef nodo, String clave) {
@@ -159,7 +159,7 @@ public class WorkflowContext {
     /**
      * Identificador (UUID) de la configuración de un nodo: equipo, agente,
      * prioridad, categoría… Admite el UUID escrito o una variable
-     * ({@code {{nodos.nexa1.equipoId}}}). Null si no hay o no es un UUID.
+     * ({@code {{nodos.mapi1.equipoId}}}). Null si no hay o no es un UUID.
      *
      * <p>Desde V3__ids_uuid.sql los ids no son números: leerlos con
      * {@link #configNumero} devolvía siempre null y la acción fallaba.

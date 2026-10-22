@@ -48,4 +48,13 @@ class AiAssistantGroqTest {
         assertEquals("- Correo: Problemas con correo corporativo (equipo: Equipo TI)",
                 AiAssistantService.describirCategoria(c));
     }
+
+    @Test
+    void elChatNoDiceQueCreaTicketsNiTutea() {
+        String reglas = AiAssistantService.REGLAS_CHAT;
+        assertTrue(reglas.contains("NO puedes crear"), "no debe afirmar que creó un ticket");
+        assertTrue(reglas.contains("BORRADOR"));
+        assertTrue(reglas.contains("usted"));
+        assertTrue(reglas.contains("Nunca inventes categorías"));
+    }
 }
