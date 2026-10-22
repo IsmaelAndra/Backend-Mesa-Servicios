@@ -547,7 +547,7 @@ private void exigirAccion(AiConfig cfg, String accion) {
             return;
         }
         if (usadas != null && usadas > limite) {
-            throw new AiException("Se alcanzó el límite diario de NEXA (" + limite
+            throw new AiException("Se alcanzó el límite diario de MAPI (" + limite
                     + " consultas). Vuelve a estar disponible mañana.");
         }
     }

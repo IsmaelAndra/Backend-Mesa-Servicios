@@ -212,7 +212,7 @@ public class WorkflowValidationService {
                 case NEXA -> {
                     Object accion = valor(n, "accion");
                     if (accion != null && com.mesaayuda.workflow.handler.NexaHandler.accion(String.valueOf(accion)) == null) {
-                        errores.add("El nodo NEXA '" + nom + "' pide una acción que no existe. "
+                        errores.add("El nodo MAPI '" + nom + "' pide una acción que no existe. "
                                 + "Use CLASIFICAR, RESUMIR o RESPONDER.");
                     }
                 }

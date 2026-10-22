@@ -38,4 +38,22 @@ class WorkflowsDeFabricaTest {
         org.junit.jupiter.api.Assertions.assertFalse(WorkflowsDeFabrica.esVersion1(modificada));
         org.junit.jupiter.api.Assertions.assertFalse(WorkflowsDeFabrica.esVersion1("no es json"));
     }
+
+    @Test
+    void alRenombrarAMapiSoloCambiaElTextoVisible() {
+        String v = "{\"name\":\"x\",\"nodes\":["
+                + "{\"id\":\"nexa\",\"type\":\"NEXA\",\"name\":\"NEXA clasifica\",\"config\":{\"accion\":\"CLASIFICAR\"}},"
+                + "{\"id\":\"nota\",\"type\":\"TICKET_COMMENT\",\"name\":\"Nota\","
+                + "\"config\":{\"mensaje\":\"NEXA: {{nodos.nexa.resumen}}\",\"interno\":true}}],\"edges\":[]}";
+        WorkflowGraphDef g = WorkflowsDeFabrica.conTextosMapi(v);
+        org.junit.jupiter.api.Assertions.assertNotNull(g);
+        WorkflowNodeDef nexa = g.nodes().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals("NEXA", nexa.type(), "el tipo de nodo no cambia");
+        org.junit.jupiter.api.Assertions.assertEquals("nexa", nexa.id(), "el id tampoco");
+        org.junit.jupiter.api.Assertions.assertEquals("MAPI clasifica", nexa.name());
+        org.junit.jupiter.api.Assertions.assertEquals("MAPI: {{nodos.nexa.resumen}}", g.nodes().get(1).config().get("mensaje"));
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, g.nodes().get(1).config().get("interno"));
+        // Sin nada que cambiar no se publica versión nueva.
+        org.junit.jupiter.api.Assertions.assertNull(WorkflowsDeFabrica.conTextosMapi(v.replace("NEXA clasifica", "MAPI clasifica").replace("NEXA:", "MAPI:")));
+    }
 }

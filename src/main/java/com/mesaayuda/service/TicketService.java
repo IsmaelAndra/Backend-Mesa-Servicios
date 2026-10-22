@@ -1422,7 +1422,7 @@ private Ticket getTicketGestionable(UUID id, String queSeHacia) {
         recalcularSla(ticket);
 
         auditService.record(ticket, "PRIORITY_CHANGE", anterior, nueva.getNamePriority(),
-                automatico ? "Ajustada por una automatización (NEXA)" : null);
+                automatico ? "Ajustada por una automatización (MAPI)" : null);
         publishSse("TICKET_UPDATED", ticket, current.getIdUser(), current.getCorporateEmailUser());
         log.info("Ticket #{} cambió de prioridad {} -> {}", ticketId, anterior, nueva.getNamePriority());
         // Antes no se publicaba nada: un workflow con "Cambio de prioridad" no se

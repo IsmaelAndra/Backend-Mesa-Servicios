@@ -52,26 +52,26 @@ public class NexaHandler implements WorkflowNodeHandler {
     public WorkflowResult ejecutar(WorkflowContext contexto, WorkflowNodeDef nodo) {
         String accion = accion(contexto.configTexto(nodo, "accion"));
         if (accion == null) {
-            return WorkflowResult.fallar("El nodo NEXA '" + nodo.id() + "' pide una acción que NEXA no tiene. "
+            return WorkflowResult.fallar("El nodo MAPI '" + nodo.id() + "' pide una acción que MAPI no tiene. "
                     + "Disponibles: CLASIFICAR, RESUMIR, RESPONDER.");
         }
         UUID ticketId = idTicket(contexto, nodo);
         if (ticketId == null) {
-            return WorkflowResult.fallar("El nodo NEXA '" + nodo.id()
-                    + "' necesita un ticket: NEXA trabaja sobre un ticket concreto.");
+            return WorkflowResult.fallar("El nodo MAPI '" + nodo.id()
+                    + "' necesita un ticket: MAPI trabaja sobre un ticket concreto.");
         }
         String instrucciones = contexto.configTexto(nodo, "instrucciones");
         try {
             if (AiAssistantService.ACCION_CLASIFICAR.equals(accion)) {
                 Map<String, Object> clasificacion = aiAssistantService.clasificar(ticketId, instrucciones);
                 clasificacion.forEach((clave, valor) -> contexto.resultado(nodo, clave, valor));
-                log.info("NEXA clasificó el ticket #{} en el nodo '{}': {}", ticketId, nodo.id(), clasificacion);
+                log.info("MAPI clasificó el ticket #{} en el nodo '{}': {}", ticketId, nodo.id(), clasificacion);
                 return WorkflowResult.avanzar();
             }
             String respuesta = aiAssistantService.assist(accion, ticketId,
                     instrucciones == null ? "Resume el ticket de forma útil para el equipo de soporte." : instrucciones);
             if (respuesta == null || respuesta.isBlank()) {
-                return WorkflowResult.fallar("NEXA devolvió una respuesta vacía en el nodo '" + nodo.id() + "'.");
+                return WorkflowResult.fallar("MAPI devolvió una respuesta vacía en el nodo '" + nodo.id() + "'.");
             }
             String recortada = respuesta.length() <= MAX_CARACTERES ? respuesta : respuesta.substring(0, MAX_CARACTERES);
             contexto.resultado(nodo, "texto", recortada);
@@ -80,8 +80,8 @@ public class NexaHandler implements WorkflowNodeHandler {
             contexto.escribir(variable == null ? "nexaResultado" : variable, recortada);
             return WorkflowResult.avanzar();
         } catch (com.mesaayuda.exception.AiException e) {
-            log.warn("NEXA falló en el nodo '{}' para el ticket #{}: {}", nodo.id(), ticketId, e.getMessage());
-            String motivo = "NEXA no pudo completar la acción en el nodo '" + nodo.id() + "': " + e.getMessage();
+            log.warn("MAPI falló en el nodo '{}' para el ticket #{}: {}", nodo.id(), ticketId, e.getMessage());
+            String motivo = "MAPI no pudo completar la acción en el nodo '" + nodo.id() + "': " + e.getMessage();
             // Saturación o timeout del proveedor: pasajero, se reintenta. Con la IA
             // apagada en la configuración, reintentar no arregla nada.
             // Tampoco el límite diario: reintentar en minutos solo gastaría intentos.
@@ -89,8 +89,8 @@ public class NexaHandler implements WorkflowNodeHandler {
             boolean pasajero = !msg.contains("deshabilitad") && !msg.contains("límite diario");
             return pasajero ? WorkflowResult.fallarReintentable(motivo) : WorkflowResult.fallar(motivo);
         } catch (RuntimeException e) {
-            log.warn("NEXA falló en el nodo '{}' para el ticket #{}: {}", nodo.id(), ticketId, e.getMessage());
-            return WorkflowResult.fallar("NEXA no pudo completar la acción en el nodo '" + nodo.id() + "': "
+            log.warn("MAPI falló en el nodo '{}' para el ticket #{}: {}", nodo.id(), ticketId, e.getMessage());
+            return WorkflowResult.fallar("MAPI no pudo completar la acción en el nodo '" + nodo.id() + "': "
                     + e.getMessage());
         }
     }
