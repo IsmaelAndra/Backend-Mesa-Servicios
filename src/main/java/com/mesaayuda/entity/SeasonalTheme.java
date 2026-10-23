@@ -65,6 +65,10 @@ public class SeasonalTheme {
     @Column(name = "dashboard_url_theme", length = 500)
     private String dashboardUrlTheme;
 
+    /** Icono cuadrado del tema: pestaña y ventana de la aplicación instalada. */
+    @Column(name = "icon_url_theme", length = 500)
+    private String iconUrlTheme;
+
     @Column(name = "created_at_theme", nullable = false, updatable = false)
     private OffsetDateTime createdAtTheme;
 

@@ -71,7 +71,7 @@ public class SeasonalThemeController {
 
     @PostMapping(value = "/admin/temas-temporada/{id}/imagen/{tipo}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('ROLE_SUPER_ADMIN')")
-    @Operation(summary = "Subir el fondo del login (tipo=fondo) o el logo (tipo=logo) del tema")
+    @Operation(summary = "Subir una imagen del tema: fondo, logo, inicio (dashboard) o icono (pestaña y app)")
     public Tema subirImagen(@PathVariable UUID id, @PathVariable String tipo,
                             @RequestParam("file") MultipartFile file, HttpServletRequest request) {
         return service.aTema(service.subirImagen(id, tipo, file), url(request));

@@ -180,6 +180,7 @@ public class SeasonalThemeService {
         switch (tipoImagen(tipo)) {
             case "fondo" -> t.setBackgroundUrlTheme(url);
             case "inicio" -> t.setDashboardUrlTheme(url);
+            case "icono" -> t.setIconUrlTheme(url);
             default -> t.setLogoUrlTheme(url);
         }
         t.setUpdatedAtTheme(OffsetDateTime.now());
@@ -192,6 +193,7 @@ public class SeasonalThemeService {
         switch (tipoImagen(tipo)) {
             case "fondo" -> t.setBackgroundUrlTheme(null);
             case "inicio" -> t.setDashboardUrlTheme(null);
+            case "icono" -> t.setIconUrlTheme(null);
             default -> t.setLogoUrlTheme(null);
         }
         t.setUpdatedAtTheme(OffsetDateTime.now());
@@ -212,13 +214,13 @@ public class SeasonalThemeService {
         return new Tema(t.getIdTheme(), t.getCodeTheme(), t.getNameTheme(), Boolean.TRUE.equals(t.getActiveTheme()),
                 m1, d1, m2, d2,
                 t.getGreetingTheme(), url.apply(t.getBackgroundUrlTheme()), url.apply(t.getLogoUrlTheme()),
-                url.apply(t.getDashboardUrlTheme()), vigente(t, hoy), t.getRuleTheme());
+                url.apply(t.getDashboardUrlTheme()), url.apply(t.getIconUrlTheme()), vigente(t, hoy), t.getRuleTheme());
     }
 
     public TemaActual aActual(SeasonalTheme t, java.util.function.UnaryOperator<String> url) {
         return new TemaActual(t.getCodeTheme(), t.getNameTheme(), saludo(t.getGreetingTheme()),
                 url.apply(t.getBackgroundUrlTheme()), url.apply(t.getLogoUrlTheme()),
-                url.apply(t.getDashboardUrlTheme()));
+                url.apply(t.getDashboardUrlTheme()), url.apply(t.getIconUrlTheme()));
     }
 
     /** Año de fundación de la cooperativa (11 de noviembre de 1968). */
@@ -237,10 +239,10 @@ public class SeasonalThemeService {
     }
 
     private static String tipoImagen(String tipo) {
-        if ("fondo".equals(tipo) || "logo".equals(tipo) || "inicio".equals(tipo)) {
+        if ("fondo".equals(tipo) || "logo".equals(tipo) || "inicio".equals(tipo) || "icono".equals(tipo)) {
             return tipo;
         }
-        throw new BadRequestException("Tipo de imagen no válido: use fondo, logo o inicio.");
+        throw new BadRequestException("Tipo de imagen no válido: use fondo, logo, inicio o icono.");
     }
 
     private static void validarFecha(int mes, int dia) {
