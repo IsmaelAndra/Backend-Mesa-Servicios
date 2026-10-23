@@ -22,6 +22,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 
 /**
@@ -221,6 +223,59 @@ public class SeasonalThemeService {
         return new TemaActual(t.getCodeTheme(), t.getNameTheme(), saludo(t.getGreetingTheme()),
                 url.apply(t.getBackgroundUrlTheme()), url.apply(t.getLogoUrlTheme()),
                 url.apply(t.getDashboardUrlTheme()), url.apply(t.getIconUrlTheme()));
+    }
+
+    /** Iconos normales de la app (los del emblema, servidos por el frontend). */
+    static final String ICONO_192 = "/assets/icons/icon-192.png?v=2";
+    static final String ICONO_512 = "/assets/icons/icon-512.png?v=2";
+    static final String ICONO_ADAPTABLE = "/assets/icons/icon-maskable-512.png?v=2";
+
+    /**
+     * Manifiesto de la aplicación instalable (PWA).
+     *
+     * <p>Se genera aquí, y no como archivo fijo, para que el icono de la app
+     * instalada siga la temporada: si el tema vigente tiene icono propio, el
+     * manifiesto apunta a él. El navegador revisa el manifiesto al abrir la app
+     * (más o menos una vez al día) y, al ver otro icono, le pregunta a la persona
+     * si quiere actualizarlo. Al acabar la temporada vuelve el emblema normal y
+     * pasa lo mismo. {@code id}, {@code start_url} y {@code scope} no cambian
+     * nunca: si cambiaran, el navegador lo trataría como otra aplicación.
+     *
+     * @param iconoTemporada URL del icono del tema vigente, o null
+     */
+    public static Map<String, Object> manifiesto(String iconoTemporada) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", "/");
+        m.put("name", "Mesa de Servicios COAC");
+        m.put("short_name", "Mesa COAC");
+        m.put("description", "Sistema de mesa de ayuda y gestión de tickets.");
+        m.put("lang", "es");
+        m.put("dir", "ltr");
+        m.put("start_url", "/");
+        m.put("scope", "/");
+        m.put("display", "standalone");
+        m.put("background_color", "#062e86");
+        m.put("theme_color", "#062e86");
+        List<Map<String, String>> iconos = new java.util.ArrayList<>();
+        if (iconoTemporada != null && !iconoTemporada.isBlank()) {
+            String tipo = tipoMime(iconoTemporada);
+            iconos.add(Map.of("src", iconoTemporada, "sizes", "512x512", "type", tipo, "purpose", "any"));
+            iconos.add(Map.of("src", iconoTemporada, "sizes", "512x512", "type", tipo, "purpose", "maskable"));
+        } else {
+            iconos.add(Map.of("src", ICONO_192, "sizes", "192x192", "type", "image/png", "purpose", "any"));
+            iconos.add(Map.of("src", ICONO_512, "sizes", "512x512", "type", "image/png", "purpose", "any"));
+            iconos.add(Map.of("src", ICONO_ADAPTABLE, "sizes", "512x512", "type", "image/png", "purpose", "maskable"));
+        }
+        m.put("icons", iconos);
+        return m;
+    }
+
+    private static String tipoMime(String url) {
+        String u = url.toLowerCase(java.util.Locale.ROOT);
+        if (u.contains(".webp")) return "image/webp";
+        if (u.contains(".jpg") || u.contains(".jpeg")) return "image/jpeg";
+        if (u.contains(".gif")) return "image/gif";
+        return "image/png";
     }
 
     /** Año de fundación de la cooperativa (11 de noviembre de 1968). */

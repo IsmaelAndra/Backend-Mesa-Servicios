@@ -145,4 +145,20 @@ class SeasonalThemeServiceTest {
         assertThrows(BadRequestException.class, () -> service.configurar(new ConfigRequest(true, "NO_EXISTE")));
         assertThrows(BadRequestException.class, () -> service.quitarImagen(halloween.getIdTheme(), "../x"));
     }
+
+    @Test
+    void elManifiestoUsaElIconoDeLaTemporadaYMantieneLaIdentidad() {
+        @SuppressWarnings("unchecked")
+        java.util.List<java.util.Map<String, String>> iconos = (java.util.List<java.util.Map<String, String>>)
+                SeasonalThemeService.manifiesto("/api/uploads/publico/tema_halloween_icono_1.png").get("icons");
+        org.junit.jupiter.api.Assertions.assertTrue(iconos.stream()
+                .allMatch(i -> i.get("src").equals("/api/uploads/publico/tema_halloween_icono_1.png")));
+        org.junit.jupiter.api.Assertions.assertTrue(iconos.stream().anyMatch(i -> "maskable".equals(i.get("purpose"))));
+
+        java.util.Map<String, Object> normal = SeasonalThemeService.manifiesto(null);
+        // id, start_url y scope fijos: si cambiaran, el navegador lo tomaría por otra app.
+        org.junit.jupiter.api.Assertions.assertEquals("/", normal.get("id"));
+        org.junit.jupiter.api.Assertions.assertEquals("/", normal.get("start_url"));
+        org.junit.jupiter.api.Assertions.assertTrue(String.valueOf(normal.get("icons")).contains("icon-512.png"));
+    }
 }

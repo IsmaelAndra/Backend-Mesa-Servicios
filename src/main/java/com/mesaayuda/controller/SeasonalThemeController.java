@@ -47,6 +47,24 @@ public class SeasonalThemeController {
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
+    /**
+     * Manifiesto de la app instalable, con el icono de la temporada vigente si
+     * tiene uno. Público (el navegador lo pide sin sesión) y sin caché, para que
+     * el cambio de temporada se note en la siguiente revisión del navegador.
+     */
+    @GetMapping(value = "/pages/public/manifest.webmanifest", produces = "application/manifest+json")
+    @Operation(summary = "Manifiesto PWA con el icono de la temporada")
+    public ResponseEntity<java.util.Map<String, Object>> manifiesto(HttpServletRequest request) {
+        String icono = service.temaActual()
+                .map(t -> t.getIconUrlTheme())
+                .filter(u -> u != null && !u.isBlank())
+                .map(u -> url(request).apply(u))
+                .orElse(null);
+        return ResponseEntity.ok()
+                .cacheControl(org.springframework.http.CacheControl.noCache())
+                .body(SeasonalThemeService.manifiesto(icono));
+    }
+
     @GetMapping("/admin/temas-temporada")
     @PreAuthorize("hasAuthority('ROLE_SUPER_ADMIN')")
     @Operation(summary = "Configuración y lista de temas")
