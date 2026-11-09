@@ -230,6 +230,20 @@ public class TelefoniaService {
      */
     @Transactional
     public Llamada llamarAlSolicitante(UUID ticketId) {
+        return llamarDesdeTicket(ticketId, false);
+    }
+
+    /**
+     * Llama al agente asignado al ticket, por ejemplo tras asignárselo o
+     * escalárselo, para avisarle de palabra. Mismo recorrido: suena primero la
+     * extensión de quien llama.
+     */
+    @Transactional
+    public Llamada llamarAlAgente(UUID ticketId) {
+        return llamarDesdeTicket(ticketId, true);
+    }
+
+    private Llamada llamarDesdeTicket(UUID ticketId, boolean alAgente) {
         if (!habilitada()) {
             throw new BadRequestException("La telefonía no está configurada");
         }
@@ -240,12 +254,16 @@ public class TelefoniaService {
         if (!accessPolicy.esPersonal(actual) || !accessPolicy.puedeLeer(ticket, actual)) {
             throw new AccessDeniedException("Solo el personal puede llamar desde un ticket");
         }
-        User solicitante = ticket.getUserTicket();
+        User solicitante = alAgente ? ticket.getAgentTicket() : ticket.getUserTicket();
+        String quien = alAgente ? "El agente asignado" : "El solicitante";
+        if (alAgente && solicitante == null) {
+            throw new BadRequestException("El ticket no tiene un agente asignado.");
+        }
         if (!extensionValida(actual.getExtensionUser())) {
             throw new BadRequestException("No tiene una extensión asignada. Pida que la registren en su usuario.");
         }
         if (solicitante == null || !extensionValida(solicitante.getExtensionUser())) {
-            throw new BadRequestException("El solicitante no tiene una extensión registrada.");
+            throw new BadRequestException(quien + " no tiene una extensión registrada.");
         }
         String origen = actual.getExtensionUser().trim();
         String destino = solicitante.getExtensionUser().trim();

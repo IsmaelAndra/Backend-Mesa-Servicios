@@ -38,6 +38,20 @@ public class NotificationController {
                 .toList();
     }
 
+    /**
+     * Lo que pinta la campana: las 20 últimas y cuántas hay sin leer. La campana
+     * se refresca con cada aviso; antes descargaba el historial completo cada vez.
+     */
+    @GetMapping("/recientes")
+    @Transactional(readOnly = true)
+    public Map<String, Object> recientes() {
+        UUID userId = userService.getCurrentUser().getIdUser();
+        return Map.of(
+                "items", notificationRepository.findTop20ByUserIdUserOrderByCreatedAtNotificationDesc(userId)
+                        .stream().map(this::toResponse).toList(),
+                "sinLeer", notificationRepository.countByUserIdUserAndReadNotificationFalse(userId));
+    }
+
     /** Número de notificaciones sin leer, para el contador del navbar. */
     @GetMapping("/unread-count")
     @Transactional(readOnly = true)

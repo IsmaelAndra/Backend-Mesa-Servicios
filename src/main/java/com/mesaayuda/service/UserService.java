@@ -185,7 +185,8 @@ public class UserService {
                                 : u.getCorporateEmailUser(),
                         u.getCorporateEmailUser(),
                         u.getPhotoUrl(),
-                        estados.getOrDefault(u.getIdUser(), "DESCONECTADO")))
+                        estados.getOrDefault(u.getIdUser(), "DESCONECTADO"),
+                        u.getExtensionUser()))
                 .toList();
     }
     @Transactional(readOnly = true)

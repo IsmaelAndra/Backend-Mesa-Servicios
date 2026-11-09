@@ -47,6 +47,10 @@ public class CalendarService {
                 : taskRepository.findByAssignedUserIdUserAndDeletedTaskFalseOrderByStartTaskAscCreatedAtTaskDesc(
                         current.getIdUser());
         for (Task t : tasks) {
+            // Lo terminado ya no es algo por hacer: no ocupa lugar en el calendario.
+            if (Task.STATUS_HECHO.equals(t.getStatusTask())) {
+                continue;
+            }
             boolean allDay = t.getStartTask() == null && t.getDueTask() == null;
             OffsetDateTime evStart;
             OffsetDateTime evEnd;
@@ -82,12 +86,18 @@ public class CalendarService {
         }
 
         // ===== TICKETS ASIGNADOS =====
-        List<Ticket> tickets = isAdmin
-                ? ticketRepository.findByDeletedTicketFalseOrderByCreatedAtTicketDesc()
-                : ticketRepository.findByAgentTicketIdUserAndDeletedTicketFalseOrderByCreatedAtTicketDesc(
-                        current.getIdUser());
+        // Solo los que siguen en curso: un ticket resuelto o cerrado no debe salir.
+        List<Ticket> tickets = ticketRepository.findEnCursoParaCalendario(!isAdmin, current.getIdUser(), end);
+        // Los plazos de todos de una vez; antes era una consulta por ticket.
+        java.util.Map<java.util.UUID, TicketSla> slas = new java.util.HashMap<>();
+        if (!tickets.isEmpty()) {
+            for (TicketSla ts : ticketSlaRepository.findByTicketIdTicketIn(
+                    tickets.stream().map(Ticket::getIdTicket).toList())) {
+                slas.put(ts.getTicket().getIdTicket(), ts);
+            }
+        }
         for (Ticket tk : tickets) {
-            TicketSla sla = ticketSlaRepository.findByTicketIdTicket(tk.getIdTicket()).orElse(null);
+            TicketSla sla = slas.get(tk.getIdTicket());
             OffsetDateTime evStart = tk.getCreatedAtTicket();
             OffsetDateTime evEnd = sla != null && sla.getResolutionDueAt() != null
                     ? sla.getResolutionDueAt()

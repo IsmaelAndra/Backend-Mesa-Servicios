@@ -18,11 +18,12 @@ import java.util.UUID;
  * @param displayName nombre mostrado, con el que la persona se reconoce
  * @param corporateEmailUser correo corporativo. Mismo nombre de campo que en User, para que el
  *                           emparejamiento que ya hace el frontend siga funcionando.
+ * @param extension   extensión telefónica, para llamarle desde el ticket (null si no tiene).
  * @param sessionState EN_LINEA, RECIENTE o DESCONECTADO. Lo pinta el kanban para
  *                    saber quien esta trabajando ahora. Viene de la actividad de
  *                    renovacion de token y de las conexiones SSE abiertas, no de
  *                    ningun dato almacenado del usuario.
  */
 public record AgentOptionResponse(UUID idUser, String displayName, String corporateEmailUser,
-        String photoUrl, String sessionState) {
+        String photoUrl, String sessionState, String extension) {
 }

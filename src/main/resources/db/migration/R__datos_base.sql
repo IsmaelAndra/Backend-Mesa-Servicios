@@ -497,10 +497,12 @@ INSERT INTO report_config (name_report, title_report, description_report, query_
       LEFT JOIN category c ON c.id_category = t.category_ticket
       LEFT JOIN priority p ON p.id_priority = t.priority_ticket
       LEFT JOIN status s ON s.id_status = t.status_ticket
-      WHERE (:desde IS NULL OR t.created_at_ticket >= :desde)
+      WHERE t.deleted_ticket = FALSE
+        AND (:desde IS NULL OR t.created_at_ticket >= :desde)
         AND (:hasta IS NULL OR t.created_at_ticket < :hasta)
         AND (:tipoId IS NULL OR t.type_ticket = :tipoId)
         AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
+        AND (:areaId IS NULL OR t.area_ticket = :areaId)
       ORDER BY t.number_ticket DESC',
      TRUE, 'fa-solid fa-list-check', '#062e86'),
 
@@ -524,9 +526,11 @@ INSERT INTO report_config (name_report, title_report, description_report, query_
       LEFT JOIN area a ON a.id_area = t.area_ticket
       LEFT JOIN priority p ON p.id_priority = t.priority_ticket
       LEFT JOIN sla_policy pol ON pol.id_sla_policy = ts.sla_policy_id
-      WHERE (:desde IS NULL OR ts.created_at >= :desde)
+      WHERE t.deleted_ticket = FALSE
+        AND (:desde IS NULL OR ts.created_at >= :desde)
         AND (:hasta IS NULL OR ts.created_at < :hasta)
         AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
+        AND (:areaId IS NULL OR t.area_ticket = :areaId)
       ORDER BY ts.resolution_breached DESC, t.number_ticket DESC',
      TRUE, 'fa-solid fa-stopwatch', '#B45309'),
 
@@ -544,9 +548,11 @@ INSERT INTO report_config (name_report, title_report, description_report, query_
       LEFT JOIN status s ON s.id_status = t.status_ticket
       LEFT JOIN ticket_sla ts ON ts.ticket_id = t.id_ticket
       LEFT JOIN ticket_rating r ON r.ticket_id = t.id_ticket
-WHERE (:desde IS NULL OR t.created_at_ticket >= :desde)
+WHERE t.deleted_ticket = FALSE
+        AND (:desde IS NULL OR t.created_at_ticket >= :desde)
        AND (:hasta IS NULL OR t.created_at_ticket < :hasta)
        AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
+       AND (:areaId IS NULL OR t.area_ticket = :areaId)
      GROUP BY ag.corporate_email_user
      ORDER BY 2 DESC',
      TRUE, 'fa-solid fa-users', '#0F766E'),
@@ -570,9 +576,11 @@ COALESCE(r.comments, ''Sin comentario'') AS "Comentarios"
       LEFT JOIN users us ON us.id_user = t.user_ticket
       LEFT JOIN sucursal sc ON sc.id_sucursal = t.sucursal_id
       LEFT JOIN users ag ON ag.id_user = t.agent_ticket
-      WHERE (:desde IS NULL OR r.rated_at >= :desde)
+      WHERE t.deleted_ticket = FALSE
+        AND (:desde IS NULL OR r.rated_at >= :desde)
         AND (:hasta IS NULL OR r.rated_at < :hasta)
         AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
+        AND (:areaId IS NULL OR t.area_ticket = :areaId)
       ORDER BY r.overall_satisfaction DESC NULLS LAST, r.rated_at DESC',
      TRUE, 'fa-solid fa-star', '#7C3AED'),
 
@@ -595,10 +603,12 @@ COALESCE(r.comments, ''Sin comentario'') AS "Comentarios"
       LEFT JOIN status s ON s.id_status = t.status_ticket
       LEFT JOIN ticket_sla ts ON ts.ticket_id = t.id_ticket
       LEFT JOIN ticket_rating r ON r.ticket_id = t.id_ticket
-      WHERE (:desde IS NULL OR t.created_at_ticket >= :desde)
+      WHERE t.deleted_ticket = FALSE
+        AND (:desde IS NULL OR t.created_at_ticket >= :desde)
         AND (:hasta IS NULL OR t.created_at_ticket < :hasta)
         AND (:tipoId IS NULL OR t.type_ticket = :tipoId)
         AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
+        AND (:areaId IS NULL OR t.area_ticket = :areaId)
       GROUP BY sc.name_sucursal
       ORDER BY 2 DESC',
      TRUE, 'fa-solid fa-city', '#0F766E')
@@ -643,10 +653,12 @@ UPDATE report_config SET
       LEFT JOIN category c ON c.id_category = t.category_ticket
       LEFT JOIN priority p ON p.id_priority = t.priority_ticket
       LEFT JOIN status s ON s.id_status = t.status_ticket
-      WHERE (:desde IS NULL OR t.created_at_ticket >= :desde)
+      WHERE t.deleted_ticket = FALSE
+        AND (:desde IS NULL OR t.created_at_ticket >= :desde)
         AND (:hasta IS NULL OR t.created_at_ticket < :hasta)
         AND (:tipoId IS NULL OR t.type_ticket = :tipoId)
         AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
+        AND (:areaId IS NULL OR t.area_ticket = :areaId)
       ORDER BY t.number_ticket DESC',
     description_report = 'Tickets del periodo con solicitante, sede, agente, área, prioridad y estado.'
 WHERE name_report = 'REPORTE_TICKETS'
@@ -670,9 +682,11 @@ UPDATE report_config SET
       LEFT JOIN area a ON a.id_area = t.area_ticket
       LEFT JOIN priority p ON p.id_priority = t.priority_ticket
       LEFT JOIN sla_policy pol ON pol.id_sla_policy = ts.sla_policy_id
-      WHERE (:desde IS NULL OR ts.created_at >= :desde)
+      WHERE t.deleted_ticket = FALSE
+        AND (:desde IS NULL OR ts.created_at >= :desde)
         AND (:hasta IS NULL OR ts.created_at < :hasta)
         AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
+        AND (:areaId IS NULL OR t.area_ticket = :areaId)
       ORDER BY ts.resolution_breached DESC, t.number_ticket DESC',
     description_report = 'Tickets con su política SLA, sede y si cumplieron los plazos de respuesta y resolución.'
 WHERE name_report = 'REPORTE_SLA'
@@ -690,9 +704,11 @@ UPDATE report_config SET
       LEFT JOIN status s ON s.id_status = t.status_ticket
       LEFT JOIN ticket_sla ts ON ts.ticket_id = t.id_ticket
       LEFT JOIN ticket_rating r ON r.ticket_id = t.id_ticket
-      WHERE (:desde IS NULL OR t.created_at_ticket >= :desde)
+      WHERE t.deleted_ticket = FALSE
+        AND (:desde IS NULL OR t.created_at_ticket >= :desde)
         AND (:hasta IS NULL OR t.created_at_ticket < :hasta)
         AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
+        AND (:areaId IS NULL OR t.area_ticket = :areaId)
       GROUP BY ag.corporate_email_user
       ORDER BY 2 DESC'
 WHERE name_report = 'REPORTE_AGENTES'
@@ -716,9 +732,11 @@ UPDATE report_config SET
       LEFT JOIN users us ON us.id_user = t.user_ticket
       LEFT JOIN sucursal sc ON sc.id_sucursal = t.sucursal_id
       LEFT JOIN users ag ON ag.id_user = t.agent_ticket
-      WHERE (:desde IS NULL OR r.rated_at >= :desde)
+      WHERE t.deleted_ticket = FALSE
+        AND (:desde IS NULL OR r.rated_at >= :desde)
         AND (:hasta IS NULL OR r.rated_at < :hasta)
         AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
+        AND (:areaId IS NULL OR t.area_ticket = :areaId)
       ORDER BY r.overall_satisfaction DESC NULLS LAST, r.rated_at DESC'
 WHERE name_report = 'REPORTE_CALIFICACIONES'
   AND query_sql NOT LIKE '%sucursal%';

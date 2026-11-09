@@ -202,6 +202,12 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
       @Transactional(readOnly = true)
       public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUID typeId, UUID currentUserId,
               String orientacion, UUID sucursalId) {
+          return generate(id, format, from, to, typeId, currentUserId, orientacion, sucursalId, null);
+      }
+
+      /** @param areaId área por la que se acota el reporte; null son todas. */
+      public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUID typeId, UUID currentUserId,
+              String orientacion, UUID sucursalId, UUID areaId) {
         ReportConfig cfg = reportConfigRepository.findById(id)
                 .filter(r -> !r.getDeletedReport())
                 .filter(r -> Boolean.TRUE.equals(r.getActiveReport()))
@@ -226,7 +232,8 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
                           Types.TIMESTAMP_WITH_TIMEZONE)
                   .addValue("tipoId", typeId, Types.OTHER)
                   .addValue("usuarioId", currentUserId, Types.OTHER)
-                  .addValue("sucursalId", sucursalId, Types.OTHER);
+                  .addValue("sucursalId", sucursalId, Types.OTHER)
+                  .addValue("areaId", areaId, Types.OTHER);
 
         List<Map<String, Object>> raw;
         try {

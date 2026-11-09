@@ -108,6 +108,26 @@ class TelefoniaServiceTest {
     }
 
     @Test
+    void sePuedeLlamarAlAgenteAsignadoDelTicket() {
+        User asignado = persona(id(3), "AGENT", "190");
+        ticket.setAgentTicket(asignado);
+
+        Llamada l = servicio.llamarAlAgente(id(50));
+
+        assertEquals("182", l.getCallerExtension());
+        assertEquals("190", l.getCalleeExtension());
+    }
+
+    @Test
+    void sinAgenteAsignadoOSinExtensionNoSeLlamaAlAgente() {
+        assertThrows(BadRequestException.class, () -> servicio.llamarAlAgente(id(50)));
+
+        ticket.setAgentTicket(persona(id(3), "AGENT", null));
+        assertThrows(BadRequestException.class, () -> servicio.llamarAlAgente(id(50)));
+        verify(llamadas, never()).save(any());
+    }
+
+    @Test
     void unSolicitanteNoPuedeLlamar() {
         when(politica.esPersonal(agente)).thenReturn(false);
 

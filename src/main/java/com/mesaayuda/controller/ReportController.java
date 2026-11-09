@@ -71,15 +71,16 @@ public class ReportController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
 @RequestParam(required = false) UUID typeId,
               @RequestParam(required = false, defaultValue = "H") String orientacion,
-              @RequestParam(required = false) UUID sucursalId) {
+              @RequestParam(required = false) UUID sucursalId,
+              @RequestParam(required = false) UUID areaId) {
 
           com.mesaayuda.entity.User actual = userService.getCurrentUser();
           UUID userId = actual.getIdUser();
-          byte[] data = customReportService.generate(id, format, from, to, typeId, userId, orientacion, sucursalId);
+          byte[] data = customReportService.generate(id, format, from, to, typeId, userId, orientacion, sucursalId, areaId);
         // Un reporte es una extracción masiva de datos de la mesa: se deja constancia
         // de quién lo sacó, cuál y con qué filtros.
         systemAuditService.record("REPORT_GENERATE", "ReportConfig", id, actual.getCorporateEmailUser(),
-                "formato=" + format + " desde=" + from + " hasta=" + to + " sede=" + sucursalId);
+                "formato=" + format + " desde=" + from + " hasta=" + to + " sede=" + sucursalId + " area=" + areaId);
         String mime = MIME_BY_FORMAT.getOrDefault(format.toUpperCase(), MediaType.APPLICATION_PDF_VALUE);
         String ext = "PDF".equalsIgnoreCase(format) ? "pdf"
                 : ("EXCEL".equalsIgnoreCase(format) || "XLSX".equalsIgnoreCase(format)) ? "xlsx" : "html";

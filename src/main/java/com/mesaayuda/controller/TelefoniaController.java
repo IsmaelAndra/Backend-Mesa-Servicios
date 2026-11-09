@@ -69,6 +69,12 @@ public class TelefoniaController {
         return LlamadaResponse.de(service.llamarAlSolicitante(ticketId));
     }
 
+    @Operation(summary = "Llamar al agente asignado al ticket desde la extensión de quien llama")
+    @PostMapping("/telefonia/tickets/{ticketId}/llamar-agente")
+    public LlamadaResponse llamarAgente(@PathVariable UUID ticketId) {
+        return LlamadaResponse.de(service.llamarAlAgente(ticketId));
+    }
+
     @Operation(summary = "Estado de una llamada pedida")
     @GetMapping("/telefonia/llamadas/{id}")
     public LlamadaResponse llamada(@PathVariable UUID id) {

@@ -15,7 +15,12 @@ import java.util.List;
 @Repository
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
 
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"ticket", "user"})
     List<Notification> findByUserIdUserOrderByCreatedAtNotificationDesc(UUID userId);
+
+    /** Las más recientes, para la campana: no hace falta traer todo el historial. */
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"ticket", "user"})
+    List<Notification> findTop20ByUserIdUserOrderByCreatedAtNotificationDesc(UUID userId);
 
     List<Notification> findByStatusNotificationOrderByCreatedAtNotificationAsc(String status);
 

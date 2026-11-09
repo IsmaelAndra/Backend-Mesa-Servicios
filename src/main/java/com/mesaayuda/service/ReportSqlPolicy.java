@@ -94,7 +94,7 @@ private static final Set<String> TABLAS_PERMITIDAS = Set.of(
      * SQL que espere un parametro que el backend nunca envia.
      */
     private static final List<String> PARAMETROS_PERMITIDOS =
-            List.of("desde", "hasta", "tipoId", "usuarioId", "sucursalId");
+            List.of("desde", "hasta", "tipoId", "usuarioId", "sucursalId", "areaId");
 
     private static final int LONGITUD_MAXIMA = 8000;
 

@@ -19,9 +19,31 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     java.util.Optional<Ticket> findByNumberTicketAndDeletedTicketFalse(Long numberTicket);
 
 
+    /*
+     * Las listas traen de una vez lo que pinta cada fila. Las relaciones son
+     * perezosas: sin esto, cada ticket lanzaba varias consultas más (solicitante,
+     * agente, área, estado, prioridad...), y la lista crecía con el número de filas.
+     */
+    @Override
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"userTicket", "userTicket.rolUser", "userTicket.area", "userTicket.sucursal", "agentTicket", "agentTicket.rolUser", "agentTicket.area", "agentTicket.sucursal", "teamTicket", "areaTicket", "sucursalTicket", "categoryTicket", "typeTicket", "statusTicket", "priorityTicket"})
+    org.springframework.data.domain.Page<Ticket> findAll(
+            org.springframework.data.jpa.domain.Specification<Ticket> spec,
+            org.springframework.data.domain.Pageable pageable);
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"userTicket", "userTicket.rolUser", "userTicket.area", "userTicket.sucursal", "agentTicket", "agentTicket.rolUser", "agentTicket.area", "agentTicket.sucursal", "teamTicket", "areaTicket", "sucursalTicket", "categoryTicket", "typeTicket", "statusTicket", "priorityTicket"})
     List<Ticket> findByUserTicketIdUserAndDeletedTicketFalseOrderByCreatedAtTicketDesc(UUID userId);
 
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"userTicket", "userTicket.rolUser", "userTicket.area", "userTicket.sucursal", "agentTicket", "agentTicket.rolUser", "agentTicket.area", "agentTicket.sucursal", "teamTicket", "areaTicket", "sucursalTicket", "categoryTicket", "typeTicket", "statusTicket", "priorityTicket"})
     List<Ticket> findByAgentTicketIdUserAndDeletedTicketFalseOrderByCreatedAtTicketDesc(UUID agentId);
+
+    /** Tickets aún en curso para el calendario (lo resuelto o cerrado ya no se planifica). */
+    @Query("SELECT t FROM Ticket t JOIN FETCH t.statusTicket s JOIN FETCH t.priorityTicket "
+            + "WHERE t.deletedTicket = false AND s.nameStatus NOT IN ('RESUELTO', 'CERRADO') "
+            + "AND (:soloAgente = false OR t.agentTicket.idUser = :agenteId) "
+            + "AND t.createdAtTicket <= :hasta")
+    List<Ticket> findEnCursoParaCalendario(@Param("soloAgente") boolean soloAgente,
+                                           @Param("agenteId") UUID agenteId,
+                                           @Param("hasta") OffsetDateTime hasta);
 
     List<Ticket> findByDeletedTicketFalseOrderByCreatedAtTicketDesc();
 
