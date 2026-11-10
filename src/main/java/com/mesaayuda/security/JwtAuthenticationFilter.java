@@ -35,6 +35,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      */
     private static final Set<String> RUTAS_PERMITIDAS_DURANTE_CAMBIO = Set.of(
             "/auth/change-password",
+            // La pantalla de cambio pregunta aquí si debe pedir el código del
+            // doble factor. Bloqueada, el campo no salía y el cambio, que sí
+            // exige el código, no se podía completar nunca. Solo devuelve si el
+            // MFA está activo y si la persona está inscrita.
+            "/auth/mfa/estado",
             "/auth/refresh",
             "/auth/logout"
     );

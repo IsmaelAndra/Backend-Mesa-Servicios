@@ -24,7 +24,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const CARPETA = path.dirname(fileURLToPath(import.meta.url));
 
 cargarEnv(path.join(CARPETA, '.env'));
@@ -43,11 +43,21 @@ let ultimoUsoUcm = 0;
 /** Sin uso durante este tiempo se abre una sesión nueva antes de marcar. */
 const SESION_UCM_MAX_INACTIVA_MS = 4 * 60 * 1000;
 /**
- * Códigos de la UCM que indican una sesión vieja o un fallo pasajero: se abre
- * otra sesión y se reintenta una vez. -8 (tiempo agotado) salía en la primera
- * llamada tras un rato sin usar la central; las siguientes ya funcionaban.
+ * Cada cuánto se "toca" la sesión aunque no haya llamadas. La primera llamada
+ * tras un rato sin usar la central salía con -8 y la segunda funcionaba: con la
+ * sesión siempre abierta y en uso, la primera ya encuentra la central lista.
  */
+const SESION_UCM_LATIDO_MS = 2 * 60 * 1000;
+/** Tras un inicio de sesión fallido no se vuelve a probar en segundo plano antes de esto (evita el bloqueo -69). */
+const SESION_UCM_ESPERA_TRAS_FALLO_MS = 5 * 60 * 1000;
+let ultimoFalloSesion = 0;
+/** Códigos de sesión vieja: se abre otra sesión y se reintenta. */
+const STATUS_SESION = new Set([-5, -6, -7]);
+/** -8 (tiempo agotado): fallo pasajero; se espera un poco y se reintenta. */
 const STATUS_REINTENTABLES = new Set([-5, -6, -7, -8]);
+/** Intentos de dialExtension por llamada y pausa entre ellos (1,5 s; 3 s). */
+const INTENTOS_MARCAR = 3;
+const PAUSA_REINTENTO_MS = 1500;
 /** Significado de los códigos más habituales de la API de la UCM. */
 const STATUS_UCM = {
   '-1': 'parámetros no válidos',
@@ -202,29 +212,73 @@ async function iniciarSesionUcm() {
     log('Sesión iniciada en la UCM');
   } catch (e) {
     cookieUcm = null;
+    ultimoFalloSesion = Date.now();
     estadoUcm = e.message;
     throw e;
   }
 }
 
-/** Ordena la llamada; si la sesión caducó o la central tardó, inicia otra y reintenta una vez. */
+/**
+ * Mantiene la sesión con la UCM abierta y en uso entre llamadas: si no hay
+ * sesión la abre, y si lleva un rato quieta la "toca" con getSystemStatus.
+ * Nunca lanza: un fallo aquí solo deja la sesión cerrada para la próxima vez.
+ */
+async function mantenerSesionUcm() {
+  if (!ucm.enabled || !ucm.ucmUrl || !ucm.ucmUsuario) return;
+  try {
+    if (!cookieUcm) {
+      if (Date.now() - ultimoFalloSesion < SESION_UCM_ESPERA_TRAS_FALLO_MS) return;
+      await iniciarSesionUcm();
+      return;
+    }
+    if (Date.now() - ultimoUsoUcm < SESION_UCM_LATIDO_MS) return;
+    const r = await pedirUcm({ action: 'getSystemStatus', cookie: cookieUcm });
+    if (r?.status === 0) {
+      ultimoUsoUcm = Date.now();
+    } else {
+      // Sesión descartada (o el usuario de la API no puede consultar el estado):
+      // se abre otra ya, que también deja la central lista.
+      cookieUcm = null;
+      await iniciarSesionUcm();
+    }
+  } catch {
+    // iniciarSesionUcm ya anotó el fallo; no se reintenta antes de 5 min.
+    cookieUcm = null;
+    if (!ultimoFalloSesion) ultimoFalloSesion = Date.now();
+  }
+}
+
+/**
+ * Ordena la llamada. Si la sesión caducó se abre otra; si la central tardó (-8)
+ * se espera un poco. Hasta INTENTOS_MARCAR intentos, así la persona no tiene que
+ * pulsar "Llamar" dos veces.
+ */
 async function marcar(origen, destino) {
   // Una sesión que lleva un rato sin usarse se renueva antes: la central la
   // descarta por su cuenta y la primera orden fallaba.
   if (cookieUcm && Date.now() - ultimoUsoUcm > SESION_UCM_MAX_INACTIVA_MS) {
     cookieUcm = null;
   }
-  for (let intento = 0; intento < 2; intento++) {
+  for (let intento = 1; intento <= INTENTOS_MARCAR; intento++) {
     if (!cookieUcm) await iniciarSesionUcm();
-    const r = await pedirUcm({ action: 'dialExtension', cookie: cookieUcm, caller: origen, callee: destino });
+    let r;
+    try {
+      r = await pedirUcm({ action: 'dialExtension', cookie: cookieUcm, caller: origen, callee: destino });
+    } catch (e) {
+      // Sin respuesta (timeout de red): se trata como un -8.
+      if (intento === INTENTOS_MARCAR) throw e;
+      r = { status: -8 };
+    }
     if (r?.status === 0) {
       ultimoUsoUcm = Date.now();
       estadoUcm = 'ok';
       return;
     }
-    if (STATUS_REINTENTABLES.has(r?.status) && intento === 0) {
-      log(`La UCM respondió ${textoStatus(r?.status)}; nueva sesión y otro intento`);
-      cookieUcm = null;
+    if (STATUS_REINTENTABLES.has(r?.status) && intento < INTENTOS_MARCAR) {
+      const nuevaSesion = STATUS_SESION.has(r?.status);
+      log(`La UCM respondió ${textoStatus(r?.status)}; intento ${intento + 1} de ${INTENTOS_MARCAR}${nuevaSesion ? ' con sesión nueva' : ''}`);
+      if (nuevaSesion) cookieUcm = null;
+      await esperar(PAUSA_REINTENTO_MS * intento);
       continue;
     }
     throw new Error(`La UCM respondió ${textoStatus(r?.status)}`);
@@ -246,6 +300,7 @@ async function vuelta() {
       await informar(ll.id, false, e.message).catch(() => undefined);
     }
   }
+  if (!pendientes?.length) await mantenerSesionUcm();
 }
 
 async function principal() {

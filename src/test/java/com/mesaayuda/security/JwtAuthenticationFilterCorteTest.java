@@ -99,6 +99,32 @@ class JwtAuthenticationFilterCorteTest {
         assertNotNull(SecurityContextHolder.getContext().getAuthentication());
     }
 
+    private void usuarioQueDebeCambiarContrasena() {
+        when(userDetailsService.loadUserByUsername(CORREO)).thenReturn(new MesaUserDetails(
+                CORREO, "hash", List.of(new SimpleGrantedAuthority("ROLE_AGENT")), true, null));
+    }
+
+    @Test
+    void conCambioPendienteSePuedeConsultarElEstadoDelMfa() throws Exception {
+        usuarioQueDebeCambiarContrasena();
+        peticion.setServletPath("/auth/mfa/estado");
+
+        filtro.doFilter(peticion, respuesta, cadena);
+
+        // La pantalla de cambio necesita saber si pedir el código del doble factor.
+        verify(cadena).doFilter(peticion, respuesta);
+        assertEquals(200, respuesta.getStatus());
+    }
+
+    @Test
+    void conCambioPendienteElRestoSigueBloqueado() throws Exception {
+        usuarioQueDebeCambiarContrasena();
+
+        filtro.doFilter(peticion, respuesta, cadena);
+
+        assertEquals(403, respuesta.getStatus());
+    }
+
     @Test
     void cuentaDesactivadaConTokenVigenteNoDa500() throws Exception {
         when(userDetailsService.loadUserByUsername(CORREO))
