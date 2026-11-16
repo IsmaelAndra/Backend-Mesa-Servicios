@@ -693,7 +693,7 @@ public class ProyectoService {
         }
         long pendientes = l.stream().filter(x -> !"HECHO".equals(x.getEstado())).count();
         if (pendientes > 0) {
-            throw new BadRequestException("Quedan " + pendientes + (pendientes == 1 ? " tarjeta" : " tarjetas")
+            throw new BadRequestException((pendientes == 1 ? "Queda 1 tarjeta" : "Quedan " + pendientes + " tarjetas")
                     + " sin terminar (avance " + avanceProyecto(l) + " %). Termínelas o cancele el proyecto.");
         }
         int avance = avanceProyecto(l);
@@ -867,12 +867,17 @@ public class ProyectoService {
      */
     static int avanceProyecto(Collection<ProyectoItem> lista) {
         int hecho = 0;
+        int total = 0;
         for (ProyectoItem i : lista) {
+            int peso = i.getPeso() == null ? 1 : i.getPeso();
+            total += peso;
             if ("HECHO".equals(i.getEstado())) {
-                hecho += i.getPeso() == null ? 1 : i.getPeso();
+                hecho += peso;
             }
         }
-        return Math.min(PESO_TOTAL, hecho);
+        // Si unas tarjetas antiguas suman más de 100 (antes no se comprobaba),
+        // se reparte sobre ese total: dos de 100 con una hecha = 50 %, no 100 %.
+        return Math.round(100f * hecho / Math.max(PESO_TOTAL, total));
     }
 
     /** Avance de un sprint: lo hecho sobre el peso de sus tarjetas. */

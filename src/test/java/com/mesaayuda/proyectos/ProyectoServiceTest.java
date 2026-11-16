@@ -109,6 +109,8 @@ class ProyectoServiceTest {
         assertEquals(40, ProyectoService.avanceProyecto(List.of(item("HECHO", 40))));
         assertEquals(40, ProyectoService.avanceProyecto(List.of(item("HECHO", 40), item("EN_CURSO", 60))));
         assertEquals(0, ProyectoService.avanceProyecto(List.of()));
+        // Datos antiguos que suman más de 100: se reparte sobre el total.
+        assertEquals(50, ProyectoService.avanceProyecto(List.of(item("HECHO", 100), item("EN_CURSO", 100))));
     }
 
     @Test
