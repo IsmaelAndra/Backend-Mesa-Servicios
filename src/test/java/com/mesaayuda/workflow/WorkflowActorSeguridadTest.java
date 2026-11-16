@@ -71,12 +71,12 @@ class WorkflowActorSeguridadTest {
     }
 
     @Test
-    @DisplayName("un workflow de ADMIN ejecuta como ADMIN y no como SUPER_ADMIN")
+    @DisplayName("un workflow de jefe ejecuta como jefe y no como SUPER_ADMIN")
     void adminNoSeConvierteEnSuperAdmin() {
-        // El punto exacto del que se trata: el ADMIN tiene acceso al panel, pero
+        // El punto exacto del que se trata: el jefe tiene acceso a su área, pero
         // un proceso suyo no puede heredarlo.
-        actor.ejecutarComo(id(1), "ADMIN", id(1), () -> {
-            assertEquals("ROLE_ADMIN", autoridadActual());
+        actor.ejecutarComo(id(1), "AREA_MANAGER", id(1), () -> {
+            assertEquals("ROLE_AREA_MANAGER", autoridadActual());
             assertFalse(autoridadActual().contains("SUPER"));
         });
     }
@@ -139,8 +139,8 @@ class WorkflowActorSeguridadTest {
         // distinto, ni quedarse sin ejecutar.
         actor.ejecutarComo(id(1), " super_admin ", id(1), () ->
                 assertEquals("ROLE_SUPER_ADMIN", autoridadActual()));
-        actor.ejecutarComo(id(1), "Admin", id(1), () ->
-                assertEquals("ROLE_ADMIN", autoridadActual()));
+        actor.ejecutarComo(id(1), "Area_Manager", id(1), () ->
+                assertEquals("ROLE_AREA_MANAGER", autoridadActual()));
     }
 
     @Test
@@ -150,20 +150,20 @@ class WorkflowActorSeguridadTest {
 
         // El ámbito es lo que manda. Que el autor ya no exista no significa que el
         // proceso deba saltarse la decisión que se tomó al guardarlo.
-        actor.ejecutarComo(id(1), "ADMIN", id(99), () ->
-                assertEquals("ROLE_ADMIN", autoridadActual()));
+        actor.ejecutarComo(id(1), "AREA_MANAGER", id(99), () ->
+                assertEquals("ROLE_AREA_MANAGER", autoridadActual()));
     }
 
     @Test
     @DisplayName("el ámbito se deriva del rol que tiene el autor ahora")
     void ambitoSeDerivaDelRolActual() {
         Role rol = new Role();
-        rol.setNameRole("admin");
+        rol.setNameRole("area_manager");
         User autor = new User();
         autor.setIdUser(id(5));
         autor.setRolUser(rol);
 
-        assertEquals("ADMIN", actor.ambitoDe(autor));
+        assertEquals("AREA_MANAGER", actor.ambitoDe(autor));
     }
 
     @Test
@@ -179,7 +179,9 @@ class WorkflowActorSeguridadTest {
     @DisplayName("solo los cuatro roles del sistema son ambitos validos")
     void soloRolesConocidos() {
         assertTrue(actor.ambitoValido("SUPER_ADMIN"));
-        assertTrue(actor.ambitoValido("admin"));
+        assertTrue(actor.ambitoValido("area_manager"));
+        // ADMIN se retiró en V27: un ámbito guardado con ese rol ya no ejecuta.
+        assertFalse(actor.ambitoValido("ADMIN"));
         assertTrue(actor.ambitoValido("AGENT"));
         assertTrue(actor.ambitoValido("USER"));
 
@@ -192,8 +194,8 @@ class WorkflowActorSeguridadTest {
     @Test
     @DisplayName("la accion con valor devuelve lo que produjo")
     void ejecutaConValor() {
-        String resultado = actor.ejecutarComo(id(1), "ADMIN", id(1), () -> {
-            assertEquals("ROLE_ADMIN", autoridadActual());
+        String resultado = actor.ejecutarComo(id(1), "AREA_MANAGER", id(1), () -> {
+            assertEquals("ROLE_AREA_MANAGER", autoridadActual());
             return "hecho";
         });
 

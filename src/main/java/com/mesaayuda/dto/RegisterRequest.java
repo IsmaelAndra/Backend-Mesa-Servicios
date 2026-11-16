@@ -29,8 +29,8 @@ public record RegisterRequest(
         UUID areaId,
 
         /**
-         * Sede fisica de la persona. Opcional: las cuentas que ya existen y las
-         * que se den de alta sin sede siguen siendo validas, y obligarla
+         * Sucursal fisica de la persona. Opcional: las cuentas que ya existen y las
+         * que se den de alta sin sucursal siguen siendo validas, y obligarla
          * impediria dar de alta a alguien antes de tener el catalogo cargado.
          */
         UUID sucursalId,
@@ -38,11 +38,30 @@ public record RegisterRequest(
         /** Extensión telefónica (solo dígitos, hasta 10). Vacía = sin extensión. */
         @jakarta.validation.constraints.Pattern(regexp = "^$|^[0-9]{1,10}$",
                 message = "La extensión solo admite números (hasta 10 dígitos)")
-        String extension
+        String extension,
+
+        /** Cargo (sale en las actas de activos). null = no se toca; vacío = se quita. */
+        @Size(max = 150, message = "El cargo admite hasta 150 caracteres")
+        String cargo,
+
+        /** Nombres y apellidos (salen en las actas). Microsoft Graph puede afinarlos luego. */
+        @Size(max = 150, message = "El nombre admite hasta 150 caracteres")
+        String nombre
 ) {
+    /** Compatibilidad: sin nombre. */
+    public RegisterRequest(String identification, String corporateEmail, String password, String phone,
+                           String roleName, UUID areaId, UUID sucursalId, String extension, String cargo) {
+        this(identification, corporateEmail, password, phone, roleName, areaId, sucursalId, extension, cargo, null);
+    }
+
     /** Compatibilidad: alta o edición sin extensión. */
     public RegisterRequest(String identification, String corporateEmail, String password, String phone,
                            String roleName, UUID areaId, UUID sucursalId) {
-        this(identification, corporateEmail, password, phone, roleName, areaId, sucursalId, null);
+        this(identification, corporateEmail, password, phone, roleName, areaId, sucursalId, null, null);
+    }
+
+    public RegisterRequest(String identification, String corporateEmail, String password, String phone,
+                           String roleName, UUID areaId, UUID sucursalId, String extension) {
+        this(identification, corporateEmail, password, phone, roleName, areaId, sucursalId, extension, null);
     }
 }

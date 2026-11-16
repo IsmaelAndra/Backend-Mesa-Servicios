@@ -39,16 +39,20 @@ public class ReportConfigController {
     @Operation(summary = "Crear reporte personalizado (SUPER_ADMIN)")
     public ResponseEntity<ReportConfig> create(@RequestBody Map<String, Object> body) {
         checkSuperAdmin();
-        ReportConfig saved = reportService.save(null,
-                value(body, "name"), value(body, "title"), value(body, "description"),
-                value(body, "querySql"), bool(body.get("active")), value(body, "icon"), value(body, "color"));
-        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+        // Desde la V32 los reportes solo se arman con el modal (catálogo cerrado).
+        throw new com.mesaayuda.exception.BadRequestException(
+                "Los reportes ya no se escriben en SQL: créelos desde Reportes → Nuevo reporte");
     }
 
     @PutMapping("/{id}")
     @Operation(summary = "Editar reporte personalizado (SUPER_ADMIN)")
     public ResponseEntity<ReportConfig> update(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
         checkSuperAdmin();
+        // Solo se permite activar o desactivar uno existente; su SQL ya no se edita.
+        if (body.get("querySql") != null || body.get("name") != null) {
+            throw new com.mesaayuda.exception.BadRequestException(
+                    "Los reportes ya no se escriben en SQL: créelos desde Reportes → Nuevo reporte");
+        }
         ReportConfig saved = reportService.save(id,
                 value(body, "name"), value(body, "title"), value(body, "description"),
                 value(body, "querySql"), bool(body.get("active")), value(body, "icon"), value(body, "color"));
@@ -69,8 +73,7 @@ public class ReportConfigController {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || auth.getAuthorities() == null) return false;
         return auth.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")
-                        || a.getAuthority().equals("ROLE_SUPER_ADMIN"));
+                .anyMatch(a -> a.getAuthority().equals("ROLE_SUPER_ADMIN"));
     }
 
     private boolean isSuperAdmin() {

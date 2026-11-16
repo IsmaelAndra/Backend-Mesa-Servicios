@@ -38,11 +38,21 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     @Query("SELECT u FROM User u WHERE u.rolUser.nameRole = :roleName AND u.deletedUser = false AND u.statusUser = 'ACTIVE'")
     List<User> findByRoleName(@Param("roleName") String roleName);
 
+    /** Jefes activos de un área (un jefe responde por la de su cuenta, V33). */
+    @Query("SELECT u FROM User u WHERE u.rolUser.nameRole = 'AREA_MANAGER' AND u.area.idArea = :areaId "
+            + "AND u.deletedUser = false AND u.statusUser = 'ACTIVE'")
+    List<User> jefesActivosDe(@Param("areaId") UUID areaId);
+
+    /** Personal activo de unos roles (candidatos a un equipo), ordenado por nombre. */
+    @Query("SELECT u FROM User u WHERE u.rolUser.nameRole IN :roles AND u.deletedUser = false "
+            + "AND u.statusUser = 'ACTIVE' ORDER BY lower(coalesce(u.displayName, u.corporateEmailUser))")
+    List<User> personalActivo(@Param("roles") java.util.Collection<String> roles);
+
     long countByRolUserNameRoleAndDeletedUserFalse(String roleName);
 
-    /** Personas vivas de una sede: impide borrar una sede que aun se usa. */
+    /** Personas vivas de una sucursal: impide borrar una sucursal que aun se usa. */
     /**
- * Personas no eliminadas de una sede.
+ * Personas no eliminadas de una sucursal.
  *
  * <p>El nombre lleva el guion bajo porque {@code countBySucursalId...} no
  * funciona: Spring Data interpretaría {@code sucursalId} como la propiedad

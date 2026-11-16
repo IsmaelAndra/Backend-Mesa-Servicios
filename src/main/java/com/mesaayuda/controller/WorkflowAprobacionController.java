@@ -24,7 +24,7 @@ import java.util.Map;
  * se resolvieron ({@code /mias}); solo el SUPER_ADMIN decide.
  */
 @RestController
-@PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+@PreAuthorize("hasAnyAuthority('ROLE_AREA_MANAGER', 'ROLE_SUPER_ADMIN')")
 @RequestMapping("/workflows/aprobaciones")
 @Tag(name = "Aprobaciones de workflow", description = "Bandeja y decisión de los pasos de aprobación")
 public class WorkflowAprobacionController {

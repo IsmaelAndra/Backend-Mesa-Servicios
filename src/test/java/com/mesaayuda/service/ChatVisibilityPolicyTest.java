@@ -67,7 +67,7 @@ class ChatVisibilityPolicyTest {
         configurado(ChatVisibilityPolicy.TODOS, true);
         assertThat(policy.puedeVer(usuario("USER"))).isTrue();
         assertThat(policy.puedeVer(usuario("AGENT"))).isTrue();
-        assertThat(policy.puedeVer(usuario("ADMIN"))).isTrue();
+        assertThat(policy.puedeVer(usuario("AREA_MANAGER"))).isTrue();
         assertThat(policy.puedeVer(usuario("SUPER_ADMIN"))).isTrue();
     }
 
@@ -77,17 +77,17 @@ class ChatVisibilityPolicyTest {
         configurado(ChatVisibilityPolicy.TODOS_EXCEPTO_USUARIOS, true);
         assertThat(policy.puedeVer(usuario("USER"))).isFalse();
         assertThat(policy.puedeVer(usuario("AGENT"))).isTrue();
-        assertThat(policy.puedeVer(usuario("ADMIN"))).isTrue();
+        assertThat(policy.puedeVer(usuario("AREA_MANAGER"))).isTrue();
         assertThat(policy.puedeVer(usuario("SUPER_ADMIN"))).isTrue();
     }
 
     @Test
-    @DisplayName("ADMIN: ni los agentes ni los usuarios finales")
+    @DisplayName("ADMIN (súper admin y jefes): ni los agentes ni los usuarios finales")
     void soloAdmin() {
         configurado(ChatVisibilityPolicy.ADMIN, true);
         assertThat(policy.puedeVer(usuario("USER"))).isFalse();
         assertThat(policy.puedeVer(usuario("AGENT"))).isFalse();
-        assertThat(policy.puedeVer(usuario("ADMIN"))).isTrue();
+        assertThat(policy.puedeVer(usuario("AREA_MANAGER"))).isTrue();
         assertThat(policy.puedeVer(usuario("SUPER_ADMIN"))).isTrue();
     }
 
@@ -97,7 +97,7 @@ class ChatVisibilityPolicyTest {
         configurado(ChatVisibilityPolicy.SUPER_ADMIN, true);
         assertThat(policy.puedeVer(usuario("USER"))).isFalse();
         assertThat(policy.puedeVer(usuario("AGENT"))).isFalse();
-        assertThat(policy.puedeVer(usuario("ADMIN"))).isFalse();
+        assertThat(policy.puedeVer(usuario("AREA_MANAGER"))).isFalse();
         assertThat(policy.puedeVer(usuario("SUPER_ADMIN"))).isTrue();
     }
 
@@ -107,7 +107,7 @@ class ChatVisibilityPolicyTest {
         configurado(ChatVisibilityPolicy.AGENTES, true);
         assertThat(policy.puedeVer(usuario("USER"))).isFalse();
         assertThat(policy.puedeVer(usuario("AGENT"))).isTrue();
-        assertThat(policy.puedeVer(usuario("ADMIN"))).isFalse();
+        assertThat(policy.puedeVer(usuario("AREA_MANAGER"))).isFalse();
         // Sigue entrando el super admin: es una excepcion deliberada.
         assertThat(policy.puedeVer(usuario("SUPER_ADMIN"))).isTrue();
     }

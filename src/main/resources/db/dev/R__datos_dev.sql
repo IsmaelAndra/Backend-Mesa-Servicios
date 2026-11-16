@@ -14,7 +14,7 @@
 -- Contraseña: Default123! (hash BCrypt)
 INSERT INTO users (identification_user, corporate_email_user, password_user, phone_user, status_user, rol_user, area_id, must_change_password) VALUES
     ('1000000003', 'agente@coacmagisterio.fin.ec',  '$2a$10$4ZvAPuWCFLdtipaZ1gSdVOFxC28PmiUN01I6ICHXRizmgpYDWIB5a', '0990000003', 'ACTIVE',
-     (SELECT id_role FROM role WHERE name_role = 'AGENT'), (SELECT id_area FROM area WHERE name_area = 'TI'), FALSE),
+     (SELECT id_role FROM role WHERE name_role = 'AGENT'), (SELECT id_area FROM area WHERE deleted_area = FALSE AND (lower(name_area) LIKE 'tecnolog%' OR upper(name_area) = 'TI') ORDER BY CASE WHEN upper(name_area) = 'TI' THEN 1 ELSE 0 END, created_at_area LIMIT 1), FALSE),
     ('1000000004', 'usuario@coacmagisterio.fin.ec', '$2a$10$4ZvAPuWCFLdtipaZ1gSdVOFxC28PmiUN01I6ICHXRizmgpYDWIB5a', '0990000004', 'ACTIVE',
      (SELECT id_role FROM role WHERE name_role = 'USER'), (SELECT id_area FROM area WHERE name_area = 'Operaciones'), FALSE),
     -- Jefe de área de Operaciones: ve y gestiona los activos de su área.
@@ -39,7 +39,7 @@ ON CONFLICT (team_id, user_id) DO NOTHING;
 
 -- ===== ACTIVOS DE EJEMPLO =====
 -- Tres activos que muestran las tres relaciones posibles: uno asignado a un
--- usuario, otro ligado a un área y otro a una sede. Con ON CONFLICT por código
+-- usuario, otro ligado a un área y otro a una sucursal. Con ON CONFLICT por código
 -- para no duplicarlos si el proceso se re-ejecuta.
 INSERT INTO asset (code_asset, name_asset, type_asset, brand_asset, model_asset, serial_number_asset,
                    status_asset, provider_asset, cost_asset, notes_asset,
@@ -47,15 +47,15 @@ INSERT INTO asset (code_asset, name_asset, type_asset, brand_asset, model_asset,
     ('TI-LAP-001', 'Laptop Dell Latitude 5430', 'LAPTOP', 'Dell', 'Latitude 5430', '5CG-DEV-0001',
      'ASIGNADO', 'Tecnomega', 1250.00, 'Equipo asignado al agente de TI de ejemplo.',
      (SELECT id_user FROM users WHERE corporate_email_user = 'agente@coacmagisterio.fin.ec'),
-     (SELECT id_area FROM area WHERE name_area = 'TI'),
+     (SELECT id_area FROM area WHERE deleted_area = FALSE AND (lower(name_area) LIKE 'tecnolog%' OR upper(name_area) = 'TI') ORDER BY CASE WHEN upper(name_area) = 'TI' THEN 1 ELSE 0 END, created_at_area LIMIT 1),
      (SELECT id_sucursal FROM sucursal WHERE code_sucursal = 'MAT')),
     ('TI-MON-002', 'Monitor LG 27 pulgadas 4K', 'MONITOR', 'LG', '27UP850', 'LG-DEV-0002',
-     'DISPONIBLE', 'Tecnomega', 420.00, 'Monitor vinculado al área de Operaciones.',
+     'EN_BODEGA', 'Tecnomega', 420.00, 'Monitor vinculado al área de Operaciones.',
      NULL,
      (SELECT id_area FROM area WHERE name_area = 'Operaciones'),
      (SELECT id_sucursal FROM sucursal WHERE code_sucursal = 'QUI')),
     ('TI-IMP-003', 'Impresora HP LaserJet M404dn', 'IMPRESORA', 'HP', 'M404dn', 'HP-DEV-0003',
-     'DISPONIBLE', 'Tecnomega', 310.00, 'Impresora ubicada en la sede Matriz.',
+     'EN_BODEGA', 'Tecnomega', 310.00, 'Impresora ubicada en la sucursal Matriz.',
      NULL, NULL,
      (SELECT id_sucursal FROM sucursal WHERE code_sucursal = 'MAT'))
 ON CONFLICT (code_asset) DO NOTHING;

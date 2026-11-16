@@ -47,18 +47,18 @@ private final Map<UUID, Set<SseEmitter>> clients = new ConcurrentHashMap<>();
      * institucion, eludiendo la autorizacion por recurso. Vease el mismo criterio
      * ya aplicado en {@code publishTyping}.
      */
-    private final Map<UUID, Boolean> personal = new ConcurrentHashMap<>();
+    private final Map<UUID, AlcanceTickets> alcances = new ConcurrentHashMap<>();
 
     private final Deque<TicketEvent> recent = new ArrayDeque<>();
     private final AtomicLong seq = new AtomicLong();
 
     /**
-     * @param esPersonal si la cuenta es agente, administrador o super administrador.
-     *                    Se guarda porque el rol puede cambiar con la sesion abierta
-     *                    y no se vuelve a pedir al abrir cada conexion.
+     * @param alcance qué tickets puede ver la cuenta (AlcanceTickets). Se guarda al
+     *                abrir la conexión: el área o el rol pueden cambiar con la
+     *                sesión abierta y no se vuelve a pedir en cada evento.
      */
-    public SseEmitter subscribe(UUID userId, boolean esPersonal) {
-        personal.put(userId, esPersonal);
+    public SseEmitter subscribe(UUID userId, AlcanceTickets alcance) {
+        alcances.put(userId, alcance == null ? AlcanceTickets.soloPropios(userId) : alcance);
         ultimaDesconexion.remove(userId);
         SseEmitter emitter = new SseEmitter(0L);
         emitter.onCompletion(() -> desconectar(userId, emitter));
@@ -98,12 +98,16 @@ synchronized (recent) {
        * decide {@code TicketAccessPolicy.puedeLeer}.
        */
       private boolean leCorresponde(UUID userId, TicketEvent event) {
-          if (Boolean.TRUE.equals(personal.get(userId))) {
-              return true;
+          AlcanceTickets alcance = alcances.getOrDefault(userId, AlcanceTickets.soloPropios(userId));
+          if (event.ticketId() == null) {
+              return false;
           }
-          return event.ticketId() != null
-                  && event.requesterId() != null
-                  && event.requesterId().equals(userId);
+          if (event.confidencial()) {
+              return alcance.veConfidencial(event.ticketId(), event.requesterId(), event.assignedAgentId(),
+                      event.areaDestinoId(), event.confidencialArea());
+          }
+          return alcance.incluye(event.requesterId(), event.assignedAgentId(),
+                  event.areaDestinoId(), event.areaSolicitanteId());
       }
 
     /**
@@ -139,10 +143,11 @@ synchronized (recent) {
 
 public TicketEvent publish(String type, UUID ticketId, Long ticketNumber, String ticketTitle, String status,
                                  UUID actorId, String actorName, UUID assignedAgentId, String assignedAgentName,
-                                 UUID requesterId) {
+                                 UUID requesterId, UUID areaDestinoId, UUID areaSolicitanteId,
+                                 boolean confidencial, boolean confidencialArea) {
           TicketEvent event = new TicketEvent(seq.incrementAndGet(), type, ticketId, ticketNumber, ticketTitle,
                   status, actorId, actorName, assignedAgentId, assignedAgentName, requesterId,
-                  Instant.now());
+                  Instant.now(), areaDestinoId, areaSolicitanteId, confidencial, confidencialArea);
           synchronized (recent) {
               recent.addLast(event);
               while (recent.size() > MAX_RECENT) {
@@ -309,6 +314,34 @@ public TicketEvent publish(String type, UUID ticketId, Long ticketNumber, String
         }
     }
 
+    /**
+     * Evento con nombre propio a varios usuarios (p. ej. "proyecto-chat"). Quien
+     * llama ya decidió quiénes pueden recibirlo.
+     */
+    public void publishAUsuarios(java.util.Collection<UUID> usuarios, String evento, Object datos) {
+        if (usuarios == null || datos == null) {
+            return;
+        }
+        for (UUID userId : usuarios) {
+            Set<SseEmitter> emisores = clients.get(userId);
+            if (emisores == null || emisores.isEmpty()) {
+                continue;
+            }
+            for (SseEmitter emitter : emisores) {
+                try {
+                    emitter.send(SseEmitter.event().name(evento).data(datos));
+                } catch (IOException | IllegalStateException ex) {
+                    try {
+                        emitter.complete();
+                    } catch (IllegalStateException ignored) {
+                        // el emitter ya estaba cerrado
+                    }
+                    desconectar(userId, emitter);
+                }
+            }
+        }
+    }
+
     public List<TicketEvent> recentEvents() {
         synchronized (recent) {
             return new ArrayList<>(recent);
@@ -328,7 +361,7 @@ private void desconectar(UUID userId, SseEmitter emitter) {
           // El rol se guarda solo mientras haya conexiones: si no, el mapa
           // crecia con cada alta o baja de usuario y nunca se limpiaba.
           if (!clients.containsKey(userId)) {
-              personal.remove(userId);
+              alcances.remove(userId);
           }
       }
 

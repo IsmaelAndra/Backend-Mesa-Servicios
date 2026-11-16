@@ -46,7 +46,7 @@ public class WorkflowActor {
     private static final Logger log = LoggerFactory.getLogger(WorkflowActor.class);
 
     private static final Set<String> ROLES_CONOCIDOS = Set.of(
-            "SUPER_ADMIN", "ADMIN", "AGENT", "USER");
+            "SUPER_ADMIN", "AREA_MANAGER", "AGENT", "USER");
 
     private final UserRepository userRepository;
 

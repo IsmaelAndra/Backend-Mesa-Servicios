@@ -55,7 +55,7 @@ class UserServiceTest {
 
     private RegisterRequest request(String password) {
         return new RegisterRequest("1723", "agente@coacmagisterio.fin.ec",
-                password, "0999", "AGENT", id(1), null);
+                password, "0999000001", "AGENT", id(1), null);
     }
 
     @Test

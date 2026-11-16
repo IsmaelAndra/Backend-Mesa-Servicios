@@ -53,7 +53,15 @@ public class RoutingService {
                 yaEstan.add(tu.getUser().getIdUser());
             }
         }
+        UUID areaDelEquipo = team.getAreaId();
         for (User agente : userRepository.findByRoleName("AGENT")) {
+            // Mesa multi-área: "todos los agentes" son los del área del equipo.
+            // Antes entraban todos los del sistema, y un ticket de Talento Humano
+            // podía caerle a un agente de Tecnología.
+            if (areaDelEquipo != null && (agente.getArea() == null
+                    || !areaDelEquipo.equals(agente.getArea().getIdArea()))) {
+                continue;
+            }
             if (yaEstan.contains(agente.getIdUser())
                     || Boolean.TRUE.equals(agente.getDeletedUser())
                     || !"ACTIVE".equals(agente.getStatusUser())) {

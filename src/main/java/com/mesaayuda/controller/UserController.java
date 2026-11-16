@@ -29,6 +29,12 @@ public class UserController {
     @Autowired
     private com.mesaayuda.service.MfaService mfaService;
 
+    @Autowired
+    private com.mesaayuda.service.JefaturaService jefaturaService;
+
+    @Autowired
+    private com.mesaayuda.activos.PermisosActivos permisosActivos;
+
     private boolean isAdminOrSuperAdmin() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || auth.getAuthorities() == null) return false;
@@ -54,12 +60,30 @@ public class UserController {
         boolean esPersonal = auth != null && auth.getAuthorities() != null
                 && auth.getAuthorities().stream().anyMatch(a ->
                         a.getAuthority().equals("ROLE_AGENT")
-                                || a.getAuthority().equals("ROLE_ADMIN")
-                                || a.getAuthority().equals("ROLE_SUPER_ADMIN"));
+                                || a.getAuthority().equals("ROLE_AREA_MANAGER")
+                                || a.getAuthority().equals("ROLE_SUPER_ADMIN")
+                                || a.getAuthority().equals("ROLE_AUDITOR"));
         if (!esPersonal) {
             throw new org.springframework.security.access.AccessDeniedException(
-                    "Se requiere rol AGENT, ADMIN o SUPER_ADMIN");
+                    "Se requiere ser parte del personal o auditor");
         }
+    }
+
+    /**
+     * Permisos que no se deducen solo del rol. Hoy, si un jefe de área puede
+     * gestionar usuarios (su área lo tiene marcado: Tecnología y Desarrollo). El
+     * menú lo usa para mostrar "Usuarios" solo a quien de verdad puede entrar.
+     */
+    @GetMapping("/me/permisos")
+    @Operation(summary = "Permisos de la cuenta actual que no salen del rol")
+    public ResponseEntity<java.util.Map<String, Object>> misPermisos() {
+        com.mesaayuda.entity.User actual = userService.getCurrentUser();
+        return ResponseEntity.ok(java.util.Map.of(
+                "gestionaUsuarios", UserService.puedeGestionarUsuarios(actual),
+                // El jefe filtra con ellas las áreas que ofrece al configurar (SLA, equipos).
+                "areasACargo", jefaturaService.areasACargo(actual),
+                // Tecnología y Desarrollo (y el súper admin) gestionan los activos.
+                "gestionaActivos", permisosActivos.gestiona(actual)));
     }
 
     @GetMapping("/me")
@@ -98,34 +122,41 @@ public class UserController {
   }
 
     @GetMapping
-    @Operation(summary = "Listar usuarios (ADMIN, SUPER_ADMIN)")
+    @Operation(summary = "Listar usuarios (SUPER_ADMIN, jefes que gestionan usuarios, AUDITOR)")
     public ResponseEntity<List<UserResponse>> findAll(
             @RequestParam(required = false) String role,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String search) {
-        checkAdminOrSuperAdmin();
+        userService.exigirLecturaDeUsuarios();
         return ResponseEntity.ok(userService.findAll(role, status, search));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Obtener usuario por id")
     public ResponseEntity<UserResponse> findById(@PathVariable UUID id) {
-        checkAdminOrSuperAdmin();
+        userService.exigirLecturaDeUsuarios();
         return ResponseEntity.ok(userService.findById(id));
     }
 
     @PostMapping
-    @Operation(summary = "Crear usuario (ADMIN, SUPER_ADMIN)")
+    @Operation(summary = "Crear usuario (SUPER_ADMIN o jefe que gestiona usuarios)")
     public ResponseEntity<UserResponse> create(@Valid @RequestBody RegisterRequest request) {
-        checkAdminOrSuperAdmin();
+        userService.exigirGestionDeUsuarios();
+        UserService.exigirDatosDelAlta(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(userService.create(request));
     }
 
     @PutMapping("/{id}")
     @Operation(summary = "Actualizar usuario")
     public ResponseEntity<UserResponse> update(@PathVariable UUID id,
-                                               @Valid @RequestBody RegisterRequest request) {
-        checkAdminOrSuperAdmin();
+                                               @Valid @RequestBody RegisterRequest request,
+                                               @RequestHeader(value = "X-Codigo-Mfa", required = false) String codigoMfa) {
+        userService.exigirGestionDeUsuarios();
+        // Editar la cuenta de otra persona (rol, correo, clave) pide el código
+        // del autenticador, como el propio perfil, si quien edita tiene MFA.
+        mfaService.exigirCodigoSiCorresponde(userService.getCurrentUser(), codigoMfa);
+        // Al editar se exige lo mismo que al crear: si no, se podían dejar vacíos.
+        UserService.exigirDatosDelAlta(request);
         return ResponseEntity.ok(userService.update(id, request));
     }
 
@@ -133,14 +164,14 @@ public class UserController {
     @Operation(summary = "Cambiar estado del usuario (ACTIVE/INACTIVE)")
     public ResponseEntity<UserResponse> changeStatus(@PathVariable UUID id,
                                                      @RequestParam String status) {
-        checkAdminOrSuperAdmin();
+        userService.exigirGestionDeUsuarios();
         return ResponseEntity.ok(userService.changeStatus(id, status));
     }
 
     @DeleteMapping("/{id}")
     @Operation(summary = "Eliminar (soft delete) usuario")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        checkAdminOrSuperAdmin();
+        userService.exigirGestionDeUsuarios();
         userService.delete(id);
         return ResponseEntity.noContent().build();
     }

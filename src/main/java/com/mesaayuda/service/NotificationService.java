@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -299,7 +300,36 @@ public class NotificationService {
     private Map<String, Object> varsTicket(Ticket ticket, User receiver) {
         Map<String, Object> v = new HashMap<>(ticketVars(ticket));
         v.put("nombre", nameOf(receiver));
+        ponerAreaDePlantilla(v, ticket);
         return v;
+    }
+
+    /**
+     * Área cuya versión de la plantilla manda (V38): la que atiende el ticket y,
+     * si no tiene, la del solicitante. Viaja en las variables con una clave
+     * reservada; subjectTemplate/bodyTemplate la leen.
+     */
+    private static void ponerAreaDePlantilla(Map<String, Object> v, Ticket ticket) {
+        if (ticket == null) return;
+        if (ticket.getAreaDestinoTicket() != null) {
+            v.put(CLAVE_AREA_PLANTILLA, ticket.getAreaDestinoTicket().getIdArea());
+        } else if (ticket.getAreaTicket() != null) {
+            v.put(CLAVE_AREA_PLANTILLA, ticket.getAreaTicket().getIdArea());
+        }
+    }
+
+    static final String CLAVE_AREA_PLANTILLA = "areaDeLaPlantilla";
+
+    @Autowired(required = false)
+    private com.mesaayuda.plantillas.PlantillaAreaRepository plantillaAreaRepository;
+
+    /** Versión activa del área para esta plantilla, si el aviso trae área y la hay. */
+    private com.mesaayuda.plantillas.PlantillaArea plantillaDelArea(String name, Map<String, Object> variables) {
+        Object area = variables == null ? null : variables.get(CLAVE_AREA_PLANTILLA);
+        if (!(area instanceof UUID id) || plantillaAreaRepository == null) {
+            return null;
+        }
+        return plantillaAreaRepository.findByNombreAndAreaIdAndActivaTrue(name, id).orElse(null);
     }
 
     /** Acción de una escalación en español, como se ve en la pantalla de SLA. */
@@ -543,10 +573,73 @@ public class NotificationService {
         variables.put("prioridad", "Normal");
         variables.put("asignadaPor", task.getCreatedBy() == null ? quienActua("El sistema") : nameOf(task.getCreatedBy()));
         // Las tareas no son tickets: el botón lleva a Actividades.
-        variables.put("urlTicket", urlFrontend("activities"));
+        variables.put("urlTicket", urlFrontend("actividades"));
         String subjectTpl = subjectTemplate("TASK_ASIGNADA", variables, subject);
         String bodyTpl = bodyTemplate("TASK_ASIGNADA", variables, body);
         sendNotification(null, receiver, "TASK_ASIGNADA", subjectTpl, bodyTpl);
+    }
+
+    /**
+     * Avisos de proyectos (invitación a otra área, respuesta, nuevo miembro,
+     * tarea asignada): campana en tiempo real + correo con el botón al proyecto.
+     */
+    public void notifyProyecto(User receiver, String type, String asunto, String mensajeHtml, String ruta) {
+        notifyConEnlace(receiver, type, asunto, mensajeHtml, ruta);
+    }
+
+    /** Aviso sin ticket (actas, garantías, proyectos): campana en vivo + correo con enlace a {@code ruta}. */
+    public void notifyConEnlace(User receiver, String type, String asunto, String mensajeHtml, String ruta) {
+        notifyConPlantilla(null, receiver, type, asunto, mensajeHtml, ruta);
+    }
+
+    /**
+     * Aviso cuyo correo se puede editar en Plantillas: si hay una plantilla
+     * activa con el nombre {@code type}, el asunto y el cuerpo salen de ella
+     * ([nombre], [asunto], [mensaje], [urlTicket], [id] si hay ticket); si no,
+     * el texto de siempre. Así todo correo que sale del sistema vive en el
+     * módulo de plantillas. {@code mensajeHtml} ya viene escapado.
+     */
+    public void notifyConPlantilla(Ticket ticket, User receiver, String type, String asunto, String mensajeHtml,
+                                   String ruta) {
+        if (receiver == null) return;
+        String url = ruta != null ? urlFrontend(ruta)
+                : (ticket != null ? urlFrontend("tickets/" + ticket.getIdTicket()) : urlFrontend("inicio"));
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("nombre", nameOf(receiver));
+        variables.put("asunto", asunto);
+        // Ya viene escapado por quien lo arma: no se vuelve a escapar en fill
+        // (antes el correo llegaba con las etiquetas <p><b> a la vista).
+        variables.put("mensaje", new HtmlSeguro(mensajeHtml));
+        variables.put("urlTicket", url);
+        if (ticket != null) {
+            variables.put("id", ticket.getNumberTicket() == null ? "" : String.valueOf(ticket.getNumberTicket()));
+            ponerAreaDePlantilla(variables, ticket);
+        }
+        String subject = subjectTemplate(type, variables, asunto);
+        String body = bodyTemplate(type, variables,
+                mensajeHtml + "<p><a href=\"" + url + "\">Abrir en la Mesa de Servicios</a></p>");
+        sendNotification(ticket, receiver, type, subject, body);
+    }
+
+    /** Aviso de que el plazo de una actividad está cerca (V35). */
+    public void notifyTaskReminder(Task task) {
+        User receiver = task.getAssignedUser();
+        if (receiver == null || task.getDueTask() == null) return;
+        String plazo = fechaHora(task.getDueTask());
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("titulo", task.getTitleTask());
+        variables.put("task", task.getTitleTask());
+        variables.put("nombre", nameOf(receiver));
+        variables.put("fechaFin", plazo);
+        variables.put("estado", task.getStatusTask());
+        variables.put("urlTicket", urlFrontend("actividades"));
+        String subject = subjectTemplate("TAREA_POR_VENCER", variables,
+                "Actividad por vencer: " + task.getTitleTask());
+        String body = bodyTemplate("TAREA_POR_VENCER", variables,
+                "<p>Estimado/a <b>" + escaparHtml(nameOf(receiver)) + "</b>, la actividad <b>"
+                        + escaparHtml(task.getTitleTask()) + "</b> vence el <b>" + escaparHtml(plazo) + "</b>.</p>"
+                        + "<p>Estado actual: " + escaparHtml(task.getStatusTask()) + ".</p>");
+        sendNotification(null, receiver, "TAREA_POR_VENCER", subject, body);
     }
 
     public void notifyNewAccount(User user, String generatedPassword) {
@@ -790,6 +883,10 @@ public class NotificationService {
 
     private String subjectTemplate(String name, Map<String, Object> variables, String fallback) {
         NotificationTemplate template = activeTemplate(name);
+        com.mesaayuda.plantillas.PlantillaArea delArea = plantillaDelArea(name, variables);
+        if (delArea != null && !isBlank(delArea.getAsunto())) {
+            return desescapar(fill(delArea.getAsunto(), variables, template).replace("<br>", " "));
+        }
         if (template == null || isBlank(template.getSubjectTemplate())) {
             return fallback;
         }
@@ -801,6 +898,10 @@ public class NotificationService {
 
     private String bodyTemplate(String name, Map<String, Object> variables, String fallback) {
         NotificationTemplate template = activeTemplate(name);
+        com.mesaayuda.plantillas.PlantillaArea delArea = plantillaDelArea(name, variables);
+        if (delArea != null && !isBlank(delArea.getCuerpo())) {
+            return fill(delArea.getCuerpo(), variables, template);
+        }
         if (template == null || isBlank(template.getBodyTemplate())) {
             return fallback;
         }
@@ -893,7 +994,8 @@ Matcher matcher = Pattern.compile("\\{\\{([a-zA-Z0-9_]+)}}|\\[([a-zA-Z0-9_]+)]")
               // la notación que no se usó en esa coincidencia.
               String clave = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
               Object valor = valores.get(clave);
-              out.append(valor == null ? "" : conSaltos(String.valueOf(valor)));
+              out.append(valor == null ? "" : valor instanceof HtmlSeguro h ? h.html()
+                      : conSaltos(String.valueOf(valor)));
               fin = matcher.end();
           }
           out.append(text.substring(fin));
@@ -949,6 +1051,14 @@ Matcher matcher = Pattern.compile("\\{\\{([a-zA-Z0-9_]+)}}|\\[([a-zA-Z0-9_]+)]")
   }
 
   /** Escapa el texto y conserva sus saltos de línea como {@code <br>}. */
+  /** Valor de plantilla que ya es HTML escapado por el servicio que lo arma; fill lo inserta tal cual. */
+  record HtmlSeguro(String html) {
+      @Override
+      public String toString() {
+          return html;
+      }
+  }
+
   private static String conSaltos(String texto) {
       return texto == null ? "" : escaparHtml(texto).replace("\r\n", "\n").replace("\n", "<br>");
   }
@@ -1034,11 +1144,11 @@ private void imagenDePlantilla(Map<String, Object> valores, NotificationTemplate
         String baseFrontend = urlFrontend("");
         base.put("sitioWeb", baseFrontend);
         base.put("soporte", baseFrontend);
-        base.put("urlDashboard", urlFrontend("dashboard"));
-        base.put("urlLogin", urlFrontend("auth/login"));
-        base.put("urlNuevoTicket", urlFrontend("tickets/new"));
-        base.put("urlPassword", urlFrontend("settings/password"));
-        base.put("urlSlaConfig", urlFrontend("admin/sla-config"));
+        base.put("urlDashboard", urlFrontend("inicio"));
+        base.put("urlLogin", urlFrontend("acceso/ingresar"));
+        base.put("urlNuevoTicket", urlFrontend("tickets/nuevo"));
+        base.put("urlPassword", urlFrontend("mi-cuenta/contrasena"));
+        base.put("urlSlaConfig", urlFrontend("administracion/evaluaciones"));
         String urlTicket = urlTicketDelEvento(variables);
         base.put("urlTicket", urlTicket);
         base.put("urlCalificar", urlTicket.isEmpty() ? "" : urlTicket + "?calificar=1");

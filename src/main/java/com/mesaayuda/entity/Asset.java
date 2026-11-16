@@ -67,6 +67,34 @@ public class Asset {
     @Column(name = "notes_asset", columnDefinition = "TEXT")
     private String notesAsset;
 
+    /** Tipo del maestro (V36). typeAsset guarda su nombre para búsquedas y reportes antiguos. */
+    @Column(name = "asset_type_asset")
+    private UUID assetTypeId;
+
+    @Column(name = "description_asset", columnDefinition = "TEXT")
+    private String descriptionAsset;
+
+    /** Ubicación detallada (piso, oficina, escritorio...). */
+    @Column(name = "ubicacion_asset", length = 300)
+    private String ubicacionAsset;
+
+    @Column(name = "accesorios_asset", columnDefinition = "TEXT")
+    private String accesoriosAsset;
+
+    /** NUEVO, BUENO, REGULAR o CON_NOVEDADES (como en el acta). */
+    @Column(name = "estado_fisico_asset", nullable = false, length = 20)
+    private String estadoFisicoAsset = "BUENO";
+
+    @Column(name = "configuracion_asset", columnDefinition = "TEXT")
+    private String configuracionAsset;
+
+    @Column(name = "novedades_asset", columnDefinition = "TEXT")
+    private String novedadesAsset;
+
+    /** Cuándo se avisó de la garantía por vencer; se limpia si cambia la fecha. */
+    @Column(name = "garantia_avisada_asset")
+    private OffsetDateTime garantiaAvisadaAsset;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assigned_user_id")
     private User assignedUser;

@@ -92,7 +92,7 @@ class AutorizacionPorRolTest {
     }
 
     @Test
-    @DisplayName("la auditoria del sistema solo la ve el super administrador")
+    @DisplayName("la auditoria del sistema solo la ven el super administrador y el auditor")
     void auditoriaDelSistemaEsExclusivaDelSuperAdmin() throws Exception {
         String codigo = leer("AdminController.java");
 
@@ -100,9 +100,9 @@ class AutorizacionPorRolTest {
         // acceso vería el rastro de actividad de sus superiores.
         int bloque = codigo.indexOf("/audit-sistema");
         assertTrue(bloque > 0, "no se encuentra el endpoint de auditoria del sistema");
-        int ventana = codigo.indexOf("checkSuperAdmin();", bloque);
+        int ventana = codigo.indexOf("checkSuperAdminOAuditor();", bloque);
         assertTrue(ventana > bloque && ventana - bloque < 900,
-                "el endpoint /audit-sistema debe exigir super administrador");
+                "el endpoint /audit-sistema debe exigir super administrador o auditor");
     }
 
     @Test
@@ -126,7 +126,7 @@ class AutorizacionPorRolTest {
     // ============================ lo que NO debe romperse ============================
 
     @Test
-    @DisplayName("agente y administrador conservan el acceso a tareas y calendario")
+    @DisplayName("todos los roles tienen sus propias tareas y su calendario")
     void elAgenteNoPierdeSusAccesos() throws Exception {
         // El riesgo de endurecer los roles es pasarse: si un endpoint que necesita
         // el agente pasa a exigir super administrador, se le rompe el trabajo y
@@ -136,10 +136,9 @@ class AutorizacionPorRolTest {
         // porque lo usa tambien el usuario final para abrir y seguir sus tickets.
         for (String c : List.of("TaskController.java", "CalendarController.java")) {
             String anotacion = anotacionDeClase(c);
-            assertTrue(anotacion.contains("AGENT"),
-                    c + " debe seguir admitiendo al agente. Anotacion actual:\n" + anotacion);
-            assertTrue(anotacion.contains("ADMIN"),
-                    c + " debe seguir admitiendo a ADMIN:\n" + anotacion);
+            // Actividades y calendario propios para todos los roles.
+            assertTrue(anotacion.contains("isAuthenticated()"),
+                    c + " debe admitir a cualquier usuario con sesión. Anotacion actual:\n" + anotacion);
         }
     }
 

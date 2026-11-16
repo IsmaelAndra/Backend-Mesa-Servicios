@@ -18,7 +18,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/calendar")
-@PreAuthorize("hasAnyRole('AGENT','ADMIN','SUPER_ADMIN')")
+@PreAuthorize("isAuthenticated()")
 @Tag(name = "Calendario", description = "Eventos del calendario del agente (tareas + tickets asignados)")
 public class CalendarController {
 

@@ -71,11 +71,24 @@ public class SlaService {
      * área + prioridad + categoría (regla más específica primero).
      */
     public TicketSla applySlaToTicket(Ticket ticket) {
-        UUID areaId = ticket.getAreaTicket().getIdArea();
         UUID priorityId = ticket.getPriorityTicket().getIdPriority();
         UUID categoryId = ticket.getCategoryTicket() != null ? ticket.getCategoryTicket().getIdCategory() : null;
         UUID typeId = ticket.getTypeTicket() != null ? ticket.getTypeTicket().getIdTicketType() : null;
 
+        // Mesa multi-área: manda la regla del área que ATIENDE (la configura su
+        // jefe). Si no tiene, la del área del solicitante, como antes de V28.
+        Optional<SlaRule> rule = Optional.empty();
+        if (ticket.getAreaDestinoTicket() != null) {
+            rule = reglaPara(ticket.getAreaDestinoTicket().getIdArea(), priorityId, categoryId, typeId);
+        }
+        if (rule.isEmpty() && ticket.getAreaTicket() != null) {
+            rule = reglaPara(ticket.getAreaTicket().getIdArea(), priorityId, categoryId, typeId);
+        }
+        return aplicarRegla(ticket, rule);
+    }
+
+    /** La regla más específica de un área: categoría+tipo, categoría, tipo y general. */
+    private Optional<SlaRule> reglaPara(UUID areaId, UUID priorityId, UUID categoryId, UUID typeId) {
         Optional<SlaRule> rule = Optional.empty();
         if (categoryId != null && typeId != null) {
             rule = slaRuleRepository
@@ -97,6 +110,10 @@ public class SlaService {
                     .findByAreaIdAreaAndPriorityIdPriorityAndCategoryIsNullAndTypeIsNullAndActiveSlaRuleTrue(
                             areaId, priorityId);
         }
+        return rule;
+    }
+
+    private TicketSla aplicarRegla(Ticket ticket, Optional<SlaRule> rule) {
 
         // ticket_sla tiene ticket_id UNIQUE. Antes se creaba siempre una fila nueva,
         // así que volver a aplicar el SLA (el nodo SLA_APPLY de un workflow, tras

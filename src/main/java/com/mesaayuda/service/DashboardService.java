@@ -40,6 +40,9 @@ public class DashboardService {
     @Autowired
     private TicketRepository ticketRepository;
 
+    @Autowired(required = false)
+    private JefaturaService jefaturaService;
+
     @Autowired
     private StatusRepository statusRepository;
 
@@ -90,9 +93,17 @@ public class DashboardService {
         // Una sola consulta para los dos periodos: se separan en memoria. Así el
         // alcance del rol se aplica una vez y ambos periodos salen de la misma regla.
         List<Ticket> ampliada = switch (role) {
-            case "USER" -> ticketRepository.findTicketsBetweenByUser(prevStart, end, currentId);
             case "AGENT" -> ticketRepository.findTicketsBetweenByAgent(prevStart, end, currentId);
-            default -> ticketRepository.findTicketsBetween(prevStart, end);
+            // El jefe ve las cifras de lo que atienden sus áreas, no las de toda
+            // la institución (antes caía en la rama de "todos").
+            case "AREA_MANAGER" -> {
+                java.util.Set<UUID> areas = jefaturaService == null ? java.util.Set.of()
+                        : jefaturaService.areasACargo(current);
+                yield areas.isEmpty() ? List.of() : ticketRepository.findTicketsBetweenByAreasDestino(prevStart, end, areas);
+            }
+            case "SUPER_ADMIN", "AUDITOR" -> ticketRepository.findTicketsBetween(prevStart, end);
+            // Cualquier otro rol, solo lo suyo: fallar hacia lo cerrado.
+            default -> ticketRepository.findTicketsBetweenByUser(prevStart, end, currentId);
         };
 
         // Poblacion del alcance del rol en el rango pedido, incluidos los CERRADO.
@@ -117,17 +128,20 @@ public class DashboardService {
         Map<UUID, TicketSla> slas = slaPorTicket(ampliada);
 
         long total = population.size();
+        // "En curso" = sin terminar: ni RESUELTO ni CERRADO (antes contaba los
+        // resueltos y no cuadraba con la suma del tablero).
         long open = filtered.stream()
-                .filter(t -> !"CERRADO".equals(estado(t)))
+                .filter(t -> !TERMINADOS.contains(estado(t)))
                 .count();
         long resolved = population.stream()
                 .filter(t -> "RESUELTO".equals(estado(t)))
                 .count();
         long critical = filtered.stream()
-                .filter(t -> "CRITICA".equals(prioridad(t)) && !"CERRADO".equals(estado(t)))
+                .filter(t -> "CRITICA".equals(prioridad(t)) && !TERMINADOS.contains(estado(t)))
                 .count();
 
         Double slaCompliance = cumplimientoSla(filtered, slas);
+        List<Ticket> terminadosSla = filtered.stream().filter(t -> TERMINADOS.contains(estado(t))).toList();
         Double avgResolutionHours = horasMediasResolucion(filtered, slas);
 
         // Alertas SLA sobre tickets abiertos
@@ -228,7 +242,8 @@ public class DashboardService {
 
         // ---- Carga por agente: solo la administración compara agentes ----
         List<DashboardStats.AgentLoad> agentLoad = List.of();
-        if ("ADMIN".equals(role) || "SUPER_ADMIN".equals(role)) {
+        // El jefe compara la carga de los agentes de su área.
+        if (com.mesaayuda.security.Roles.veTodo(role) || com.mesaayuda.security.Roles.esJefe(role)) {
             agentLoad = cargaPorAgente(filtered, slas);
         }
 
@@ -239,7 +254,8 @@ public class DashboardService {
                 byStatus, byArea, byCategory, last12Weeks,
                 byPriority, weekLabels, resolved12Weeks,
                 prevTotal, prevResolved, prevAvgResolution, prevSla,
-                aging, heatmap, avgSatisfaction, notas.length, agentLoad, attention);
+                aging, heatmap, avgSatisfaction, notas.length, agentLoad, attention,
+                terminadosSla.size(), aTiempo(terminadosSla, slas));
     }
 
     // ============================ Auxiliares del tablero ============================
@@ -253,21 +269,27 @@ public class DashboardService {
     }
 
     private Map<String, Long> agrupar(List<Ticket> tickets, java.util.function.Function<Ticket, String> clave) {
-        return tickets.stream().collect(Collectors.groupingBy(clave, LinkedHashMap::new, Collectors.counting()));
+        // Sin el sufijo interno de los eliminados ("Atención (eliminado 2026…)" → "Atención (eliminada)").
+        return tickets.stream().collect(Collectors.groupingBy(
+                t -> String.valueOf(AdminService.nombreVisible(clave.apply(t))), LinkedHashMap::new, Collectors.counting()));
     }
 
     /** Porcentaje de tickets terminados sin incumplir el SLA de resolución; null si no hay terminados. */
-    private Double cumplimientoSla(List<Ticket> tickets, Map<UUID, TicketSla> slas) {
-        List<Ticket> terminados = tickets.stream().filter(t -> TERMINADOS.contains(estado(t))).toList();
-        if (terminados.isEmpty()) {
-            return null;
-        }
-        long ok = terminados.stream()
+    private long aTiempo(List<Ticket> terminados, Map<UUID, TicketSla> slas) {
+        return terminados.stream()
                 .filter(t -> {
                     TicketSla ts = slas.get(t.getIdTicket());
                     return ts == null || !Boolean.TRUE.equals(ts.getResolutionBreached());
                 })
                 .count();
+    }
+
+    private Double cumplimientoSla(List<Ticket> tickets, Map<UUID, TicketSla> slas) {
+        List<Ticket> terminados = tickets.stream().filter(t -> TERMINADOS.contains(estado(t))).toList();
+        if (terminados.isEmpty()) {
+            return null;
+        }
+        long ok = aTiempo(terminados, slas);
         return Math.round((double) ok / terminados.size() * 10000) / 100.0;
     }
 
@@ -368,7 +390,9 @@ public class DashboardService {
                     TicketSla ts = slas.get(t.getIdTicket());
                     boolean vencido = Boolean.TRUE.equals(ts.getResolutionBreached())
                             || ts.getResolutionDueAt().isBefore(ahora);
-                    return new DashboardStats.TicketAtencion(t.getIdTicket(), t.getNumberTicket(), t.getTitleTicket(), prioridad(t),
+                    return new DashboardStats.TicketAtencion(t.getIdTicket(), t.getNumberTicket(),
+                            TicketAccessPolicy.esConfidencial(t) ? com.mesaayuda.dto.TicketResponse.TITULO_CONFIDENCIAL
+                                    : t.getTitleTicket(), prioridad(t),
                             estado(t), ts.getResolutionDueAt(), vencido,
                             t.getAgentTicket() == null ? null : t.getAgentTicket().getFullName());
                 })

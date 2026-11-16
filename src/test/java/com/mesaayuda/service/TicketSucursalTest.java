@@ -38,12 +38,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Sede fisica de un ticket.
+ * Sucursal fisica de un ticket.
  *
- * La regla acordada es que la sede del ticket puede ser distinta de la del
+ * La regla acordada es que la sucursal del ticket puede ser distinta de la del
  * solicitante: alguien de Quito puede reportar un problema que hay que resolver
- * en Guayaquil. Cuando el formulario no elige sede, el ticket hereda la del
- * solicitante, y si la sede indicada ya no existe o esta dada de baja se ignora
+ * en Guayaquil. Cuando el formulario no elige sucursal, el ticket hereda la del
+ * solicitante, y si la sucursal indicada ya no existe o esta dada de baja se ignora
  * en lugar de fallar, para que el ticket se pueda abrir igual.
  */
 @ExtendWith(MockitoExtension.class)
@@ -56,6 +56,7 @@ class TicketSucursalTest {
     @Mock private TicketTypeRepository ticketTypeRepository;
     @Mock private UserRepository userRepository;
     @Mock private CategoryRepository categoryRepository;
+    @Mock private com.mesaayuda.repository.AreaRepository areaRepository;
     @Mock private RoutingService routingService;
     @Mock private SlaService slaService;
     @Mock private com.mesaayuda.service.SseEventBroker sseEventBroker;
@@ -78,12 +79,17 @@ private Sucursal quito;
         ReflectionTestUtils.setField(ticketService, "sseEventBroker", mock(SseEventBroker.class));
         captor = ArgumentCaptor.forClass(Ticket.class);
 
-        // create() resuelve categoría, tipo, estado y prioridad antes de tocar la sede.
+        // create() resuelve categoría, tipo, estado y prioridad antes de tocar la sucursal.
         Category categoria = new Category();
         categoria.setIdCategory(id(1));
         categoria.setDeletedCategory(false);
         lenient().when(categoryRepository.findFirstByDeletedCategoryFalseOrderByCreatedAtCategoryAsc())
                 .thenReturn(Optional.of(categoria));
+        // Una categoría sin área cae en Tecnología (V28).
+        com.mesaayuda.entity.Area tecnologia = new com.mesaayuda.entity.Area();
+        tecnologia.setIdArea(id(50));
+        tecnologia.setNameArea("Tecnología");
+        lenient().when(areaRepository.tecnologia()).thenReturn(Optional.of(tecnologia));
         Status nuevo = new Status();
         nuevo.setNameStatus("NUEVO");
         lenient().when(statusRepository.findByNameStatus("NUEVO")).thenReturn(Optional.of(nuevo));
@@ -91,13 +97,13 @@ private Sucursal quito;
                 .thenReturn(Optional.empty());
         lenient().when(priorityRepository.findByLevelPriority(any(Integer.class)))
                 .thenReturn(Optional.of(mock(Priority.class)));
-        quito = sede(id(1), "QUI", "Quito");
-        guayaquil = sede(id(2), "GYE", "Guayaquil");
+        quito = sucursal(id(1), "QUI", "Quito");
+        guayaquil = sucursal(id(2), "GYE", "Guayaquil");
         lenient().when(sucursalRepository.findById(quito.getIdSucursal())).thenReturn(Optional.of(quito));
         lenient().when(sucursalRepository.findById(guayaquil.getIdSucursal())).thenReturn(Optional.of(guayaquil));
     }
 
-    private static Sucursal sede(UUID id, String codigo, String nombre) {
+    private static Sucursal sucursal(UUID id, String codigo, String nombre) {
         Sucursal s = new Sucursal();
         s.setIdSucursal(id);
         s.setCodeSucursal(codigo);
@@ -107,10 +113,10 @@ private Sucursal quito;
         return s;
     }
 
-    private User solicitanteCon(Sucursal sede) {
+    private User solicitanteCon(Sucursal sucursal) {
         User u = new User();
         u.setIdUser(id(10));
-        u.setSucursal(sede);
+        u.setSucursal(sucursal);
         return u;
     }
 
@@ -131,7 +137,7 @@ private Sucursal quito;
     }
 
     @Test
-    @DisplayName("sin sede en el formulario, el ticket hereda la del solicitante")
+    @DisplayName("sin sucursal en el formulario, el ticket hereda la del solicitante")
     void heredaLaSedeDelSolicitante() {
         Ticket t = crea(null, solicitanteCon(quito));
 
@@ -139,7 +145,7 @@ private Sucursal quito;
     }
 
     @Test
-    @DisplayName("la sede del ticket puede ser distinta de la del solicitante")
+    @DisplayName("la sucursal del ticket puede ser distinta de la del solicitante")
     void sedeDistintaALaDelSolicitante() {
         Ticket t = crea(guayaquil.getIdSucursal(), solicitanteCon(quito));
 
@@ -147,7 +153,7 @@ private Sucursal quito;
     }
 
     @Test
-    @DisplayName("una sede que no existe se ignora y se hereda la del solicitante")
+    @DisplayName("una sucursal que no existe se ignora y se hereda la del solicitante")
     void sedeInexistenteSeIgnora() {
         when(sucursalRepository.findById(id(99))).thenReturn(Optional.empty());
 
@@ -157,9 +163,9 @@ private Sucursal quito;
     }
 
     @Test
-    @DisplayName("una sede dada de baja se ignora y se hereda la del solicitante")
+    @DisplayName("una sucursal dada de baja se ignora y se hereda la del solicitante")
     void sedeBorradaSeIgnora() {
-        Sucursal borrada = sede(id(3), "AMB", "Ambato");
+        Sucursal borrada = sucursal(id(3), "AMB", "Ambato");
         borrada.setDeletedSucursal(true);
         when(sucursalRepository.findById(id(3))).thenReturn(Optional.of(borrada));
 
@@ -169,7 +175,7 @@ private Sucursal quito;
     }
 
     @Test
-    @DisplayName("sin sede en el formulario y solicitante sin sede, el ticket queda sin sede")
+    @DisplayName("sin sucursal en el formulario y solicitante sin sucursal, el ticket queda sin sucursal")
     void solicitanteSinSedeDejaElTicketSinSede() {
         Ticket t = crea(null, solicitanteCon(null));
 
@@ -177,7 +183,7 @@ private Sucursal quito;
     }
 
     @Test
-    @DisplayName("no se busca la sede si el ticket ya viene con una asignada")
+    @DisplayName("no se busca la sucursal si el ticket ya viene con una asignada")
     void noConsultaLaSedeSiElTicketYaLaTiene() {
         Ticket t = mock(Ticket.class);
         when(t.getSucursalTicket()).thenReturn(quito);

@@ -12,11 +12,11 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.OffsetDateTime;
 
 /**
- * Sede física de la institución.
+ * Sucursal física de la institución.
  *
  * Es distinta del área: el área dice a qué se dedica la persona (sistemas,
  * transparencia, keuangan) y la sucursal dónde lo hace. Por eso las dos se
- * guardan por separado, y un ticket puede ser de una sede distinta a la del
+ * guardan por separado, y un ticket puede ser de una sucursal distinta a la del
  * solicitante.
  */
 @Entity

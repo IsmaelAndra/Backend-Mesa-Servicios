@@ -118,7 +118,14 @@ public class NotifyHandler implements WorkflowNodeHandler {
         }
         String rol = contexto.configTexto(nodo, "rol");
         if (rol != null) {
-            userRepository.findByRoleName(rol.toUpperCase(Locale.ROOT)).forEach(u -> agregar(lista, u));
+            String nombre = rol.toUpperCase(Locale.ROOT);
+            // ADMIN se retiró en V27 y sus cuentas pasaron a jefe de área. Las
+            // versiones publicadas no se editan: un aviso guardado "a ADMIN" va
+            // a quienes heredaron ese papel, en vez de no llegar a nadie.
+            if ("ADMIN".equals(nombre)) {
+                nombre = com.mesaayuda.security.Roles.JEFE;
+            }
+            userRepository.findByRoleName(nombre).forEach(u -> agregar(lista, u));
         }
         // Sin repetidos: alguien puede ser a la vez el agente y miembro del rol.
         Map<java.util.UUID, User> unicos = new LinkedHashMap<>();

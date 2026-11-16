@@ -81,10 +81,10 @@ class WorkflowAprobacionServiceTest {
 
     @Test
     void soloDecideUnSuperAdmin() {
-        WorkflowWait pideAdmin = espera("ADMIN", null);
+        WorkflowWait pideAdmin = espera("AREA_MANAGER", null);
         assertTrue(servicio.puedeDecidir(usuario(id(2), "SUPER_ADMIN"), pideAdmin));
-        assertFalse(servicio.puedeDecidir(usuario(id(1), "ADMIN"), pideAdmin),
-                "el ADMIN origina la solicitud y espera; no la decide");
+        assertFalse(servicio.puedeDecidir(usuario(id(1), "AREA_MANAGER"), pideAdmin),
+                "el jefe origina la solicitud y espera; no la decide");
         assertFalse(servicio.puedeDecidir(usuario(id(3), "AGENT"), pideAdmin));
         assertFalse(servicio.puedeDecidir(usuario(id(4), "USER"), pideAdmin));
     }
@@ -106,7 +106,7 @@ class WorkflowAprobacionServiceTest {
 
     @Test
     void elAdminVeSusSolicitudesConLaDecision() {
-        User admin = usuario(id(1), "ADMIN");
+        User admin = usuario(id(1), "AREA_MANAGER");
         when(usuarios.getCurrentUser()).thenReturn(admin);
         WorkflowWait suya = espera("SUPER_ADMIN", null);
         suya.setStatusWait(WorkflowWait.ESTADO_RECHAZADA);
@@ -150,7 +150,7 @@ class WorkflowAprobacionServiceTest {
 
     @Test
     void sinPermisoSeDeniegaYNoSeTocaNada() {
-        when(usuarios.getCurrentUser()).thenReturn(usuario(id(3), "ADMIN"));
+        when(usuarios.getCurrentUser()).thenReturn(usuario(id(3), "AREA_MANAGER"));
         when(waits.findById(id(1))).thenReturn(Optional.of(espera("SUPER_ADMIN", null)));
 
         assertThrows(AccessDeniedException.class, () -> servicio.decidir(id(1), true, null));

@@ -44,6 +44,10 @@ public class SlaPolicy {
     @Column(name = "color_sla_policy", length = 30)
     private String colorSlaPolicy;
 
+    /** Área dueña de la política (V32); null = global, solo la edita el súper admin. */
+    @Column(name = "area_sla_policy")
+    private UUID areaSlaPolicy;
+
     @CreationTimestamp
     @Column(name = "created_at_sla_policy", nullable = false, updatable = false)
     private OffsetDateTime createdAtSlaPolicy;

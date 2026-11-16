@@ -25,7 +25,7 @@ public class AiController {
 
     @PostMapping("/assist")
     @Operation(summary = "Acción del asistente IA (sugerir respuesta o resumen de ticket)")
-    @PreAuthorize("hasAnyRole('ADMIN','AGENT','SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('AREA_MANAGER','AGENT','SUPER_ADMIN')")
     public ResponseEntity<AiAssistResponse> assist(@Valid @RequestBody AiAssistRequest request) {
         String content = aiAssistantService.assist(
                 request.action(), request.ticketId(), request.instructions());
@@ -34,7 +34,7 @@ public class AiController {
 
     @PostMapping("/chat")
     @Operation(summary = "Chat libre con el asistente IA (widget flotante)")
-    @PreAuthorize("hasAnyRole('ADMIN','AGENT','SUPER_ADMIN','USER','AREA_MANAGER')")
+    @PreAuthorize("hasAnyRole('AGENT','SUPER_ADMIN','USER','AREA_MANAGER','AUDITOR')")
     public ResponseEntity<AiAssistResponse> chat(@Valid @RequestBody AiChatRequest request) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String user = auth != null ? auth.getName() : "anonimo";
@@ -46,7 +46,7 @@ public class AiController {
 
     @GetMapping("/config")
     @Operation(summary = "Estado del asistente IA (habilitado, proveedor, modelo e icono)")
-    @PreAuthorize("hasAnyRole('ADMIN','AGENT','SUPER_ADMIN','USER','AREA_MANAGER')")
+    @PreAuthorize("hasAnyRole('AGENT','SUPER_ADMIN','USER','AREA_MANAGER','AUDITOR')")
     public ResponseEntity<AiStatusResponse> config() {
         return ResponseEntity.ok(aiAssistantService.status());
     }

@@ -82,7 +82,7 @@ class TicketServiceTest {
     }
 
     private void comoAdmin() {
-        when(userService.getCurrentUser()).thenReturn(userConRol(id(999), "ADMIN"));
+        when(userService.getCurrentUser()).thenReturn(userConRol(id(999), "SUPER_ADMIN"));
     }
 
     @Test

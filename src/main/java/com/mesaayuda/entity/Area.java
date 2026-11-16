@@ -41,6 +41,17 @@ public class Area {
     @Column(name = "status_area", nullable = false)
     private Boolean statusArea = true;
 
+    /**
+     * Los jefes de esta área pueden crear y editar usuarios (V27). Lo tienen
+     * Tecnología y Desarrollo; el resto de jefes solo gestiona su área.
+     */
+    @Column(name = "manages_users_area", nullable = false)
+    private Boolean managesUsersArea = false;
+
+    /** Sus agentes y su jefe gestionan los activos (Tecnología y Desarrollo, V36). */
+    @Column(name = "gestiona_activos_area", nullable = false)
+    private Boolean gestionaActivosArea = false;
+
     @CreationTimestamp
     @Column(name = "created_at_area", nullable = false, updatable = false)
     private OffsetDateTime createdAtArea;

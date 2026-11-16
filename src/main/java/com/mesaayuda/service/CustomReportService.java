@@ -197,7 +197,7 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
 
       /**
        * @param orientacion "H" para hoja apaisada (más columnas) o "V" para vertical.
-       * @param sucursalId  sede por la que se acota el reporte; null son todas.
+       * @param sucursalId  sucursal por la que se acota el reporte; null son todas.
        */
       @Transactional(readOnly = true)
       public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUID typeId, UUID currentUserId,
@@ -256,6 +256,46 @@ public byte[] generate(UUID id, String format, LocalDate from, LocalDate to, UUI
         }
 
         return render(cfg, normalize(raw), format, nombreUsuario, esVertical(orientacion));
+    }
+
+    /**
+     * Ejecuta una consulta ya armada por el constructor de reportes (Fase 2),
+     * con los mismos límites de tiempo y filas que los reportes de sistema.
+     */
+    public List<Map<String, Object>> ejecutarConsulta(String sql,
+            org.springframework.jdbc.core.namedparam.MapSqlParameterSource parametros) {
+        try {
+            return jdbcReportes.queryForList(sql, parametros);
+        } catch (Exception e) {
+            log.error("Error ejecutando un reporte del constructor", e);
+            throw new BadRequestException("No se pudo ejecutar el reporte. Inténtelo de nuevo o reduzca el periodo.");
+        }
+    }
+
+    /** Filas de una consulta como texto ya formateado (fechas, Sí/No), en el orden de los encabezados. */
+    public static List<List<String>> comoTexto(List<Map<String, Object>> filas, List<String> encabezados) {
+        List<List<String>> out = new ArrayList<>();
+        for (Map<String, Object> f : filas) {
+            List<String> fila = new ArrayList<>();
+            for (String h : encabezados) {
+                fila.add(formatear(f.get(h)));
+            }
+            out.add(fila);
+        }
+        return out;
+    }
+
+    /** PDF / Excel de un reporte del constructor, con el mismo diseño que los de sistema. */
+    public byte[] renderizar(String titulo, List<Map<String, Object>> filas, String formato, UUID usuarioId,
+            String orientacion) {
+        ReportConfig cfg = new ReportConfig();
+        cfg.setNameReport("CONSTRUCTOR");
+        cfg.setTitleReport(titulo);
+        String nombreUsuario = usuarioId == null ? null : userRepository.findById(usuarioId)
+                .map(u -> u.getDisplayName() != null && !u.getDisplayName().isBlank()
+                        ? u.getDisplayName() : u.getCorporateEmailUser())
+                .orElse(null);
+        return render(cfg, normalize(filas), formato, nombreUsuario, esVertical(orientacion));
     }
 
     private static final java.time.ZoneId ZONA = java.time.ZoneId.of("America/Guayaquil");

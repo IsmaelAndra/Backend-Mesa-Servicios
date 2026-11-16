@@ -33,6 +33,9 @@ public class SolicitanteService {
     private static final ZoneId ZONE = ZoneId.of("America/Guayaquil");
 
     @Autowired(required = false)
+    private TicketAccessPolicy accessPolicy;
+
+    @Autowired(required = false)
     private MicrosoftGraphUserSyncService userSyncService;
 
     @Autowired
@@ -74,8 +77,8 @@ public class SolicitanteService {
     public SolicitanteResumenResponse resumen(UUID userId) {
         User actual = userService.getCurrentUser();
         boolean esPersonal = actual != null && actual.getRolUser() != null
-                && List.of("AGENT", "ADMIN", "SUPER_ADMIN")
-                .contains(actual.getRolUser().getNameRole());
+                && (com.mesaayuda.security.Roles.esPersonal(actual.getRolUser().getNameRole())
+                || com.mesaayuda.security.Roles.esAuditor(actual.getRolUser().getNameRole()));
 
         if (!esPersonal && !actual.getIdUser().equals(userId)) {
             log.warn("Acceso denegado: {} intentó consultar la ficha 360° del usuario {}.",
@@ -87,16 +90,21 @@ public class SolicitanteService {
         if (userSyncService != null) {
             userSyncService.asegurarFoto(userId);
         }
-        return construirResumen(userId);
+        return construirResumen(userId, actual);
     }
 
-    private SolicitanteResumenResponse construirResumen(UUID userId) {
+    private SolicitanteResumenResponse construirResumen(UUID userId, User actual) {
         User solicitante = userRepository.findById(userId)
                 .filter(u -> !u.getDeletedUser())
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario", "id", userId));
 
         List<Ticket> tickets = ticketRepository
                 .findByUserTicketIdUserAndDeletedTicketFalseOrderByCreatedAtTicketDesc(userId);
+        // Mesa multi-área: el agente de Contabilidad no ve en la ficha los tickets
+        // que la persona abrió a Tecnología. Misma regla que la lista (AlcanceTickets).
+        if (accessPolicy != null && actual != null) {
+            tickets = tickets.stream().filter(t -> accessPolicy.puedeLeer(t, actual)).toList();
+        }
 
         Long totalTickets = (long) tickets.size();
         Long openTickets = tickets.stream()

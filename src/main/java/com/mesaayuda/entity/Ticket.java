@@ -60,7 +60,23 @@ public class Ticket {
     private Area areaTicket;
 
     /**
-     * Sede a la que corresponde el caso. No es la del solicitante: alguien de
+     * Área que ATIENDE el ticket (V28). areaTicket es la del solicitante. Sale de
+     * la categoría al crear y cambia al trasladar el ticket a otra área.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "area_destino_ticket", nullable = false)
+    private Area areaDestinoTicket;
+
+    /** Confidencial (V29): solo lo ven las personas autorizadas. */
+    @Column(name = "confidencial_ticket", nullable = false)
+    private Boolean confidencialTicket = false;
+
+    /** Confidencial abierto a todos los agentes del área que lo atiende. */
+    @Column(name = "confidencial_area_ticket", nullable = false)
+    private Boolean confidencialAreaTicket = false;
+
+    /**
+     * Sucursal a la que corresponde el caso. No es la del solicitante: alguien de
      * Quito puede abrir un ticket que hay que resolver en Guayaquil.
      */
     @ManyToOne(fetch = FetchType.LAZY)

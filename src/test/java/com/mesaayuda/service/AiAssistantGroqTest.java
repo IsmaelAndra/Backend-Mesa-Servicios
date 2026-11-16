@@ -31,10 +31,10 @@ class AiAssistantGroqTest {
         String usuario = AiAssistantService.instruccionesPorRol("USER");
         assertTrue(usuario.contains("usuario final"));
         assertTrue(usuario.contains("No le des"));
-        assertTrue(AiAssistantService.instruccionesPorRol("AREA_MANAGER").contains("usuario final"));
         assertTrue(AiAssistantService.instruccionesPorRol(null).contains("usuario final"));
-        assertTrue(AiAssistantService.instruccionesPorRol("AGENT").contains("personal de TI"));
-        assertTrue(AiAssistantService.instruccionesPorRol("SUPER_ADMIN").contains("personal de TI"));
+        assertTrue(AiAssistantService.instruccionesPorRol("AGENT").contains("personal de la mesa"));
+        assertTrue(AiAssistantService.instruccionesPorRol("AREA_MANAGER").contains("personal de la mesa"));
+        assertTrue(AiAssistantService.instruccionesPorRol("SUPER_ADMIN").contains("personal de la mesa"));
     }
 
     @Test

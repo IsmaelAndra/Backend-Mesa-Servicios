@@ -57,7 +57,7 @@ class CalendarServiceTest {
     void unaTareaHechaNoSaleEnElCalendario() {
         Task hecha = tarea(id(10), Task.STATUS_HECHO);
         Task pendiente = tarea(id(11), Task.STATUS_PENDIENTE);
-        when(taskRepository.findByAssignedUserIdUserAndDeletedTaskFalseOrderByStartTaskAscCreatedAtTaskDesc(id(1)))
+        when(taskRepository.findMias(id(1)))
                 .thenReturn(List.of(hecha, pendiente));
         when(ticketRepository.findEnCursoParaCalendario(anyBoolean(), any(), any())).thenReturn(List.of());
 
@@ -69,7 +69,7 @@ class CalendarServiceTest {
 
     @Test
     void losTicketsSalenDeLaConsultaDeEnCursoYLosPlazosSePidenDeUnaVez() {
-        when(taskRepository.findByAssignedUserIdUserAndDeletedTaskFalseOrderByStartTaskAscCreatedAtTaskDesc(id(1)))
+        when(taskRepository.findMias(id(1)))
                 .thenReturn(List.of());
         Ticket ticket = new Ticket();
         ticket.setIdTicket(id(20));

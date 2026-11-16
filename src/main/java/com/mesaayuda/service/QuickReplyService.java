@@ -87,7 +87,7 @@ public class QuickReplyService {
 
     private static boolean esAdmin(User u) {
         String rol = u.getRolUser() == null ? "" : u.getRolUser().getNameRole();
-        return "ADMIN".equals(rol) || "SUPER_ADMIN".equals(rol);
+        return "AREA_MANAGER".equals(rol) || "SUPER_ADMIN".equals(rol);
     }
 
     private QuickReplyResponse respuesta(QuickReply q, User actual) {

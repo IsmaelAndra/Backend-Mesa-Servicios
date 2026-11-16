@@ -350,19 +350,19 @@ class ReportSqlPolicyTest {
     }
 
     @Test
-    @DisplayName("se puede consultar la sede: es una dimension de los reportes")
+    @DisplayName("se puede consultar la sucursal: es una dimension de los reportes")
     void sedeEsTablaPermitida() {
         assertThat(policy.tablasPermitidas()).contains("sucursal");
     }
 
     @Test
-    @DisplayName("un reporte que une ticket con sede se acepta")
+    @DisplayName("un reporte que une ticket con sucursal se acepta")
     void aceptaJoinConSucursal() {
         // Sin este caso, cualquier reporte que quiera desglosar por oficina
         // fallaria al generarse con "La tabla 'sucursal' no esta autorizada".
         assertThat(policy.tablasPermitidas()).contains("sucursal");
 
-        policy.validar("SELECT t.id_ticket AS \"Ticket\", sc.name_sucursal AS \"Sede\" "
+        policy.validar("SELECT t.id_ticket AS \"Ticket\", sc.name_sucursal AS \"Sucursal\" "
                 + "FROM ticket t LEFT JOIN sucursal sc ON sc.id_sucursal = t.sucursal_id "
                 + "WHERE (:sucursalId IS NULL OR t.sucursal_id = :sucursalId) "
                 + "ORDER BY 1 DESC");
@@ -379,7 +379,7 @@ class ReportSqlPolicyTest {
     }
 
     @Test
-    @DisplayName("otro parametro de sede inventado sigue rechazado")
+    @DisplayName("otro parametro de sucursal inventado sigue rechazado")
     void parametrosDeSedeInventadosSeRechazan() {
         // La lista de parametros es cerrada: no se puede pedir un valor que el
         // backend nunca envia.

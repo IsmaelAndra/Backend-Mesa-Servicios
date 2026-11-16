@@ -163,9 +163,20 @@ public class EvaluationService {
     }
 
     public List<MonthlyEvaluationResponse> generateAllForMonth(LocalDate month) {
+        return generateAllForMonth(month, null);
+    }
+
+    /**
+     * Genera las evaluaciones del mes de los agentes de esas áreas (null = de
+     * todos, el súper admin o la tarea programada). El jefe genera las de su equipo.
+     */
+    public List<MonthlyEvaluationResponse> generateAllForMonth(LocalDate month, java.util.Set<UUID> areas) {
         List<MonthlyEvaluation> generadas = userService.findAgentEmails().stream().map(email -> {
             try {
                 User agent = userRepo.findByCorporateEmailUser(email).orElseThrow();
+                if (areas != null && (agent.getArea() == null || !areas.contains(agent.getArea().getIdArea()))) {
+                    return null;
+                }
                 MonthlyEvaluation ev = generateForAgent(agent.getIdUser(), month);
                 if ("PENDING".equals(ev.getStatus())) {
                     notificationService.notifyMonthlyEvaluation(agent, ev);
@@ -203,11 +214,33 @@ public class EvaluationService {
     public List<MonthlyEvaluationResponse> findByMonth(LocalDate month) {
         String rol = usuarioActual().getRolUser() == null
                 ? null : usuarioActual().getRolUser().getNameRole();
-        if (!"ADMIN".equals(rol) && !"SUPER_ADMIN".equals(rol)) {
+        if (!com.mesaayuda.security.Roles.veTodo(rol)) {
             log.warn("Intento de leer las evaluaciones de {} sin ser administrador.", month);
-            throw new AccessDeniedException("Solo un administrador puede ver las evaluaciones de todos los agentes");
+            throw new AccessDeniedException("Solo el súper administrador o el auditor pueden ver las evaluaciones de todos los agentes");
         }
         return listarPorMes(month);
+    }
+
+    /** Evaluaciones del mes; con áreas (jefe), solo las de agentes de esas áreas. */
+    public List<MonthlyEvaluationResponse> findByMonthEnAreas(LocalDate month, java.util.Set<UUID> areas) {
+        if (areas == null) {
+            return findByMonth(month);
+        }
+        List<MonthlyEvaluation> evals = evaluationRepository.findByEvaluationMonthOrderBySatisfactionScoreDesc(month)
+                .stream()
+                .filter(ev -> ev.getAgent() != null && ev.getAgent().getArea() != null
+                        && areas.contains(ev.getAgent().getArea().getIdArea()))
+                .toList();
+        Map<UUID, String> estados = estadosDe(evals);
+        return evals.stream().map(ev -> toResponse(ev, estados.get(ev.getAgent().getIdUser()))).toList();
+    }
+
+    /** Área del agente evaluado (para que el jefe solo revise las de su área). */
+    public UUID areaDelAgenteEvaluado(UUID evaluationId) {
+        return evaluationRepository.findById(evaluationId)
+                .map(ev -> ev.getAgent() == null || ev.getAgent().getArea() == null ? null
+                        : ev.getAgent().getArea().getIdArea())
+                .orElse(null);
     }
 
     private List<MonthlyEvaluationResponse> listarPorMes(LocalDate month) {

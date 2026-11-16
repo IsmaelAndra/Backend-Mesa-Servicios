@@ -99,8 +99,21 @@ class TicketAuthorizationTest {
         lenient().when(t.getDeletedTicket()).thenReturn(false);
         lenient().when(t.getUserTicket()).thenReturn(usuario(DUENA));
         lenient().when(t.getAgentTicket()).thenReturn(usuario(AGENTE_ASIGNADO));
+        // Lo atiende Tecnología (área 50).
+        com.mesaayuda.entity.Area atiende = new com.mesaayuda.entity.Area();
+        atiende.setIdArea(id(50));
+        lenient().when(t.getAreaDestinoTicket()).thenReturn(atiende);
         when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(t));
         return t;
+    }
+
+    /** Agente de un área concreta (mesa multi-área). */
+    private void agenteDelArea(UUID id, UUID areaId) {
+        User agente = usuarioConRol(id, "AGENT");
+        com.mesaayuda.entity.Area area = new com.mesaayuda.entity.Area();
+        area.setIdArea(areaId);
+        agente.setArea(area);
+        when(userService.getCurrentUser()).thenReturn(agente);
     }
 
     private static User usuario(UUID id) {
@@ -150,16 +163,25 @@ class TicketAuthorizationTest {
         }
 
         @Test
-        @DisplayName("un agente SIN asignar sí puede abrirlo: necesita ver la cola para asignarla")
+        @DisplayName("un agente del área que lo atiende, SIN asignar, sí puede abrirlo: ve la cola de su área")
         void agenteSinAsignarPuedeAbrir() {
             ticketDeTerceros();
-            actuarioComo(id(99), "AGENT");
+            agenteDelArea(id(99), id(50));
             TicketResponse r = new TicketResponse(
                     TICKET_ID, DUENA, "t", "d", "s", "S", null, "ACTIVE", null, null, null,
                     null, null, null, null, null, null, null, 0, null, null, null, null);
             when(ticketMapper.toResponse(any(Ticket.class))).thenReturn(r);
 
             assertDoesNotThrow(() -> ticketService.findById(TICKET_ID));
+        }
+
+        @Test
+        @DisplayName("un agente de otra área no puede abrirlo")
+        void agenteDeOtraAreaNoPuedeAbrir() {
+            ticketDeTerceros();
+            agenteDelArea(id(99), id(51));
+            assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                    () -> ticketService.findById(TICKET_ID));
         }
 
         @Test

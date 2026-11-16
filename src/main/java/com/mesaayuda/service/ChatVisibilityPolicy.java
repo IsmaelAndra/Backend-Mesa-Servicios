@@ -56,8 +56,8 @@ public class ChatVisibilityPolicy {
     public static final List<Opcion> OPCIONES = List.of(
             new Opcion(TODOS, "Todos los usuarios con acceso al ticket"),
             new Opcion(TODOS_EXCEPTO_USUARIOS, "Todo el personal, sin usuarios finales"),
-            new Opcion(PERSONAL, "Solo el personal (super admin, admin y agentes)"),
-            new Opcion(ADMIN, "Solo administradores (super admin y admin)"),
+            new Opcion(PERSONAL, "Solo el personal (súper admin, jefes de área y agentes)"),
+            new Opcion(ADMIN, "Solo súper admin y jefes de área"),
             new Opcion(SUPER_ADMIN, "Solo el super administrador"),
             new Opcion(AGENTES, "Solo los agentes"));
 
@@ -135,9 +135,11 @@ public class ChatVisibilityPolicy {
         }
         return switch (config().getReadVisibleTo()) {
             case TODOS -> true;
-            case TODOS_EXCEPTO_USUARIOS, PERSONAL ->
-                    "ADMIN".equals(rol) || "AGENT".equals(rol);
-            case ADMIN -> "ADMIN".equals(rol);
+            // El valor guardado "ADMIN" se conserva; desde que no existe ese rol
+            // significa "súper admin y jefes de área".
+            case TODOS_EXCEPTO_USUARIOS -> "AREA_MANAGER".equals(rol) || "AGENT".equals(rol) || "AUDITOR".equals(rol);
+            case PERSONAL -> "AREA_MANAGER".equals(rol) || "AGENT".equals(rol);
+            case ADMIN -> "AREA_MANAGER".equals(rol);
             case AGENTES -> "AGENT".equals(rol);
             default -> false;
         };

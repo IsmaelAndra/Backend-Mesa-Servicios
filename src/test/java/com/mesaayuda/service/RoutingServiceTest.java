@@ -103,7 +103,7 @@ class RoutingServiceTest {
     void filtraMiembrosNoElegibles() {
         SupportTeam team = team("ROUND_ROBIN");
         User admin = agent(id(9), "admin");
-        admin.getRolUser().setNameRole("ADMIN");
+        admin.getRolUser().setNameRole("AREA_MANAGER");
         User inactivo = agent(id(8), "inactivo");
         inactivo.setStatusUser("INACTIVE");
         User eliminado = agent(id(7), "eliminado");
@@ -165,6 +165,33 @@ class RoutingServiceTest {
         ArgumentCaptor<TeamUser> nuevo = ArgumentCaptor.forClass(TeamUser.class);
         verify(teamUserRepository, times(1)).save(nuevo.capture());
         assertEquals(id(3), nuevo.getValue().getUser().getIdUser(), "solo entra el agente que no tenía fila");
+    }
+
+    @Test
+    @DisplayName("Un equipo con todos los agentes solo incluye a los agentes de su área")
+    void equipoConTodosLosAgentesSoloDeSuArea() {
+        com.mesaayuda.repository.UserRepository userRepository = mock(com.mesaayuda.repository.UserRepository.class);
+        ReflectionTestUtils.setField(routingService, "userRepository", userRepository);
+        com.mesaayuda.entity.Area tecnologia = new com.mesaayuda.entity.Area();
+        tecnologia.setIdArea(id(50));
+        com.mesaayuda.entity.Area talento = new com.mesaayuda.entity.Area();
+        talento.setIdArea(id(51));
+        SupportTeam team = team("ROUND_ROBIN");
+        team.setAutoMembersTeam(true);
+        team.setAreaTeam(tecnologia);
+
+        User deTec = agent(id(1), "tec");
+        deTec.setArea(tecnologia);
+        User deTalento = agent(id(2), "tthh");
+        deTalento.setArea(talento);
+        when(teamUserRepository.findByTeamIdTeam(id(1))).thenReturn(List.of());
+        when(userRepository.findByRoleName("AGENT")).thenReturn(List.of(deTec, deTalento));
+
+        routingService.sincronizarAgentes(team);
+
+        ArgumentCaptor<TeamUser> nuevo = ArgumentCaptor.forClass(TeamUser.class);
+        verify(teamUserRepository, times(1)).save(nuevo.capture());
+        assertEquals(id(1), nuevo.getValue().getUser().getIdUser(), "solo entra el agente de Tecnología");
     }
 
     // ============================ helpers ============================

@@ -23,7 +23,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/assets")
-@PreAuthorize("hasAnyRole('USER','AGENT','ADMIN','SUPER_ADMIN','AREA_MANAGER')")
+@PreAuthorize("hasAnyRole('USER','AGENT','SUPER_ADMIN','AREA_MANAGER','AUDITOR')")
 @Tag(name = "Activos", description = "Gestión de activos de TI (laptops, monitores, etc.)")
 public class AssetController {
 
@@ -44,7 +44,7 @@ public class AssetController {
 
     @GetMapping("/asignables")
     @Operation(summary = "Personas a las que el usuario puede asignar activos (todas o las de su área)")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','AREA_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','AREA_MANAGER','AGENT')")
     public ResponseEntity<List<AssetAssignableUserResponse>> asignables() {
         return ResponseEntity.ok(assetService.asignables());
     }
@@ -57,14 +57,14 @@ public class AssetController {
 
     @PostMapping
     @Operation(summary = "Crear nuevo activo (ADMIN/SUPER_ADMIN/AREA_MANAGER)")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','AREA_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','AREA_MANAGER','AGENT')")
     public ResponseEntity<AssetResponse> create(@Valid @RequestBody AssetRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(assetService.create(request));
     }
 
     @PutMapping("/{id}")
     @Operation(summary = "Actualizar activo (ADMIN/SUPER_ADMIN/AREA_MANAGER)")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','AREA_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','AREA_MANAGER','AGENT')")
     public ResponseEntity<AssetResponse> update(@PathVariable UUID id,
                                                 @Valid @RequestBody AssetRequest request) {
         return ResponseEntity.ok(assetService.update(id, request));
@@ -72,7 +72,7 @@ public class AssetController {
 
     @PatchMapping("/{id}/status")
     @Operation(summary = "Cambiar estado del activo (DISPONIBLE/ASIGNADO/EN_REPARACION/BAJA)")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','AREA_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','AREA_MANAGER','AGENT')")
     public ResponseEntity<AssetResponse> changeStatus(@PathVariable UUID id,
                                                       @RequestBody StatusChangeRequest request) {
         return ResponseEntity.ok(assetService.changeStatus(id, request.statusName()));
@@ -80,7 +80,7 @@ public class AssetController {
 
     @PostMapping("/{id}/assign")
     @Operation(summary = "Asignar activo a un usuario (ADMIN/SUPER_ADMIN/AREA_MANAGER)")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','AREA_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','AREA_MANAGER','AGENT')")
     public ResponseEntity<AssetResponse> assign(@PathVariable UUID id,
                                                 @RequestParam UUID userId,
                                                 @RequestParam(required = false) String notes) {
@@ -89,7 +89,7 @@ public class AssetController {
 
     @PostMapping("/{id}/unassign")
     @Operation(summary = "Desasignar activo (ADMIN/SUPER_ADMIN/AREA_MANAGER)")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','AREA_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','AREA_MANAGER','AGENT')")
     public ResponseEntity<AssetResponse> unassign(@PathVariable UUID id,
                                                   @RequestParam(required = false) String notes) {
         return ResponseEntity.ok(assetService.unassign(id, notes));
@@ -109,21 +109,21 @@ public class AssetController {
 
     @GetMapping("/area/{areaId}")
     @Operation(summary = "Obtener activos de un área (ADMIN/SUPER_ADMIN/AREA_MANAGER)")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','AREA_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','AREA_MANAGER','AGENT')")
     public ResponseEntity<List<AssetResponse>> findByArea(@PathVariable UUID areaId) {
         return ResponseEntity.ok(assetService.findByArea(areaId));
     }
 
     @GetMapping("/sucursal/{sucursalId}")
     @Operation(summary = "Obtener activos de una sucursal (ADMIN/SUPER_ADMIN)")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','AREA_MANAGER','AGENT','AUDITOR')")
     public ResponseEntity<List<AssetResponse>> findBySucursal(@PathVariable UUID sucursalId) {
         return ResponseEntity.ok(assetService.findBySucursal(sucursalId));
     }
 
     @DeleteMapping("/{id}")
     @Operation(summary = "Eliminar (baja lógica) activo (ADMIN/SUPER_ADMIN)")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         assetService.delete(id);
         return ResponseEntity.noContent().build();

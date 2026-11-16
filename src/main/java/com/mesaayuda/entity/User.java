@@ -37,6 +37,10 @@ public class User {
     @Column(name = "phone_user", length = 30)
     private String phoneUser;
 
+    /** Cargo; sale en las actas de activos (V36). */
+    @Column(name = "cargo_user", length = 150)
+    private String cargoUser;
+
     @Column(name = "status_user", nullable = false, length = 30)
     private String statusUser = "ACTIVE";
 
@@ -49,8 +53,8 @@ public class User {
     private Area area;
 
     /**
-     * Sede fisica donde trabaja la persona. Opcional a proposito: las cuentas
-     * antigas y las que se dan de alta sin sede siguen siendo validas.
+     * Sucursal fisica donde trabaja la persona. Opcional a proposito: las cuentas
+     * antigas y las que se dan de alta sin sucursal siguen siendo validas.
      */
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "sucursal_id")

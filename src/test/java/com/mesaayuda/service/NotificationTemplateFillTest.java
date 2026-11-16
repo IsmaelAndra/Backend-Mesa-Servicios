@@ -252,9 +252,9 @@ Mockito.when(brandingRepo.findTopByOrderByIdBrandingAsc())
         assertEquals("https://mesa.coacmagisterio.fin.ec", vars.get("soporte"));
         assertEquals("https://mesa.coacmagisterio.fin.ec/tickets/" + id(42), vars.get("urlTicket"));
         assertEquals("https://mesa.coacmagisterio.fin.ec/tickets/" + id(42) + "?calificar=1", vars.get("urlCalificar"));
-        assertEquals("https://mesa.coacmagisterio.fin.ec/auth/login", vars.get("urlLogin"));
-        assertEquals("https://mesa.coacmagisterio.fin.ec/tickets/new", vars.get("urlNuevoTicket"));
-        assertEquals("https://mesa.coacmagisterio.fin.ec/admin/sla-config", vars.get("urlSlaConfig"));
+        assertEquals("https://mesa.coacmagisterio.fin.ec/acceso/ingresar", vars.get("urlLogin"));
+        assertEquals("https://mesa.coacmagisterio.fin.ec/tickets/nuevo", vars.get("urlNuevoTicket"));
+        assertEquals("https://mesa.coacmagisterio.fin.ec/administracion/evaluaciones", vars.get("urlSlaConfig"));
     }
 
     /** Un evento sin ticket (evaluación mensual) no debe inventar un enlace. */
@@ -265,7 +265,7 @@ Mockito.when(brandingRepo.findTopByOrderByIdBrandingAsc())
 
         assertEquals("", vars.get("urlTicket"));
         assertEquals("", vars.get("urlCalificar"));
-        assertEquals("https://mesa.coacmagisterio.fin.ec/dashboard", vars.get("urlDashboard"));
+        assertEquals("https://mesa.coacmagisterio.fin.ec/inicio", vars.get("urlDashboard"));
     }
 
     /** notifySimple() pasa id 0 cuando no hay ticket; tampoco debe enlazar. */
@@ -332,7 +332,7 @@ Mockito.when(brandingRepo.findTopByOrderByIdBrandingAsc())
 
         String salida = fill("href=\"[urlTicket]\" y \"[urlDashboard]\"", Map.of());
 
-        assertEquals("href=\"\" y \"https://mesa.coacmagisterio.fin.ec/dashboard\"", salida);
+        assertEquals("href=\"\" y \"https://mesa.coacmagisterio.fin.ec/inicio\"", salida);
     }
 
     /**
@@ -529,5 +529,14 @@ Mockito.when(brandingRepo.findTopByOrderByIdBrandingAsc())
         assertEquals("jzamora", com.mesaayuda.service.NombreVisible.de(soloCorreo));
 
         assertEquals("", com.mesaayuda.service.NombreVisible.de(null));
+    }
+
+    /** El [mensaje] de los avisos ya viene escapado: se inserta como HTML, no como texto. */
+    @Test
+    void elMensajeYaEscapadoNoSeVuelveAEscapar() throws Exception {
+        String salida = fill("<div>[mensaje]</div> [titulo]", Map.of(
+                "mensaje", new NotificationService.HtmlSeguro("<p><b>Ana</b> le añadió</p>"),
+                "titulo", "<b>x</b>"));
+        assertEquals("<div><p><b>Ana</b> le añadió</p></div> &lt;b&gt;x&lt;/b&gt;", salida);
     }
 }

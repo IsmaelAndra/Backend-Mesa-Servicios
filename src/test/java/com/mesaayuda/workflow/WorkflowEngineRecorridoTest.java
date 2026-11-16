@@ -72,7 +72,7 @@ class WorkflowEngineRecorridoTest {
         workflow.setIdWorkflow(id(10));
         workflow.setNameWorkflow("Prueba");
         workflow.setStatusWorkflow(Workflow.ESTADO_ACTIVO);
-        workflow.setAuthorityScope("ADMIN");
+        workflow.setAuthorityScope("AREA_MANAGER");
         workflow.setCreatedByWorkflow(id(1));
 
         version = new WorkflowVersion();

@@ -27,6 +27,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -89,7 +90,17 @@ class TicketResourceAuthorizationTest {
         t.setUserTicket(usuario(DUENA, "USER"));
         t.setAgentTicket(usuario(AGENTE, "AGENT"));
         t.setAreaTicket(area);
+        // Lo atiende la misma área (1).
+        t.setAreaDestinoTicket(area);
         return t;
+    }
+
+    private static User agenteDelArea(UUID id, UUID areaId) {
+        User u = usuario(id, "AGENT");
+        Area a = new Area();
+        a.setIdArea(areaId);
+        u.setArea(a);
+        return u;
     }
 
 private void como(User u) {
@@ -149,22 +160,22 @@ private void como(User u) {
     @DisplayName("un administrador puede leer la calificación")
     void administradorLeeLaCalificacion() {
         hayTicket();
-        como(usuario(id(99), "ADMIN"));
+        como(usuario(id(99), "SUPER_ADMIN"));
         when(ratingRepository.findByTicketIdTicket(TICKET)).thenReturn(Optional.of(calificacion()));
 
         assertDoesNotThrow(() -> ratingService.getByTicket(TICKET));
     }
 
     @Test
-    @DisplayName("con permiso pero sin calificación sale 404, no un error raro")
+    @DisplayName("con permiso pero sin calificación responde vacío (204), no un error")
     void sinCalificacionResponde404() {
         // El permiso se concede y despues se avisa de que no hay nada: es
         // distinto de negarlo, y el orden importa para no filtrar existencia.
         hayTicket();
-        como(usuario(id(99), "ADMIN"));
+        como(usuario(id(99), "SUPER_ADMIN"));
         when(ratingRepository.findByTicketIdTicket(TICKET)).thenReturn(Optional.empty());
 
-        assertThrows(ResourceNotFoundException.class, () -> ratingService.getByTicket(TICKET));
+        assertNull(ratingService.getByTicket(TICKET));
     }
 
     @Test
@@ -206,16 +217,24 @@ private void como(User u) {
     }
 
     @Test
-    @DisplayName("cualquier agente del personal ve el historial, aunque no lleve el ticket")
+    @DisplayName("un agente del área que lo atiende ve el historial, aunque no lleve el ticket")
     void agenteDelPersonalLeeLaAuditoria() {
-        // Deliberado: el personal ve la cola completa porque sin eso el kanban no
-        // funciona, tiene que poder abrir un ticket sin asignar. Lo que se
-        // restringe es el rol USER, no el personal.
+        // El agente ve la cola de su área: sin eso el kanban no funciona, tiene
+        // que poder abrir un ticket sin asignar. Uno de otra área ya no (V28).
         hayTicket();
-        como(usuario(id(77), "AGENT"));
+        como(agenteDelArea(id(77), id(1)));
         when(auditRepository.findByTicketIdTicketOrderByCreatedAtAuditDesc(TICKET)).thenReturn(List.of());
 
         assertDoesNotThrow(() -> auditService.findByTicket(TICKET));
+    }
+
+    @Test
+    @DisplayName("un agente de otra área no ve el historial")
+    void agenteDeOtraAreaNoLeeLaAuditoria() {
+        hayTicket();
+        como(agenteDelArea(id(78), id(2)));
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> auditService.findByTicket(TICKET));
     }
 
     @Test
@@ -238,7 +257,7 @@ private void como(User u) {
         Ticket borrado = ticketAjeno();
         borrado.setDeletedTicket(true);
         when(ticketRepository.findById(TICKET)).thenReturn(Optional.of(borrado));
-        como(usuario(id(99), "ADMIN"));
+        como(usuario(id(99), "SUPER_ADMIN"));
 
         assertThrows(ResourceNotFoundException.class, () -> auditService.findByTicket(TICKET));
         verify(auditRepository, never()).findByTicketIdTicketOrderByCreatedAtAuditDesc(TICKET);

@@ -58,7 +58,7 @@ class DashboardServiceIndicadoresTest {
         ReflectionTestUtils.setField(service, "ticketRepository", tickets);
         ReflectionTestUtils.setField(service, "ticketSlaRepository", slas);
         ReflectionTestUtils.setField(service, "ticketRatingRepository", calificaciones);
-        usuario("ADMIN");
+        usuario("SUPER_ADMIN");
     }
 
     @Test

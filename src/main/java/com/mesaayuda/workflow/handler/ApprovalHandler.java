@@ -35,7 +35,7 @@ public class ApprovalHandler implements WorkflowNodeHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApprovalHandler.class);
 
-    private static final Set<String> ROLES_CONOCIDOS = Set.of("SUPER_ADMIN", "ADMIN", "AGENT", "USER");
+    private static final Set<String> ROLES_CONOCIDOS = Set.of("SUPER_ADMIN", "AREA_MANAGER", "AGENT", "USER");
 
     /** El único rol que decide aprobaciones. */
     public static final String ROL_APROBADOR = "SUPER_ADMIN";
@@ -142,8 +142,9 @@ public class ApprovalHandler implements WorkflowNodeHandler {
                 ? java.util.List.of(aprobador) : userRepository.findByRoleName(rol);
         for (com.mesaayuda.entity.User u : destinatarios) {
             try {
-                notificationService.sendNotification(null, u, TIPO_NOTIFICACION,
-                        "Aprobación pendiente", solicitud + " Revísela en la bandeja de aprobaciones.");
+                notificationService.notifyConPlantilla(null, u, TIPO_NOTIFICACION, "Aprobación pendiente",
+                        "<p>" + org.springframework.web.util.HtmlUtils.htmlEscape(solicitud)
+                                + " Revísela en la bandeja de aprobaciones.</p>", "aprobaciones");
             } catch (RuntimeException e) {
                 log.warn("No se pudo avisar de la aprobación a {}: {}", u.getCorporateEmailUser(), e.getMessage());
             }
@@ -174,7 +175,7 @@ public class ApprovalHandler implements WorkflowNodeHandler {
         String normalizado = rol == null ? "" : rol.trim().toUpperCase(Locale.ROOT);
         return switch (normalizado) {
             case "SUPER_ADMIN" -> 4;
-            case "ADMIN" -> 3;
+            case "AREA_MANAGER" -> 3;
             case "AGENT" -> 2;
             case "USER" -> 1;
             default -> 0;

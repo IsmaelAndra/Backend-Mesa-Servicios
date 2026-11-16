@@ -15,6 +15,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -53,7 +54,9 @@ public class TaskService {
         task.setCreatedBy(creator);
         task.setStartTask(request.start());
         task.setDueTask(request.due());
+        exigirFechasEnOrden(task);
         task.setDurationMinutes(request.durationMinutes());
+        task.setRecordatorioMinutos(recordatorioValido(request.recordatorioMinutos()));
         if (request.color() != null && !request.color().isBlank()) {
             task.setColorTask(request.color());
         }
@@ -67,14 +70,8 @@ public class TaskService {
     @Transactional(readOnly = true)
     public List<TaskResponse> findAll(String status) {
         User current = userService.getCurrentUser();
-        List<Task> tasks;
-        if (current.getRolUser().getNameRole().equals("AGENT")) {
-            tasks = taskRepository
-                    .findByAssignedUserIdUserAndDeletedTaskFalseOrderByStartTaskAscCreatedAtTaskDesc(
-                            current.getIdUser());
-        } else {
-            tasks = taskRepository.findByDeletedTaskFalseOrderByStartTaskAscCreatedAtTaskDesc();
-        }
+        // Personales para todos los roles, también el súper admin: las suyas y las que encargó.
+        List<Task> tasks = taskRepository.findMias(current.getIdUser());
         if (status != null && !status.isBlank()) {
             tasks = tasks.stream()
                     .filter(t -> t.getStatusTask().equalsIgnoreCase(status))
@@ -101,7 +98,16 @@ public class TaskService {
         }
         task.setAssignedUser(assigned);
         task.setStartTask(request.start() == null ? task.getStartTask() : request.start());
+        OffsetDateTime plazoAnterior = task.getDueTask();
+        Integer avisoAnterior = task.getRecordatorioMinutos();
         task.setDueTask(request.due() == null ? task.getDueTask() : request.due());
+        exigirFechasEnOrden(task);
+        task.setRecordatorioMinutos(recordatorioValido(request.recordatorioMinutos()));
+        // Cambió el plazo o el aviso: el recordatorio vuelve a quedar pendiente.
+        if (!java.util.Objects.equals(plazoAnterior, task.getDueTask())
+                || !java.util.Objects.equals(avisoAnterior, task.getRecordatorioMinutos())) {
+            task.setRecordatorioEnviado(null);
+        }
         task.setDurationMinutes(request.durationMinutes() == null ? task.getDurationMinutes() : request.durationMinutes());
         if (request.color() != null && !request.color().isBlank()) {
             task.setColorTask(request.color());
@@ -128,9 +134,9 @@ public class TaskService {
         Task task = taskRepository.findById(id)
                 .filter(t -> !t.getDeletedTask())
                 .orElseThrow(() -> new ResourceNotFoundException("Tarea", "id", id));
-        boolean isAdmin = current.getRolUser().getNameRole().equals("ADMIN")
-                || current.getRolUser().getNameRole().equals("SUPER_ADMIN");
-        if (!isAdmin && !task.getAssignedUser().getIdUser().equals(current.getIdUser())) {
+        // Quien la tiene asignada o quien la encargó; nadie más, ni el súper admin.
+        boolean creador = task.getCreatedBy() != null && task.getCreatedBy().getIdUser().equals(current.getIdUser());
+        if (!creador && !task.getAssignedUser().getIdUser().equals(current.getIdUser())) {
             throw new AccessDeniedException("No tiene permisos sobre esta tarea");
         }
         return task;
@@ -159,6 +165,42 @@ public class TaskService {
                 task.getDurationMinutes(),
                 task.getColorTask(),
                 task.getCreatedAtTask(),
-                task.getUpdatedAtTask());
+                task.getUpdatedAtTask(),
+                task.getRecordatorioMinutos());
+    }
+
+    /** Entre 5 minutos y 7 días antes; cualquier otro valor = sin aviso. */
+    private static Integer recordatorioValido(Integer minutos) {
+        return minutos == null || minutos < 5 || minutos > 7 * 24 * 60 ? null : minutos;
+    }
+
+    /**
+     * Avisa (campana + correo) a quien tiene cada actividad cuyo plazo está a
+     * menos de su "recordatorioMinutos". Lo llama RecordatorioActividadesScheduler.
+     * Lo terminado no se avisa; cada actividad se avisa una sola vez por plazo.
+     */
+    public int enviarRecordatoriosPendientes(OffsetDateTime ahora) {
+        int enviados = 0;
+        for (Task t : taskRepository.conRecordatorioPendiente(ahora.plusDays(7))) {
+            if (Task.STATUS_HECHO.equals(t.getStatusTask()) || t.getDueTask() == null
+                    || t.getRecordatorioMinutos() == null) {
+                continue;
+            }
+            if (ahora.isBefore(t.getDueTask().minusMinutes(t.getRecordatorioMinutos()))) {
+                continue;
+            }
+            notificationService.notifyTaskReminder(t);
+            t.setRecordatorioEnviado(ahora);
+            taskRepository.save(t);
+            enviados++;
+        }
+        return enviados;
+    }
+
+    /** El fin no puede ir antes del inicio (antes se aceptaba). */
+    private static void exigirFechasEnOrden(Task t) {
+        if (t.getStartTask() != null && t.getDueTask() != null && t.getDueTask().isBefore(t.getStartTask())) {
+            throw new com.mesaayuda.exception.BadRequestException("La fecha de fin no puede ser anterior a la de inicio");
+        }
     }
 }

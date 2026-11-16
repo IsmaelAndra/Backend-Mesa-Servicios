@@ -118,6 +118,9 @@ public class GlobalExceptionHandler {
             // tiene que seguir recibiendo el 403 que le corresponde.
             log.debug("No se pudo registrar el acceso denegado: {}", e.getMessage());
         }
+        if (ex instanceof TicketConfidencialException) {
+            return build(HttpStatus.FORBIDDEN, TicketConfidencialException.MENSAJE, null, request);
+        }
         return build(HttpStatus.FORBIDDEN, "No tiene permisos para realizar esta acción", null, request);
     }
 

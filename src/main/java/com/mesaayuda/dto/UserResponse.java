@@ -24,7 +24,9 @@ public record UserResponse(
         OffsetDateTime lastSync,
         OffsetDateTime createdAtUser,
         /** Extensión telefónica (V13); null si no tiene. */
-        String extensionUser
+        String extensionUser,
+        /** Cargo (V36), para las actas de activos. */
+        String cargoUser
 ) {
 
     /**
@@ -37,6 +39,6 @@ public record UserResponse(
         }
         return new UserResponse(idUser, identificationUser, corporateEmailUser, phoneUser,
                 statusUser, sessionState, role, area, sucursalId, sucursal, photoUrl, displayName, firstName, lastName,
-                userPrincipalName, microsoftActive, microsoftSynced, lastSync, createdAtUser, extensionUser);
+                userPrincipalName, microsoftActive, microsoftSynced, lastSync, createdAtUser, extensionUser, cargoUser);
     }
 }

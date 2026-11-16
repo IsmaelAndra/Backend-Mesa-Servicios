@@ -75,7 +75,7 @@ public class AdminController {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || auth.getAuthorities() == null) return false;
         return auth.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_SUPER_ADMIN"));
+                .anyMatch(a -> a.getAuthority().equals("ROLE_SUPER_ADMIN"));
     }
 
     private void checkAdminOrSuperAdmin() {
@@ -91,9 +91,42 @@ public class AdminController {
                 .anyMatch(a -> a.getAuthority().equals("ROLE_SUPER_ADMIN"));
     }
 
+    @Autowired
+    private com.mesaayuda.service.JefaturaService jefaturaService;
+
+    /**
+     * Áreas sobre las que actúa quien llama: null = todas (súper admin); si es
+     * jefe, las que tiene a cargo. Cualquier otro rol, 403. Lo usan equipos,
+     * categorías, reglas SLA y evaluaciones, que el jefe gestiona de su área.
+     */
+    private java.util.Set<UUID> ambitoDeAreas() {
+        if (isSuperAdmin()) {
+            return null;
+        }
+        com.mesaayuda.entity.User u = userService.getCurrentUser();
+        if (u.getRolUser() != null && com.mesaayuda.security.Roles.esJefe(u.getRolUser().getNameRole())) {
+            return jefaturaService.areasACargo(u);
+        }
+        throw new org.springframework.security.access.AccessDeniedException("Se requiere rol SUPER_ADMIN o jefe de área");
+    }
+
+    private static boolean enAmbito(java.util.Set<UUID> ambito, Object areaId) {
+        return ambito == null || (areaId != null && ambito.contains(areaId));
+    }
+
     private void checkSuperAdmin() {
         if (!isSuperAdmin()) {
             throw new org.springframework.security.access.AccessDeniedException("Se requiere rol SUPER_ADMIN");
+        }
+    }
+
+    /** Lectura de la auditoría: súper admin y auditor. */
+    private void checkSuperAdminOAuditor() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean puede = auth != null && auth.getAuthorities() != null && auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_SUPER_ADMIN") || a.getAuthority().equals("ROLE_AUDITOR"));
+        if (!puede) {
+            throw new org.springframework.security.access.AccessDeniedException("Se requiere rol SUPER_ADMIN o AUDITOR");
         }
     }
 
@@ -114,6 +147,18 @@ public class AdminController {
         AiConfigResponse saved = adminService.saveAiConfig(request, userId);
         systemAuditService.record("AI_CONFIG", "AiConfig", saved.id());
         return ResponseEntity.ok(saved);
+    }
+
+    @PostMapping("/ai-config/icono")
+    @Operation(summary = "Subir una imagen propia para el botón del asistente (SUPER_ADMIN)")
+    public ResponseEntity<Map<String, String>> uploadIconoAsistente(@RequestParam("file") MultipartFile file,
+                                                                    HttpServletRequest request) {
+        checkSuperAdmin();
+        // Mismas reglas que la marca: firma del archivo, sin SVG, 5 MB. Se guarda
+        // al pulsar "Guardar" de la pantalla, como el resto de la configuración.
+        Map<String, String> result = new java.util.HashMap<>(adminService.guardarImagenPublica(file, "asistente"));
+        result.put("url", toAbsoluteUrl(request, result.get("url")));
+        return ResponseEntity.ok(result);
     }
 
     // ============================ BRANDING ============================
@@ -292,7 +337,7 @@ public class AdminController {
     @Operation(summary = "Obtener catálogos del sistema (áreas, equipos, categorías, SLA)")
     public ResponseEntity<Map<String, Object>> catalog(HttpServletRequest request) {
         // Es público porque el registro necesita las áreas antes de tener sesión.
-        // Sin sesión solo se entregan áreas y sedes: roles, equipos, categorías
+        // Sin sesión solo se entregan áreas y sucursales: roles, equipos, categorías
         // (con sus descripciones) y demás son información interna.
         org.springframework.security.core.Authentication auth =
                 org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
@@ -319,7 +364,7 @@ public class AdminController {
 
     @GetMapping("/areas")
     public ResponseEntity<List<Area>> areas() {
-        checkAdminOrSuperAdmin();
+        ambitoDeAreas();
         return ResponseEntity.ok(adminService.getAreas());
     }
 
@@ -341,24 +386,32 @@ public class AdminController {
                 value(body, "icon"), value(body, "color")));
     }
 
-    @DeleteMapping("/areas/{id}")
-    public ResponseEntity<Void> deleteArea(@PathVariable UUID id) {
+    /** Qué apunta al área (para avisar antes de eliminarla). */
+    @GetMapping("/areas/{id}/uso")
+    public ResponseEntity<AdminService.UsoArea> usoArea(@PathVariable UUID id) {
         checkAdminOrSuperAdmin();
-        adminService.deleteArea(id);
+        return ResponseEntity.ok(adminService.usoDeArea(id));
+    }
+
+    @DeleteMapping("/areas/{id}")
+    public ResponseEntity<Void> deleteArea(@PathVariable UUID id,
+                                           @RequestParam(required = false) UUID reasignarA) {
+        checkAdminOrSuperAdmin();
+        adminService.deleteArea(id, reasignarA);
         return ResponseEntity.noContent().build();
     }
 
     // ============================ SUCURSALES ============================
 
     @GetMapping("/sucursales")
-    @Operation(summary = "Listar las sedes de la institución")
+    @Operation(summary = "Listar las sucursales de la institución")
     public ResponseEntity<List<Sucursal>> sucursales() {
         checkSuperAdmin();
         return ResponseEntity.ok(adminService.getSucursales());
     }
 
     @PostMapping("/sucursales")
-    @Operation(summary = "Crear una sede")
+    @Operation(summary = "Crear una sucursal")
     public ResponseEntity<Sucursal> createSucursal(@RequestBody Map<String, Object> body) {
         checkSuperAdmin();
         return ResponseEntity.status(HttpStatus.CREATED).body(adminService.saveSucursal(
@@ -368,7 +421,7 @@ public class AdminController {
     }
 
     @PutMapping("/sucursales/{id}")
-    @Operation(summary = "Editar una sede")
+    @Operation(summary = "Editar una sucursal")
     public ResponseEntity<Sucursal> updateSucursal(@PathVariable UUID id,
                                                    @RequestBody Map<String, Object> body) {
         checkSuperAdmin();
@@ -379,7 +432,7 @@ public class AdminController {
     }
 
     @DeleteMapping("/sucursales/{id}")
-    @Operation(summary = "Eliminar una sede")
+    @Operation(summary = "Eliminar una sucursal")
     public ResponseEntity<Void> deleteSucursal(@PathVariable UUID id) {
         checkSuperAdmin();
         adminService.deleteSucursal(id);
@@ -390,29 +443,35 @@ public class AdminController {
 
     @GetMapping("/categories")
     public ResponseEntity<List<Map<String, Object>>> categories() {
-        checkAdminOrSuperAdmin();
-        return ResponseEntity.ok(adminService.getCategoriesForAdmin());
+        java.util.Set<UUID> ambito = ambitoDeAreas();
+        return ResponseEntity.ok(adminService.getCategoriesForAdmin().stream()
+                .filter(m -> enAmbito(ambito, m.get("areaId"))).toList());
     }
 
     @PostMapping("/categories")
-    public ResponseEntity<Category> createCategory(@RequestBody Map<String, Object> body) {
-        checkAdminOrSuperAdmin();
-        return ResponseEntity.status(HttpStatus.CREATED).body(adminService.saveCategory(null,
+    public ResponseEntity<Map<String, Object>> createCategory(@RequestBody Map<String, Object> body) {
+        // La categoría es del área de su equipo: el equipo tiene que ser del jefe.
+        adminService.exigirAmbito(ambitoDeAreas(), adminService.areaDeEquipo(toUuid(body.get("teamId"))), "crear categorías");
+        return ResponseEntity.status(HttpStatus.CREATED).body(adminService.guardarCategoria(null,
                 value(body, "name"), value(body, "description"),
-                toUuid(body.get("teamId")), value(body, "icon"), value(body, "color")));
+                toUuid(body.get("teamId")), value(body, "icon"), value(body, "color"), toUuid(body.get("areaId"))));
     }
 
     @PutMapping("/categories/{id}")
-    public ResponseEntity<Category> updateCategory(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
-        checkAdminOrSuperAdmin();
-        return ResponseEntity.ok(adminService.saveCategory(id,
+    public ResponseEntity<Map<String, Object>> updateCategory(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        java.util.Set<UUID> ambito = ambitoDeAreas();
+        adminService.exigirAmbito(ambito, adminService.areaDeCategoria(id), "editar categorías");
+        if (body.get("teamId") != null) {
+            adminService.exigirAmbito(ambito, adminService.areaDeEquipo(toUuid(body.get("teamId"))), "editar categorías");
+        }
+        return ResponseEntity.ok(adminService.guardarCategoria(id,
                 value(body, "name"), value(body, "description"),
-                toUuid(body.get("teamId")), value(body, "icon"), value(body, "color")));
+                toUuid(body.get("teamId")), value(body, "icon"), value(body, "color"), toUuid(body.get("areaId"))));
     }
 
     @DeleteMapping("/categories/{id}")
     public ResponseEntity<Void> deleteCategory(@PathVariable UUID id) {
-        checkAdminOrSuperAdmin();
+        adminService.exigirAmbito(ambitoDeAreas(), adminService.areaDeCategoria(id), "eliminar categorías");
         adminService.deleteCategory(id);
         return ResponseEntity.noContent().build();
     }
@@ -453,46 +512,67 @@ public class AdminController {
 
     @GetMapping("/teams")
     public ResponseEntity<List<SupportTeam>> teams() {
-        checkAdminOrSuperAdmin();
-        return ResponseEntity.ok(adminService.getTeams());
+        java.util.Set<UUID> ambito = ambitoDeAreas();
+        return ResponseEntity.ok(adminService.getTeams().stream()
+                .filter(t -> enAmbito(ambito, t.getAreaId())).toList());
     }
 
     @PostMapping("/teams")
     public ResponseEntity<SupportTeam> createTeam(@RequestBody Map<String, Object> body) {
-        checkAdminOrSuperAdmin();
+        adminService.exigirAmbito(ambitoDeAreas(), toUuid(body.get("areaId")), "crear equipos");
         return ResponseEntity.status(HttpStatus.CREATED).body(adminService.saveTeam(null,
                 value(body, "name"), value(body, "description"),
                 value(body, "method"), toBool(body.get("active")),
-                value(body, "icon"), value(body, "color"), toBool(body.get("autoMembers"))));
+                value(body, "icon"), value(body, "color"), toBool(body.get("autoMembers")), toUuid(body.get("areaId"))));
     }
 
     @PutMapping("/teams/{id}")
     public ResponseEntity<SupportTeam> updateTeam(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
-        checkAdminOrSuperAdmin();
+        java.util.Set<UUID> ambito = ambitoDeAreas();
+        adminService.exigirAmbito(ambito, adminService.areaDeEquipo(id), "editar equipos");
+        if (body.get("areaId") != null) {
+            adminService.exigirAmbito(ambito, toUuid(body.get("areaId")), "editar equipos");
+        }
         return ResponseEntity.ok(adminService.saveTeam(id,
                 value(body, "name"), value(body, "description"),
                 value(body, "method"), toBool(body.get("active")),
-                value(body, "icon"), value(body, "color"), toBool(body.get("autoMembers"))));
+                value(body, "icon"), value(body, "color"), toBool(body.get("autoMembers")), toUuid(body.get("areaId"))));
+    }
+
+    @DeleteMapping("/teams/{id}")
+    public ResponseEntity<Void> deleteTeam(@PathVariable UUID id) {
+        adminService.exigirAmbito(ambitoDeAreas(), adminService.areaDeEquipo(id), "eliminar equipos");
+        adminService.deleteTeam(id);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/teams/{id}/members/{userId}")
     public ResponseEntity<Void> addMember(@PathVariable UUID id, @PathVariable UUID userId) {
-        checkAdminOrSuperAdmin();
+        java.util.Set<UUID> ambito = ambitoDeAreas();
+        adminService.exigirAmbito(ambito, adminService.areaDeEquipo(id), "gestionar miembros");
+        adminService.exigirAmbito(ambito, adminService.areaDeUsuario(userId), "añadir a personas de otra área");
         adminService.addMemberToTeam(id, userId);
         return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/teams/{id}/members/{userId}")
     public ResponseEntity<Void> removeMember(@PathVariable UUID id, @PathVariable UUID userId) {
-        checkAdminOrSuperAdmin();
+        adminService.exigirAmbito(ambitoDeAreas(), adminService.areaDeEquipo(id), "gestionar miembros");
         adminService.removeMemberFromTeam(id, userId);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/teams/{id}/members")
-    public ResponseEntity<List<TeamUser>> teamMembers(@PathVariable UUID id) {
-        checkAdminOrSuperAdmin();
+    public ResponseEntity<List<com.mesaayuda.dto.MiembroEquipoResponse>> teamMembers(@PathVariable UUID id) {
+        adminService.exigirAmbito(ambitoDeAreas(), adminService.areaDeEquipo(id), "ver miembros");
         return ResponseEntity.ok(adminService.teamMembers(id));
+    }
+
+    /** Agentes y jefes del área del equipo que aún no son miembros. */
+    @GetMapping("/teams/{id}/candidatos")
+    public ResponseEntity<List<com.mesaayuda.dto.MiembroEquipoResponse>> candidatosDeEquipo(@PathVariable UUID id) {
+        adminService.exigirAmbito(ambitoDeAreas(), adminService.areaDeEquipo(id), "ver miembros");
+        return ResponseEntity.ok(adminService.candidatosDeEquipo(id));
     }
 
     // ============================ ENRUTAMIENTO (SUPER_ADMIN) ============================
@@ -517,45 +597,58 @@ public class AdminController {
 
     @GetMapping("/sla/policies")
     public ResponseEntity<List<SlaPolicy>> slaPolicies() {
-        checkAdminOrSuperAdmin();
-        return ResponseEntity.ok(adminService.getSlaPolicies());
+        java.util.Set<UUID> ambito = ambitoDeAreas();
+        // El jefe ve solo las de su área; las globales y las de otras áreas
+        // son del súper admin, que ve todas.
+        return ResponseEntity.ok(adminService.getSlaPolicies().stream()
+                .filter(p -> ambito == null || (p.getAreaSlaPolicy() != null && ambito.contains(p.getAreaSlaPolicy())))
+                .toList());
     }
 
     @GetMapping("/sla/rules")
     public ResponseEntity<List<Map<String, Object>>> slaRules() {
-        checkAdminOrSuperAdmin();
-        return ResponseEntity.ok(adminService.getSlaRulesForAdmin());
+        java.util.Set<UUID> ambito = ambitoDeAreas();
+        return ResponseEntity.ok(adminService.getSlaRulesForAdmin().stream()
+                .filter(m -> enAmbito(ambito, m.get("areaId"))).toList());
     }
 
     @PostMapping("/sla/policies")
     public ResponseEntity<SlaPolicy> createPolicy(@RequestBody Map<String, Object> body) {
-        checkAdminOrSuperAdmin();
+        // Global (sin área) solo el súper admin; el jefe, de sus áreas.
+        UUID area = toUuid(body.get("areaId"));
+        adminService.exigirAmbito(ambitoDeAreas(), area, "crear políticas SLA");
         return ResponseEntity.status(HttpStatus.CREATED).body(adminService.saveSlaPolicy(null,
                 value(body, "name"), value(body, "description"),
                 toInt(body.get("responseMinutes")), toInt(body.get("resolutionMinutes")),
-                toBool(body.get("active")), value(body, "icon"), value(body, "color")));
+                toBool(body.get("active")), value(body, "icon"), value(body, "color"), area, true));
     }
 
     @PutMapping("/sla/policies/{id}")
     public ResponseEntity<SlaPolicy> updatePolicy(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
-        checkAdminOrSuperAdmin();
+        java.util.Set<UUID> ambito = ambitoDeAreas();
+        adminService.exigirAmbito(ambito, adminService.areaDePoliticaSla(id), "editar políticas SLA");
+        boolean cambiaArea = body.containsKey("areaId");
+        UUID area = toUuid(body.get("areaId"));
+        if (cambiaArea) {
+            adminService.exigirAmbito(ambito, area, "editar políticas SLA");
+        }
         return ResponseEntity.ok(adminService.saveSlaPolicy(id,
                 value(body, "name"), value(body, "description"),
                 toInt(body.get("responseMinutes")), toInt(body.get("resolutionMinutes")),
-                toBool(body.get("active")), value(body, "icon"), value(body, "color")));
+                toBool(body.get("active")), value(body, "icon"), value(body, "color"), area, cambiaArea));
     }
 
     @DeleteMapping("/sla/policies/{id}")
     @Operation(summary = "Desactivar una política SLA")
     public ResponseEntity<Void> deletePolicy(@PathVariable UUID id) {
-        checkAdminOrSuperAdmin();
+        adminService.exigirAmbito(ambitoDeAreas(), adminService.areaDePoliticaSla(id), "eliminar políticas SLA");
         adminService.deleteSlaPolicy(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/sla/rules")
     public ResponseEntity<SlaRule> createRule(@RequestBody Map<String, Object> body) {
-        checkAdminOrSuperAdmin();
+        adminService.exigirAmbito(ambitoDeAreas(), toUuid(body.get("areaId")), "crear reglas SLA");
         return ResponseEntity.status(HttpStatus.CREATED).body(adminService.saveSlaRule(null,
                 toUuid(body.get("policyId")), toUuid(body.get("areaId")),
                 toUuid(body.get("priorityId")), toUuid(body.get("categoryId")),
@@ -565,7 +658,9 @@ public class AdminController {
     @PutMapping("/sla/rules/{id}")
     @Operation(summary = "Editar una regla SLA")
     public ResponseEntity<SlaRule> updateRule(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
-        checkAdminOrSuperAdmin();
+        java.util.Set<UUID> ambito = ambitoDeAreas();
+        adminService.exigirAmbito(ambito, adminService.areaDeReglaSla(id), "editar reglas SLA");
+        adminService.exigirAmbito(ambito, toUuid(body.get("areaId")), "editar reglas SLA");
         return ResponseEntity.ok(adminService.saveSlaRule(id,
                 toUuid(body.get("policyId")), toUuid(body.get("areaId")),
                 toUuid(body.get("priorityId")), toUuid(body.get("categoryId")),
@@ -575,7 +670,7 @@ public class AdminController {
     @DeleteMapping("/sla/rules/{id}")
     @Operation(summary = "Eliminar una regla SLA")
     public ResponseEntity<Void> deleteRule(@PathVariable UUID id) {
-        checkAdminOrSuperAdmin();
+        adminService.exigirAmbito(ambitoDeAreas(), adminService.areaDeReglaSla(id), "eliminar reglas SLA");
         adminService.deleteSlaRule(id);
         return ResponseEntity.noContent().build();
     }
@@ -667,7 +762,7 @@ public class AdminController {
 
     @GetMapping("/audit-logs")
     public ResponseEntity<List<AuditEventResponse>> auditLogs() {
-        checkAdminOrSuperAdmin();
+        checkSuperAdminOAuditor();
         return ResponseEntity.ok(adminService.getAuditEvents());
     }
 
@@ -691,7 +786,7 @@ public class AdminController {
           OffsetDateTime hasta,
           @RequestParam(defaultValue = "0") int pagina,
           @RequestParam(defaultValue = "100") int tamano) {
-        checkSuperAdmin();
+        checkSuperAdminOAuditor();
         return ResponseEntity.ok(
                 systemAuditQueryService.consultar(accion, usuario, desde, hasta, pagina, tamano));
     }
@@ -700,7 +795,7 @@ public class AdminController {
   @GetMapping("/audit-sistema/acciones")
     @Operation(summary = "Listar las acciones de auditoría disponibles (SUPER_ADMIN)")
     public ResponseEntity<List<String>> accionesAuditoria() {
-        checkSuperAdmin();
+        checkSuperAdminOAuditor();
         return ResponseEntity.ok(systemAuditQueryService.acciones());
     }
 
@@ -767,23 +862,23 @@ public class AdminController {
     @Operation(summary = "Evaluaciones de un mes")
     public ResponseEntity<List<MonthlyEvaluationResponse>> evaluationsByMonth(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month) {
-        checkAdminOrSuperAdmin();
-        return ResponseEntity.ok(evaluationService.findByMonth(month));
+        // El jefe ve las de los agentes de sus áreas.
+        return ResponseEntity.ok(evaluationService.findByMonthEnAreas(month, ambitoDeAreas()));
     }
 
     @PostMapping("/evaluations/generate")
     @Operation(summary = "Generar evaluaciones mensuales de desempeño")
     public ResponseEntity<List<MonthlyEvaluationResponse>> generate(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month) {
-        checkAdminOrSuperAdmin();
-        return ResponseEntity.ok(evaluationService.generateAllForMonth(month));
+        // El jefe genera las de los agentes de su área; el súper admin, las de todos.
+        return ResponseEntity.ok(evaluationService.generateAllForMonth(month, ambitoDeAreas()));
     }
 
     @PutMapping("/evaluations/{id}/review")
     @Operation(summary = "Revisar evaluación de un agente")
     public ResponseEntity<MonthlyEvaluationResponse> review(
             @PathVariable UUID id, @Valid @RequestBody SupervisorEvaluationRequest request) {
-        checkAdminOrSuperAdmin();
+        adminService.exigirAmbito(ambitoDeAreas(), evaluationService.areaDelAgenteEvaluado(id), "revisar evaluaciones");
         return ResponseEntity.ok(evaluationService.review(id, request,
                 userService.getCurrentUser().getIdUser()));
     }

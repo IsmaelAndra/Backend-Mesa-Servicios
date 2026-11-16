@@ -48,7 +48,7 @@ private static final Set<String> TABLAS_PERMITIDAS = Set.of(
               "support_team", "team_user", "sla_policy", "sla_rule", "sla_escalation",
               "monthly_evaluation", "task", "notification", "notification_template",
               "branding_config", "routing_config",
-              // Sede fisica. Se puede consultar en solitario y unir a ticket y a
+              // Sucursal fisica. Se puede consultar en solitario y unir a ticket y a
               // users para breakdowns por oficina. No aporta nada sensible: sus
               // columnas son codigo, nombre, direccion y telefono.
               "sucursal"
@@ -530,7 +530,7 @@ private boolean estaDentroDeLiteral(String sql, int posicion) {
             if (permitido.equalsIgnoreCase(nombre)) {
                 return (permitido.equalsIgnoreCase("desde") || permitido.equalsIgnoreCase("hasta"))
                         ? "CAST(:" + permitido + " AS TIMESTAMPTZ)"
-                        // Los ids (tipo, usuario, sede) son UUID desde V3__ids_uuid.sql.
+                        // Los ids (tipo, usuario, sucursal) son UUID desde V3__ids_uuid.sql.
                         : "CAST(:" + permitido + " AS UUID)";
             }
         }

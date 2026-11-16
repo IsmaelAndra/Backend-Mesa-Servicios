@@ -17,5 +17,6 @@ public record TaskResponse(
         Integer durationMinutes,
         String color,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        Integer recordatorioMinutos
 ) {}

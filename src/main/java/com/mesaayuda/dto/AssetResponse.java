@@ -32,6 +32,13 @@ public record AssetResponse(
         UUID sucursalId,
         String sucursal,
         OffsetDateTime createdAtAsset,
-        OffsetDateTime updatedAtAsset
+        OffsetDateTime updatedAtAsset,
+        UUID assetTypeId,
+        String descriptionAsset,
+        String ubicacionAsset,
+        String accesoriosAsset,
+        String estadoFisicoAsset,
+        String configuracionAsset,
+        String novedadesAsset
 ) {
 }

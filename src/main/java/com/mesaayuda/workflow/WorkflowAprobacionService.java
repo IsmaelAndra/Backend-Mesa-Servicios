@@ -216,10 +216,12 @@ public class WorkflowAprobacionService {
         }
         userRepository.findByCorporateEmailUser(correo).ifPresent(u -> {
             try {
-                notificationService.sendNotification(null, u, ApprovalHandler.TIPO_NOTIFICACION,
+                notificationService.notifyConPlantilla(null, u, ApprovalHandler.TIPO_NOTIFICACION,
                         aprobada ? "Solicitud aprobada" : "Solicitud rechazada",
-                        "Su solicitud fue " + (aprobada ? "aprobada" : "rechazada")
-                                + (comentario == null || comentario.isBlank() ? "." : ": " + comentario));
+                        "<p>Su solicitud fue " + (aprobada ? "aprobada" : "rechazada")
+                                + (comentario == null || comentario.isBlank() ? "."
+                                : ": " + org.springframework.web.util.HtmlUtils.htmlEscape(comentario)) + "</p>",
+                        "aprobaciones");
             } catch (RuntimeException e) {
                 log.warn("No se pudo avisar a {} de la decisión: {}", correo, e.getMessage());
             }

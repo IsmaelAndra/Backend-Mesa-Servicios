@@ -96,7 +96,7 @@ class DashboardServiceScopeTest {
 
     @Test
     void elAdministradorSigueViendoTodosLosTickets() {
-        usuarioActual("ADMIN", id(2));
+        usuarioActual("SUPER_ADMIN", id(2));
         when(ticketRepository.findTicketsBetween(any(), any()))
                 .thenReturn(List.of(ticket(id(1), "ASIGNADO", "TI"), ticket(id(2), "CERRADO", "TI")));
 
@@ -105,6 +105,32 @@ class DashboardServiceScopeTest {
         verify(ticketRepository).findTicketsBetween(any(), any());
         verify(ticketRepository, never()).findTicketsBetweenByAgent(any(), any(), any(java.util.UUID.class));
         assertEquals(2L, stats.totalTickets());
+    }
+
+    @Test
+    void elJefeSoloVeLoQueAtiendenSusAreas() {
+        usuarioActual("AREA_MANAGER", id(5));
+        JefaturaService jefatura = Mockito.mock(JefaturaService.class);
+        when(jefatura.areasACargo(any())).thenReturn(java.util.Set.of(id(50)));
+        ReflectionTestUtils.setField(service, "jefaturaService", jefatura);
+        when(ticketRepository.findTicketsBetweenByAreasDestino(any(), any(), any()))
+                .thenReturn(List.of(ticket(id(1), "ASIGNADO", "Contabilidad")));
+
+        DashboardStats stats = service.getStats(null, null, null, null, null);
+
+        verify(ticketRepository).findTicketsBetweenByAreasDestino(any(), any(), org.mockito.ArgumentMatchers.eq(java.util.Set.of(id(50))));
+        verify(ticketRepository, never()).findTicketsBetween(any(), any());
+        assertEquals(1L, stats.totalTickets());
+    }
+
+    @Test
+    void unRolDesconocidoSoloVeLoSuyo() {
+        usuarioActual("OTRO", id(6));
+        when(ticketRepository.findTicketsBetweenByUser(any(), any(), any(java.util.UUID.class))).thenReturn(List.of());
+
+        service.getStats(null, null, null, null, null);
+
+        verify(ticketRepository, never()).findTicketsBetween(any(), any());
     }
 
     @Test

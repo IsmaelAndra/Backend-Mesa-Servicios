@@ -93,14 +93,56 @@ public class UserService {
      * administradores. Solo un SUPER_ADMIN puede crear o promover a otro
      * SUPER_ADMIN.
      */
-    private void comprobarPuedeAsignarRol(String roleName) {
-        if (!ROL_SUPER_ADMIN.equalsIgnoreCase(roleName)) {
+    private void comprobarPuedeAsignarRol(Role role) {
+        // ADMIN quedó dado de baja en V27: sus cuentas pasaron a jefe de área.
+        if (Boolean.TRUE.equals(role.getDeletedRole())) {
+            throw new BadRequestException("El rol " + role.getNameRole() + " ya no existe");
+        }
+        // Jefe, agente y usuario los asigna también un jefe que gestiona usuarios
+        // (quién gestiona ya lo comprobó exigirGestionDeUsuarios). Súper admin y
+        // auditor, solo un súper admin.
+        if (com.mesaayuda.security.Roles.ASIGNABLES_POR_JEFE.contains(role.getNameRole())) {
             return;
         }
         if (!hasRole(ROL_SUPER_ADMIN)) {
-            log.warn("Intento de otorgar el rol SUPER_ADMIN por un usuario sin ese privilegio.");
-            throw new AccessDeniedException("Solo un SUPER_ADMIN puede crear o promover a otro SUPER_ADMIN");
+            log.warn("Intento de otorgar el rol {} por un usuario sin ese privilegio.", role.getNameRole());
+            throw new AccessDeniedException("Solo un SUPER_ADMIN puede asignar el rol " + role.getNameRole());
         }
+    }
+
+    /**
+     * Crear, editar, activar o eliminar cuentas: el súper admin y los jefes de
+     * las áreas marcadas como "gestiona usuarios" (Tecnología y Desarrollo).
+     */
+    @Transactional(readOnly = true)
+    public void exigirGestionDeUsuarios() {
+        if (!puedeGestionarUsuarios(getCurrentUser())) {
+            throw new AccessDeniedException("No tiene permiso para gestionar usuarios");
+        }
+    }
+
+    /** Consultar cuentas: quien las gestiona y el auditor (solo lectura). */
+    @Transactional(readOnly = true)
+    public void exigirLecturaDeUsuarios() {
+        User actual = getCurrentUser();
+        boolean auditor = actual.getRolUser() != null
+                && com.mesaayuda.security.Roles.esAuditor(actual.getRolUser().getNameRole());
+        if (!auditor && !puedeGestionarUsuarios(actual)) {
+            throw new AccessDeniedException("No tiene permiso para consultar usuarios");
+        }
+    }
+
+    public static boolean puedeGestionarUsuarios(User u) {
+        if (u == null || u.getRolUser() == null) {
+            return false;
+        }
+        String rol = u.getRolUser().getNameRole();
+        if (com.mesaayuda.security.Roles.esSuperAdmin(rol)) {
+            return true;
+        }
+        return com.mesaayuda.security.Roles.esJefe(rol)
+                && u.getArea() != null
+                && Boolean.TRUE.equals(u.getArea().getManagesUsersArea());
     }
 
     /**
@@ -238,8 +280,8 @@ public class UserService {
     }
 
     /**
-     * Sede de la persona. Opcional a proposito: si no se elige, o si la sede ya
-     * no existe, la cuenta se queda sin sede en vez de fallar el alta.
+     * Sucursal de la persona. Opcional a proposito: si no se elige, o si la sucursal ya
+     * no existe, la cuenta se queda sin sucursal en vez de fallar el alta.
      */
     private Sucursal resolverSucursal(UUID sucursalId) {
         if (sucursalId == null) {
@@ -249,6 +291,45 @@ public class UserService {
                 .filter(s -> !s.getDeletedSucursal())
                 .orElse(null);
     }
+    /**
+     * El alta desde Usuarios pide lo que imprime un acta de activos y Graph no
+     * trae: cédula, cargo y extensión (el nombre sale del correo vía Graph, o de
+     * la parte antes de la @). El registro propio y Graph no pasan por aquí.
+     */
+    public static void exigirDatosDelAlta(RegisterRequest r) {
+        java.util.List<String> faltan = new java.util.ArrayList<>();
+        if (r.identification() == null || r.identification().isBlank()) faltan.add("cédula");
+        if (r.cargo() == null || r.cargo().isBlank()) faltan.add("cargo");
+        if (r.extension() == null || r.extension().isBlank()) faltan.add("extensión");
+        if (!faltan.isEmpty()) {
+            throw new BadRequestException("Faltan datos obligatorios: " + String.join(", ", faltan));
+        }
+        if (!r.identification().trim().matches("^[0-9]{10}$")) {
+            throw new BadRequestException("La cédula debe tener 10 números");
+        }
+    }
+
+    /**
+     * Teléfono: dígitos con +, espacios, guiones o paréntesis, y entre 7 y 15
+     * dígitos. Vacío = sin teléfono (null). Antes se aceptaba "abc".
+     */
+    public static String telefonoValido(String telefono) {
+        if (telefono == null || telefono.isBlank()) return null;
+        String t = telefono.trim();
+        long digitos = t.chars().filter(Character::isDigit).count();
+        if (!t.matches("^[0-9+()\\-\\s]+$") || digitos < 7 || digitos > 15) {
+            throw new BadRequestException("Teléfono no válido: use solo números (7 a 15 dígitos)");
+        }
+        return t;
+    }
+
+    /** "superadmin@coacmagisterio.fin.ec" → "superadmin": nombre de las cuentas que Graph no conoce. */
+    public static String nombreDesdeCorreo(String correo) {
+        if (correo == null || correo.isBlank()) return null;
+        String local = correo.split("@")[0].trim();
+        return local.isEmpty() ? correo : local;
+    }
+
     public UserResponse create(RegisterRequest request) {
         String identification = resolveIdentification(request.identification(), request.corporateEmail());
         if (userRepository.existsByCorporateEmailUser(request.corporateEmail())) {
@@ -260,7 +341,7 @@ public class UserService {
 
         Role role = roleRepository.findByNameRole(request.roleName().toUpperCase())
                 .orElseThrow(() -> new BadRequestException("Rol inválido: " + request.roleName()));
-        comprobarPuedeAsignarRol(role.getNameRole());
+        comprobarPuedeAsignarRol(role);
         Area area = areaRepository.findById(request.areaId())
                 .orElseThrow(() -> new BadRequestException("Área inválida"));
 
@@ -271,8 +352,18 @@ public class UserService {
         user.setIdentificationUser(identification);
         user.setCorporateEmailUser(request.corporateEmail());
         user.setPasswordUser(passwordEncoder.encode(generatedPassword));
-        user.setPhoneUser(request.phone());
+        user.setPhoneUser(telefonoValido(request.phone()));
         user.setExtensionUser(extensionLimpia(request.extension()));
+        user.setCargoUser(request.cargo() == null || request.cargo().isBlank() ? null : request.cargo().trim());
+        if (request.nombre() != null && !request.nombre().isBlank()) {
+            String nombre = request.nombre().trim().replaceAll("\\s+", " ");
+            user.setDisplayName(nombre);
+            // Primer bloque = nombres, el resto = apellidos (Graph lo corrige si conoce a la persona).
+            String[] partes = nombre.split(" ");
+            int mitad = partes.length >= 4 ? 2 : 1;
+            user.setFirstName(String.join(" ", java.util.Arrays.copyOfRange(partes, 0, Math.min(mitad, partes.length))));
+            user.setLastName(partes.length > mitad ? String.join(" ", java.util.Arrays.copyOfRange(partes, mitad, partes.length)) : null);
+        }
         user.setStatusUser("ACTIVE");
         user.setRolUser(role);
         user.setArea(area);
@@ -287,6 +378,12 @@ public class UserService {
             microsoftGraphUserSyncService.syncUser(saved.getIdUser(), true);
         } catch (Exception e) {
             log.warn("No se pudo sincronizar el usuario nuevo con Microsoft Graph: {}", e.getMessage());
+        }
+        // Sin nombre de Graph (cuentas genéricas como superadmin@): la parte antes de la @.
+        saved = userRepository.findById(saved.getIdUser()).orElse(saved);
+        if (saved.getDisplayName() == null || saved.getDisplayName().isBlank()) {
+            saved.setDisplayName(nombreDesdeCorreo(saved.getCorporateEmailUser()));
+            saved = userRepository.save(saved);
         }
 
         systemAuditService.record("USER_CREATE", "User", saved.getIdUser());
@@ -318,7 +415,9 @@ public class UserService {
             user.setIdentificationUser(identificacion);
         }
         if (request.phoneUser() != null) {
-            user.setPhoneUser(request.phoneUser().isBlank() ? null : request.phoneUser().trim());
+            if (!request.phoneUser().trim().equals(java.util.Objects.toString(user.getPhoneUser(), ""))) {
+                user.setPhoneUser(telefonoValido(request.phoneUser()));
+            }
         }
         if (request.firstName() != null) {
             user.setFirstName(blankToNull(request.firstName()));
@@ -356,7 +455,7 @@ public UserResponse update(UUID id, RegisterRequest request) {
 
         Role role = roleRepository.findByNameRole(request.roleName().toUpperCase())
                 .orElseThrow(() -> new BadRequestException("Rol inválido"));
-        comprobarPuedeAsignarRol(role.getNameRole());
+        comprobarPuedeAsignarRol(role);
         Area area = areaRepository.findById(request.areaId())
                 .orElseThrow(() -> new BadRequestException("Área inválida"));
 
@@ -373,12 +472,15 @@ public UserResponse update(UUID id, RegisterRequest request) {
             user.setMustChangePassword(true);
             user.setTemporalPasswordExpiresAt(OffsetDateTime.now().plusMinutes(TEMPORAL_PASSWORD_MINUTES));
         }
-        if (request.phone() != null) {
-            user.setPhoneUser(request.phone());
+        if (request.phone() != null && !request.phone().trim().equals(java.util.Objects.toString(user.getPhoneUser(), ""))) {
+            user.setPhoneUser(telefonoValido(request.phone()));
         }
         if (request.extension() != null) {
             // Vacía = se le quita la extensión.
             user.setExtensionUser(extensionLimpia(request.extension()));
+        }
+        if (request.cargo() != null) {
+            user.setCargoUser(request.cargo().isBlank() ? null : request.cargo().trim());
         }
         user.setRolUser(role);
         user.setArea(area);
@@ -414,20 +516,34 @@ private void exigirSuperAdminParaSuperAdmin(User objetivo, String operacion) {
       if (objetivo == null || objetivo.getRolUser() == null) {
           return;
       }
-      if (!ROL_SUPER_ADMIN.equalsIgnoreCase(objetivo.getRolUser().getNameRole())) {
+      // Las cuentas de súper admin y de auditor solo las toca un súper admin:
+      // un jefe que gestiona usuarios no puede degradarlas ni desactivarlas.
+      String rolObjetivo = objetivo.getRolUser().getNameRole();
+      if (!com.mesaayuda.security.Roles.esSuperAdmin(rolObjetivo)
+              && !com.mesaayuda.security.Roles.esAuditor(rolObjetivo)) {
           return;
       }
       if (hasRole(ROL_SUPER_ADMIN)) {
           return;
       }
-      log.warn("Intento de {} sobre una cuenta SUPER_ADMIN por un usuario sin ese privilegio.",
-              operacion);
+      log.warn("Intento de {} sobre una cuenta {} por un usuario sin ese privilegio.",
+              operacion, rolObjetivo);
       throw new AccessDeniedException(
-              "Solo un SUPER_ADMIN puede " + operacion + " a otro SUPER_ADMIN");
+              "Solo un SUPER_ADMIN puede " + operacion + " una cuenta " + rolObjetivo);
+  }
+
+  /** Si la cuenta es la de quien hace la petición (sin sesión, no). */
+  private boolean esUnoMismo(User user) {
+      var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+      return auth != null && auth.getName() != null && user.getCorporateEmailUser() != null
+              && auth.getName().equalsIgnoreCase(user.getCorporateEmailUser());
   }
 
   public void delete(UUID id) {
       User user = getUser(id);
+      if (esUnoMismo(user)) {
+          throw new BadRequestException("No puede eliminar su propia cuenta");
+      }
       exigirSuperAdminParaSuperAdmin(user, "eliminar");
       user.setDeletedUser(true);
         user.setStatusUser("INACTIVE");
@@ -452,6 +568,10 @@ public UserResponse changeStatus(UUID id, String status) {
       // Se lee antes de tocar la entidad: si se preguntara despues devolveria
       // el valor nuevo y la auditoria diria "ACTIVE -> ACTIVE".
       String estadoPrevio = user.getStatusUser();
+      // Nadie se desactiva a sí mismo: se quedaría fuera sin poder volver.
+      if (esUnoMismo(user) && "INACTIVE".equals(status)) {
+          throw new BadRequestException("No puede desactivar su propia cuenta");
+      }
       user.setStatusUser(status);
       UserResponse respuesta = conSesion(userMapper.toResponse(userRepository.save(user)));
       // Desactivar a alguien tiene que cerrar sus sesiones abiertas; si no,
@@ -509,7 +629,7 @@ public UserResponse changeStatus(UUID id, String status) {
                 .toList();
     }
 
-    private User getUser(UUID id) {
+    public User getUser(UUID id) {
         return userRepository.findById(id)
                 .filter(u -> !u.getDeletedUser())
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario", "id", id));

@@ -43,9 +43,9 @@ public class DashboardController {
      */
     @GetMapping("/operations")
     public ResponseEntity<?> operations() {
-        if (!userService.hasRole("ADMIN") && !userService.hasRole("SUPER_ADMIN")) {
+        if (!userService.hasRole("SUPER_ADMIN") && !userService.hasRole("AUDITOR")) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
-                    "message", "La operación en tiempo real es solo para administradores"));
+                    "message", "La operación en tiempo real es solo para el súper administrador y el auditor"));
         }
         return ResponseEntity.ok(dashboardService.getOperations());
     }

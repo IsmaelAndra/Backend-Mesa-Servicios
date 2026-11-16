@@ -77,9 +77,9 @@ class BaseDeDatosPostgresIT {
     @Test
     void losDatosBaseSiembranLosRoles() {
         Integer roles = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM role WHERE name_role IN ('SUPER_ADMIN','ADMIN','AGENT','USER')",
+                "SELECT COUNT(*) FROM role WHERE name_role IN ('SUPER_ADMIN','AREA_MANAGER','AGENT','USER','AUDITOR')",
                 Integer.class);
-        assertEquals(4, roles);
+        assertEquals(5, roles);
     }
 
     @Test

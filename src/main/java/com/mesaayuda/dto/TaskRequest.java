@@ -1,13 +1,15 @@
 package com.mesaayuda.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import java.util.UUID;
 import jakarta.validation.constraints.NotNull;
 
-import java.util.UUID;
 import java.time.OffsetDateTime;
-
 import java.util.UUID;
+
+/**
+ * recordatorioMinutos: cuántos minutos antes del plazo se avisa (null = sin
+ * aviso). Solo tiene efecto si la actividad tiene fecha límite.
+ */
 public record TaskRequest(
         @NotBlank(message = "El título es obligatorio")
         String title,
@@ -25,5 +27,12 @@ public record TaskRequest(
 
         Integer durationMinutes,
 
-        String color
-) {}
+        String color,
+
+        Integer recordatorioMinutos
+) {
+    public TaskRequest(String title, String description, String status, UUID assignedUserId,
+                       OffsetDateTime start, OffsetDateTime due, Integer durationMinutes, String color) {
+        this(title, description, status, assignedUserId, start, due, durationMinutes, color, null);
+    }
+}

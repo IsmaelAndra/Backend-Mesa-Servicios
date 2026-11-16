@@ -136,12 +136,10 @@ class NotifyTypingAudienceTest {
         ticket.setUserTicket(titular);
         ticket.setAgentTicket(agente);
 
-        User admin = usuario(ADMIN, "admin@coacmagisterio.fin.ec", "ADMIN");
+        User admin = usuario(ADMIN, "admin@coacmagisterio.fin.ec", "SUPER_ADMIN");
         User superAdmin = usuario(SUPER_ADMIN, "superadmin@coacmagisterio.fin.ec", "SUPER_ADMIN");
-        org.mockito.Mockito.when(userRepository.findByRoleName("ADMIN"))
-                .thenReturn(List.of(admin));
         org.mockito.Mockito.when(userRepository.findByRoleName("SUPER_ADMIN"))
-                .thenReturn(List.of(superAdmin));
+                .thenReturn(List.of(admin, superAdmin));
 
         // Escribe el titular, que es el caso que antes no llegaba al admin.
         autenticarComo(titular);
@@ -180,7 +178,6 @@ class NotifyTypingAudienceTest {
         ticket.setAgentTicket(usuario(AGENTE, "agente@coacmagisterio.fin.ec", "AGENT"));
 
         User superAdmin = usuario(SUPER_ADMIN, "superadmin@coacmagisterio.fin.ec", "SUPER_ADMIN");
-        org.mockito.Mockito.when(userRepository.findByRoleName("ADMIN")).thenReturn(List.of());
         org.mockito.Mockito.when(userRepository.findByRoleName("SUPER_ADMIN"))
                 .thenReturn(List.of(superAdmin));
 
@@ -201,15 +198,14 @@ class NotifyTypingAudienceTest {
         User titular = usuario(TITULAR, "usuario@coacmagisterio.fin.ec", "USER");
         ticket.setUserTicket(titular);
 
-        User admin = usuario(ADMIN, "admin@coacmagisterio.fin.ec", "ADMIN");
+        User admin = usuario(ADMIN, "admin@coacmagisterio.fin.ec", "SUPER_ADMIN");
         // Recordatorio de que statusUser es texto: si algun dia se cambia de
         // tipo, esta asercion avisa.
         assertTrue("ACTIVE".equals(admin.getStatusUser()),
                 "el usuario de prueba debe llevar el estado como texto");
 
-        org.mockito.Mockito.when(userRepository.findByRoleName("ADMIN"))
+        org.mockito.Mockito.when(userRepository.findByRoleName("SUPER_ADMIN"))
                 .thenReturn(List.of(admin));
-        org.mockito.Mockito.when(userRepository.findByRoleName("SUPER_ADMIN")).thenReturn(List.of());
 
         autenticarComo(titular);
         Collection<UUID> audiencia = audienciaPublicada(titular, ticket);
@@ -225,14 +221,13 @@ class NotifyTypingAudienceTest {
         User titular = usuario(TITULAR, "usuario@coacmagisterio.fin.ec", "USER");
         ticket.setUserTicket(titular);
 
-        User borrado = usuario(id(8), "borrado@coacmagisterio.fin.ec", "ADMIN");
+        User borrado = usuario(id(8), "borrado@coacmagisterio.fin.ec", "SUPER_ADMIN");
         borrado.setDeletedUser(true);
-        User inactivo = usuario(INACTIVO, "inactivo@coacmagisterio.fin.ec", "ADMIN");
+        User inactivo = usuario(INACTIVO, "inactivo@coacmagisterio.fin.ec", "SUPER_ADMIN");
         inactivo.setStatusUser("INACTIVE");
 
-        org.mockito.Mockito.when(userRepository.findByRoleName("ADMIN"))
+        org.mockito.Mockito.when(userRepository.findByRoleName("SUPER_ADMIN"))
                 .thenReturn(List.of(borrado, inactivo));
-        org.mockito.Mockito.when(userRepository.findByRoleName("SUPER_ADMIN")).thenReturn(List.of());
 
         autenticarComo(titular);
         Collection<UUID> audiencia = audienciaPublicada(titular, ticket);

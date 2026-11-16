@@ -69,6 +69,14 @@ public class Task {
     @Column(name = "updated_at_task", nullable = false)
     private OffsetDateTime updatedAtTask;
 
+    /** Minutos antes del plazo en que se avisa por correo y campana (V35); null = sin aviso. */
+    @Column(name = "recordatorio_minutos_task")
+    private Integer recordatorioMinutos;
+
+    /** Cuándo se envió el aviso; se limpia si cambia el plazo o el aviso. */
+    @Column(name = "recordatorio_enviado_task")
+    private OffsetDateTime recordatorioEnviado;
+
     @Column(name = "deleted_task", nullable = false)
     private Boolean deletedTask = false;
 }

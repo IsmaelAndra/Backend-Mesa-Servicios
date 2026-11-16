@@ -21,7 +21,13 @@ public record TicketEvent(
          * tickets propios de los ajenos y tendría que emitirlos todos.
          */
         UUID requesterId,
-        Instant timestamp) {
+        Instant timestamp,
+        /** Área que atiende y área del solicitante: solo para decidir a quién se envía. */
+        UUID areaDestinoId,
+        UUID areaSolicitanteId,
+        /** Confidencial (y si está abierto al área): cambia a quién se envía. */
+        boolean confidencial,
+        boolean confidencialArea) {
 
     /**
      * Copia sin el titular, para enviar al cliente.
@@ -33,6 +39,6 @@ public record TicketEvent(
      */
     public TicketEvent paraCliente() {
         return new TicketEvent(seq, type, ticketId, ticketNumber, ticketTitle, status, actorId, actorName,
-                assignedAgentId, assignedAgentName, null, timestamp);
+                assignedAgentId, assignedAgentName, null, timestamp, null, null, confidencial, false);
     }
 }

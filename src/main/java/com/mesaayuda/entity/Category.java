@@ -39,6 +39,20 @@ public class Category {
     @JoinColumn(name = "team_category")
     private SupportTeam teamCategory;
 
+    /**
+     * Área a la que pertenece (V28). En el JSON solo va su id: la relación es
+     * perezosa y Jackson no sabe serializar el proxy de Hibernate.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "area_category")
+    private Area areaCategory;
+
+    @com.fasterxml.jackson.annotation.JsonProperty("areaId")
+    public UUID getAreaId() {
+        return areaCategory == null ? null : areaCategory.getIdArea();
+    }
+
     @CreationTimestamp
     @Column(name = "created_at_category", nullable = false, updatable = false)
     private OffsetDateTime createdAtCategory;

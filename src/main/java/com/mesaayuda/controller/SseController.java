@@ -60,6 +60,9 @@ public class SseController {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private com.mesaayuda.service.TicketAccessPolicy accessPolicy;
+
     /**
      * Emite un ticket para abrir el canal. Exige sesión: lo protege la regla
      * general de SecurityConfig, porque solo GET /events es público.
@@ -97,12 +100,10 @@ public class SseController {
             return ResponseEntity.status(401).build();
         }
         UUID userId = usuario.getIdUser();
-        // El rol se le pasa al canal porque de el depende a quien se envian los
-        // eventos de ticket: el personal ve la cola entera y un solicitador solo
-        // los suyos. Sin esta distincion, todos recibian todos.
-        boolean esPersonal = usuario.getRolUser() != null
-                && List.of("AGENT", "ADMIN", "SUPER_ADMIN").contains(usuario.getRolUser().getNameRole());
-        SseEmitter emitter = sseEventBroker.subscribe(userId, esPersonal);
+        // El canal recibe el alcance de la persona: de él depende a quién se
+        // envían los eventos de ticket (lo suyo y lo de su área). Antes todo el
+        // personal recibía en vivo el título de los tickets de todas las áreas.
+        SseEmitter emitter = sseEventBroker.subscribe(userId, accessPolicy.alcanceDe(usuario));
         // X-Accel-Buffering: no le dice a CUALQUIER Nginx de por medio (el del
         // frontend y el del servidor) que no guarde el flujo en búfer. Sin ella,
         // basta con que el proxy del servidor no tenga "proxy_buffering off" para

@@ -26,11 +26,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Borrado de una sede.
+ * Borrado de una sucursal.
  *
- * Es un borrado logico, pero aun asi avisa si queda algo apuntando a la sede: las
+ * Es un borrado logico, pero aun asi avisa si queda algo apuntando a la sucursal: las
  * personas asignadas se pueden reubicar, y los tickets son historial y no se
- * pueden perder. En los dos casos la salida recomendada es desactivar la sede,
+ * pueden perder. En los dos casos la salida recomendada es desactivar la sucursal,
  * que es lo que hace el metodo cuando si se puede borrar.
  */
 @ExtendWith(MockitoExtension.class)
@@ -55,7 +55,7 @@ class AdminServiceSucursalTest {
     }
 
     @Test
-    @DisplayName("una sede sin personas ni tickets se da de baja logicamente")
+    @DisplayName("una sucursal sin personas ni tickets se da de baja logicamente")
     void borraCuandoNoHayNadaApuntando() {
         when(sucursalRepository.findById(id(1))).thenReturn(Optional.of(quito));
         when(userRepository.countBySucursal_IdSucursalAndDeletedUserFalse(id(1))).thenReturn(0L);
@@ -98,7 +98,7 @@ class AdminServiceSucursalTest {
     }
 
     @Test
-    @DisplayName("una sede inexistente responde 404")
+    @DisplayName("una sucursal inexistente responde 404")
     void sedeInexistente() {
         when(sucursalRepository.findById(id(99))).thenReturn(Optional.empty());
 
@@ -106,11 +106,11 @@ class AdminServiceSucursalTest {
     }
 
     @Test
-    @DisplayName("el codigo de la sede se conserva al actualizarla")
+    @DisplayName("el codigo de la sucursal se conserva al actualizarla")
     void actualizaConservandoElCodigo() {
         when(sucursalRepository.findById(id(1))).thenReturn(Optional.of(quito));
 
-        adminService.saveSucursal(id(1), "QUI", "Quito - Matriz", "Sede central", null, null,
+        adminService.saveSucursal(id(1), "QUI", "Quito - Matriz", "Sucursal central", null, null,
                 "fa-solid fa-city", "#062e86", true);
 
         assertEquals("QUI", quito.getCodeSucursal());

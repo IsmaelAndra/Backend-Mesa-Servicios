@@ -96,7 +96,6 @@ public class DailySummaryService {
             }
         } else {
             List<User> admins = new ArrayList<>();
-            admins.addAll(userRepository.findByRoleName("ADMIN"));
             admins.addAll(userRepository.findByRoleName("SUPER_ADMIN"));
             admins.stream()
                     .map(User::getCorporateEmailUser)

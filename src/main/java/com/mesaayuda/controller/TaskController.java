@@ -18,7 +18,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/tasks")
-@PreAuthorize("hasAnyRole('AGENT','ADMIN','SUPER_ADMIN')")
+@PreAuthorize("isAuthenticated()")
 @Tag(name = "Tareas", description = "Actividades no-ticket para kanban y calendario")
 public class TaskController {
 

@@ -41,21 +41,13 @@ import java.util.UUID;
 /**
  * Activos de TI.
  *
- * <p><b>Quién ve qué</b> ({@link #alcanceVisible(User)}, la misma regla para el
- * listado, la ficha, el historial y la búsqueda global):
- * <ul>
- *   <li>ADMIN y SUPER_ADMIN: todos.</li>
- *   <li>AREA_MANAGER (jefe de área): los de su área, sea por el área del activo
- *       o por el área de la persona que lo tiene, y además los suyos.</li>
- *   <li>Cualquier otro rol: solo los que tiene asignados.</li>
- * </ul>
+ * <p><b>Quién ve y quién gestiona</b>: {@link com.mesaayuda.activos.PermisosActivos}
+ * (SUPER_ADMIN y el personal de Tecnología y Desarrollo gestionan todos; el
+ * auditor ve todos; el resto solo los que tiene asignados). La misma regla vale
+ * para el listado, la ficha, el historial y la búsqueda global.
  *
- * <p><b>Quién gestiona</b>: ADMIN y SUPER_ADMIN, cualquiera; el jefe de área,
- * solo los activos de su área, solo puede asignarlos a personas de su área y
- * no puede mover un activo a otra área. Eliminar es solo de ADMIN/SUPER_ADMIN
- * (lo corta el controlador).
- *
- * <p><b>Estados</b>: ASIGNADO va siempre con persona y DISPONIBLE nunca. Se
+ * <p><b>Estados</b>: ASIGNADO va siempre con persona y EN_BODEGA (antes
+ * DISPONIBLE) nunca. Se
  * llega a ASIGNADO asignando, no cambiando el estado a mano. Dar de baja
  * devuelve el activo antes; la reparación conserva a la persona, y al terminar
  * vuelve a ASIGNADO o DISPONIBLE según tenga o no a alguien.
@@ -66,7 +58,8 @@ public class AssetService {
 
     private static final Logger log = LoggerFactory.getLogger(AssetService.class);
 
-    public static final String DISPONIBLE = "DISPONIBLE";
+    /** Sin persona asignada: "En bodega" (V36; antes DISPONIBLE). */
+    public static final String DISPONIBLE = "EN_BODEGA";
     public static final String ASIGNADO = "ASIGNADO";
     public static final String EN_REPARACION = "EN_REPARACION";
     public static final String BAJA = "BAJA";
@@ -104,6 +97,15 @@ public class AssetService {
 
     @Autowired
     private PresenceService presenceService;
+
+    @Autowired
+    private com.mesaayuda.activos.PermisosActivos permisos;
+
+    @Autowired
+    private com.mesaayuda.activos.NumeracionActivos numeracion;
+
+    @Autowired
+    private com.mesaayuda.activos.AssetTypeRepository tipos;
 
     // ======================================================================
     // Consultas
@@ -166,12 +168,8 @@ public class AssetService {
     public List<AssetResponse> findByUser(UUID userId) {
         User current = userService.getCurrentUser();
         boolean propio = current.getIdUser().equals(userId);
-        if (!propio && !esAdmin(current)) {
-            User otro = userRepository.findById(userId).orElse(null);
-            boolean deSuArea = esJefeDeArea(current) && otro != null && mismaArea(current, otro.getArea());
-            if (!deSuArea) {
-                throw new AccessDeniedException("No tiene permisos para ver activos de este usuario");
-            }
+        if (!propio && !permisos.veTodo(current)) {
+            throw new AccessDeniedException("No tiene permisos para ver activos de este usuario");
         }
         return assetMapper.toResponse(assetRepository.findByAssignedUser_IdUserAndDeletedAssetFalse(userId));
     }
@@ -179,8 +177,7 @@ public class AssetService {
     @Transactional(readOnly = true)
     public List<AssetResponse> findByArea(UUID areaId) {
         User current = userService.getCurrentUser();
-        if (!esAdmin(current) && !(esJefeDeArea(current) && current.getArea() != null
-                && current.getArea().getIdArea().equals(areaId))) {
+        if (!permisos.veTodo(current)) {
             throw new AccessDeniedException("No tiene permisos para ver activos de esta área");
         }
         return assetMapper.toResponse(assetRepository.findByArea_IdAreaAndDeletedAssetFalse(areaId));
@@ -189,8 +186,8 @@ public class AssetService {
     @Transactional(readOnly = true)
     public List<AssetResponse> findBySucursal(UUID sucursalId) {
         User current = userService.getCurrentUser();
-        if (!esAdmin(current)) {
-            throw new AccessDeniedException("Solo administradores pueden ver activos por sucursal");
+        if (!permisos.veTodo(current)) {
+            throw new AccessDeniedException("No tiene permisos para ver activos por sucursal");
         }
         return assetMapper.toResponse(assetRepository.findBySucursal_IdSucursalAndDeletedAssetFalse(sucursalId));
     }
@@ -204,20 +201,13 @@ public class AssetService {
     @Transactional(readOnly = true)
     public List<AssetAssignableUserResponse> asignables() {
         User current = userService.getCurrentUser();
-        if (!esAdmin(current) && !esJefeDeArea(current)) {
-            throw new AccessDeniedException("No tiene permisos para asignar activos");
-        }
+        permisos.exigirGestion(current);
         Specification<User> spec = (root, query, cb) -> {
             List<Predicate> p = new ArrayList<>();
             p.add(cb.isFalse(root.get("deletedUser")));
             // Un estado nulo no excluye a nadie; solo las cuentas desactivadas.
             p.add(cb.or(cb.isNull(root.get("statusUser")),
                     cb.not(cb.upper(root.get("statusUser")).in("INACTIVE", "INACTIVO"))));
-            if (!esAdmin(current)) {
-                p.add(current.getArea() == null
-                        ? cb.disjunction()
-                        : cb.equal(root.get("area").get("idArea"), current.getArea().getIdArea()));
-            }
             return cb.and(p.toArray(new Predicate[0]));
         };
         List<User> usuarios = userRepository.findAll(spec,
@@ -240,7 +230,12 @@ public class AssetService {
 
     public AssetResponse create(AssetRequest request) {
         User current = userService.getCurrentUser();
-        String codigo = request.codeAsset().trim();
+        permisos.exigirGestion(current);
+        com.mesaayuda.activos.AssetType tipo = tipoDe(request);
+        // Código: el que se escriba (inventario anterior) o el siguiente de la numeración.
+        String codigo = request.codeAsset() == null || request.codeAsset().isBlank()
+                ? numeracion.siguienteCodigo(tipo.getPrefijo())
+                : request.codeAsset().trim();
         if (assetRepository.existsByCodeAsset(codigo)) {
             throw new BadRequestException("Ya existe un activo con el código: " + codigo);
         }
@@ -248,6 +243,8 @@ public class AssetService {
 
         Asset asset = new Asset();
         applyRequestToAsset(asset, request);
+        asset.setCodeAsset(codigo);
+        aplicarTipo(asset, tipo);
         asset.setArea(areaPermitida(current, request.areaId()));
         asset.setSucursal(resolverSucursal(request.sucursalId()));
         asset.setStatusAsset(DISPONIBLE);
@@ -275,13 +272,21 @@ public class AssetService {
         Asset asset = obtener(id);
         exigirGestionar(asset);
 
-        String codigo = request.codeAsset().trim();
+        String codigo = request.codeAsset() == null || request.codeAsset().isBlank()
+                ? asset.getCodeAsset() : request.codeAsset().trim();
         if (!asset.getCodeAsset().equals(codigo) && assetRepository.existsByCodeAsset(codigo)) {
             throw new BadRequestException("Ya existe un activo con el código: " + codigo);
         }
         String pedido = estadoPedido(request.statusAsset());
+        java.time.OffsetDateTime garantiaAntes = asset.getWarrantyUntilAsset();
 
         applyRequestToAsset(asset, request);
+        asset.setCodeAsset(codigo);
+        aplicarTipo(asset, tipoDe(request));
+        // Otra fecha de garantía: el aviso vuelve a quedar pendiente.
+        if (!java.util.Objects.equals(garantiaAntes, asset.getWarrantyUntilAsset())) {
+            asset.setGarantiaAvisadaAsset(null);
+        }
         asset.setArea(areaPermitida(current, request.areaId()));
         asset.setSucursal(resolverSucursal(request.sucursalId()));
 
@@ -449,13 +454,18 @@ public class AssetService {
                 }
                 registrar(asset, "REPARACION", responsable, null, actor, texto(notas, "Enviado a reparación"));
                 asset.setStatusAsset(EN_REPARACION);
+                // Si va a reparación es que algo le pasa: no puede seguir diciendo "Bueno" o "Nuevo".
+                if (asset.getEstadoFisicoAsset() == null
+                        || List.of("NUEVO", "BUENO").contains(asset.getEstadoFisicoAsset())) {
+                    asset.setEstadoFisicoAsset("CON_NOVEDADES");
+                }
             }
             case BAJA -> {
                 devolver(asset, actor, "Devolución por baja del activo");
                 registrar(asset, "BAJA", null, null, actor, texto(notas, "Activo dado de baja"));
                 asset.setStatusAsset(BAJA);
             }
-            default -> throw new BadRequestException("Estado inválido. Use: DISPONIBLE, ASIGNADO, EN_REPARACION, BAJA");
+            default -> throw new BadRequestException("Estado inválido. Use: EN_BODEGA, ASIGNADO, EN_REPARACION, BAJA");
         }
     }
 
@@ -478,39 +488,22 @@ public class AssetService {
     public Specification<Asset> alcanceVisible(User u) {
         return (root, query, cb) -> {
             Predicate vivo = cb.isFalse(root.get("deletedAsset"));
-            if (esAdmin(u)) {
+            if (permisos.veTodo(u)) {
                 return vivo;
             }
-            // LEFT JOIN: un activo sin persona asignada también puede ser del área.
+            // Los demás, solo lo que tienen asignado ("Mis equipos").
             Join<Asset, User> asignado = root.join("assignedUser", JoinType.LEFT);
-            Predicate propio = cb.equal(asignado.get("idUser"), u.getIdUser());
-            if (esJefeDeArea(u) && u.getArea() != null) {
-                UUID area = u.getArea().getIdArea();
-                Join<Asset, Area> areaActivo = root.join("area", JoinType.LEFT);
-                Join<User, Area> areaPersona = asignado.join("area", JoinType.LEFT);
-                return cb.and(vivo, cb.or(
-                        propio,
-                        cb.equal(areaActivo.get("idArea"), area),
-                        cb.equal(areaPersona.get("idArea"), area)));
-            }
-            return cb.and(vivo, propio);
+            return cb.and(vivo, cb.equal(asignado.get("idUser"), u.getIdUser()));
         };
     }
 
     public boolean puedeVer(User u, Asset a) {
-        if (esAdmin(u)) return true;
-        if (a.getAssignedUser() != null && a.getAssignedUser().getIdUser().equals(u.getIdUser())) return true;
-        return esDeSuArea(u, a);
+        if (permisos.veTodo(u)) return true;
+        return a.getAssignedUser() != null && a.getAssignedUser().getIdUser().equals(u.getIdUser());
     }
 
     public boolean puedeGestionar(User u, Asset a) {
-        return esAdmin(u) || esDeSuArea(u, a);
-    }
-
-    private boolean esDeSuArea(User u, Asset a) {
-        if (!esJefeDeArea(u) || u.getArea() == null) return false;
-        return mismaArea(u, a.getArea())
-                || (a.getAssignedUser() != null && mismaArea(u, a.getAssignedUser().getArea()));
+        return permisos.gestiona(u);
     }
 
     private void exigirVer(Asset a) {
@@ -525,46 +518,18 @@ public class AssetService {
         }
     }
 
-    /** El jefe de área solo asigna a personas de su área. */
-    private User usuarioAsignable(User actor, UUID userId) {
-        User destino = userRepository.findById(userId)
+    /** Quien gestiona activos asigna a cualquier persona activa. */
+    public User usuarioAsignable(User actor, UUID userId) {
+        permisos.exigirGestion(actor);
+        return userRepository.findById(userId)
                 .filter(u -> !Boolean.TRUE.equals(u.getDeletedUser()))
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario", "id", userId));
-        if (!esAdmin(actor) && !mismaArea(actor, destino.getArea())) {
-            throw new AccessDeniedException("Solo puede asignar activos a personas de su área");
-        }
-        return destino;
     }
 
-    /** El jefe de área no puede llevar un activo a otra área; sin área, queda en la suya. */
+    /** El área donde está el activo (cualquiera: Tecnología y Desarrollo gestionan todos). */
     private Area areaPermitida(User actor, UUID areaId) {
-        if (esAdmin(actor)) {
-            return resolverArea(areaId);
-        }
-        if (actor.getArea() == null) {
-            throw new AccessDeniedException("Su usuario no tiene un área asignada");
-        }
-        if (areaId != null && !areaId.equals(actor.getArea().getIdArea())) {
-            throw new AccessDeniedException("Solo puede registrar activos de su área");
-        }
-        return actor.getArea();
-    }
-
-    private static boolean esAdmin(User u) {
-        String rol = rolDe(u);
-        return "ADMIN".equals(rol) || "SUPER_ADMIN".equals(rol);
-    }
-
-    private static boolean esJefeDeArea(User u) {
-        return ROL_AREA_MANAGER.equals(rolDe(u));
-    }
-
-    private static String rolDe(User u) {
-        return u != null && u.getRolUser() != null ? u.getRolUser().getNameRole() : null;
-    }
-
-    private static boolean mismaArea(User u, Area area) {
-        return u.getArea() != null && area != null && u.getArea().getIdArea().equals(area.getIdArea());
+        permisos.exigirGestion(actor);
+        return resolverArea(areaId);
     }
 
     // ======================================================================
@@ -580,8 +545,12 @@ public class AssetService {
     private static String estadoPedido(String estado) {
         if (estado == null || estado.isBlank()) return null;
         String e = estado.trim().toUpperCase();
+        // Compatibilidad: clientes antiguos aún envían DISPONIBLE.
+        if ("DISPONIBLE".equals(e)) {
+            e = DISPONIBLE;
+        }
         if (!VALID_STATUSES.contains(e)) {
-            throw new BadRequestException("Estado inválido. Use: DISPONIBLE, ASIGNADO, EN_REPARACION, BAJA");
+            throw new BadRequestException("Estado inválido. Use: EN_BODEGA, ASIGNADO, EN_REPARACION, BAJA");
         }
         return e;
     }
@@ -602,12 +571,32 @@ public class AssetService {
     }
 
     private void applyRequestToAsset(Asset asset, AssetRequest request) {
-        asset.setCodeAsset(request.codeAsset().trim());
         asset.setNameAsset(request.nameAsset().trim());
-        asset.setTypeAsset(request.typeAsset().trim().toUpperCase());
+        asset.setDescriptionAsset(recortar(request.descriptionAsset()));
+        asset.setUbicacionAsset(recortar(request.ubicacionAsset()));
+        asset.setAccesoriosAsset(recortar(request.accesoriosAsset()));
+        asset.setConfiguracionAsset(recortar(request.configuracionAsset()));
+        asset.setNovedadesAsset(recortar(request.novedadesAsset()));
+        if (request.estadoFisicoAsset() != null && !request.estadoFisicoAsset().isBlank()) {
+            String ef = request.estadoFisicoAsset().trim().toUpperCase();
+            if (!List.of("NUEVO", "BUENO", "REGULAR", "CON_NOVEDADES").contains(ef)) {
+                throw new BadRequestException("Estado del bien no válido: use NUEVO, BUENO, REGULAR o CON_NOVEDADES");
+            }
+            asset.setEstadoFisicoAsset(ef);
+        }
         asset.setBrandAsset(recortar(request.brandAsset()));
         asset.setModelAsset(recortar(request.modelAsset()));
-        asset.setSerialNumberAsset(recortar(request.serialNumberAsset()));
+        String serie = recortar(request.serialNumberAsset());
+        if (serie != null && !serie.isBlank()) {
+            // Un número de serie es de un solo equipo (antes se repetía sin aviso).
+            // Un uuid nulo no se tipa en JPQL: el activo nuevo se compara con UUID(0, 0).
+            UUID propio = asset.getIdAsset() == null ? new UUID(0, 0) : asset.getIdAsset();
+            boolean repetida = assetRepository.serieRepetida(serie.trim(), propio);
+            if (repetida) {
+                throw new BadRequestException("El número de serie " + serie.trim() + " ya está registrado en otro activo");
+            }
+        }
+        asset.setSerialNumberAsset(serie);
         asset.setPurchaseDateAsset(request.purchaseDateAsset());
         asset.setProviderAsset(recortar(request.providerAsset()));
         asset.setCostAsset(request.costAsset());
@@ -615,6 +604,25 @@ public class AssetService {
         asset.setImageUrlAsset(recortar(request.imageUrlAsset()));
         asset.setDocumentUrlAsset(recortar(request.documentUrlAsset()));
         asset.setNotesAsset(recortar(request.notesAsset()));
+    }
+
+    /** Tipo del maestro: por id o, para clientes antiguos, por nombre o prefijo escrito. */
+    private com.mesaayuda.activos.AssetType tipoDe(AssetRequest r) {
+        if (r.assetTypeId() != null) {
+            return tipos.findById(r.assetTypeId()).filter(t -> !Boolean.TRUE.equals(t.getDeleted()))
+                    .orElseThrow(() -> new BadRequestException("Tipo de activo no válido"));
+        }
+        if (r.typeAsset() != null && !r.typeAsset().isBlank()) {
+            String t = r.typeAsset().trim();
+            return tipos.porNombre(t).or(() -> tipos.porPrefijo(t))
+                    .orElseThrow(() -> new BadRequestException("Tipo de activo no encontrado: " + t));
+        }
+        throw new BadRequestException("Elija el tipo de activo");
+    }
+
+    private static void aplicarTipo(Asset asset, com.mesaayuda.activos.AssetType tipo) {
+        asset.setAssetTypeId(tipo.getIdAssetType());
+        asset.setTypeAsset(tipo.getNombre().toUpperCase());
     }
 
     private Area resolverArea(UUID areaId) {

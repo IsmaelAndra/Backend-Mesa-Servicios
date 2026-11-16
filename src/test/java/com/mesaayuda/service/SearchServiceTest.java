@@ -87,7 +87,7 @@ class SearchServiceTest {
         usuario.setRolUser(r);
         // ADMIN y SUPER_ADMIN buscan tickets en toda la mesa; el resto, solo en los suyos.
         org.mockito.Mockito.lenient().when(accessPolicy.esPersonalAdministrador(usuario))
-                .thenReturn("ADMIN".equals(rol) || "SUPER_ADMIN".equals(rol));
+                .thenReturn("SUPER_ADMIN".equals(rol));
     }
 
     private TicketResponse ticketResponse() {
@@ -227,7 +227,7 @@ class SearchServiceTest {
 
     @Test
     void lasPersonasSeSirvenConElNombreMostradoYElArea() {
-        como("ADMIN");
+        como("AREA_MANAGER");
         when(accessPolicy.esPersonal(usuario)).thenReturn(true);
         User persona = usuarioJuan();
         Area area = new Area();

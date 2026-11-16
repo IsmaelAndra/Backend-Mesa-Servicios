@@ -49,7 +49,8 @@ class SseControllerTest {
         controller = new SseController();
         ReflectionTestUtils.setField(controller, "sseEventBroker", broker);
         ReflectionTestUtils.setField(controller, "userRepository", userRepository);
-        when(broker.subscribe(any(), anyBoolean())).thenReturn(new SseEmitter());
+        ReflectionTestUtils.setField(controller, "accessPolicy", new com.mesaayuda.service.TicketAccessPolicy());
+        when(broker.subscribe(any(), any(com.mesaayuda.service.AlcanceTickets.class))).thenReturn(new SseEmitter());
     }
 
     @AfterEach
@@ -96,14 +97,14 @@ class SseControllerTest {
         assertEquals(200, controller.stream(ticket).getStatusCode().value());
         // Reutilizarlo, como haria quien lo leyera en un log, ya no abre nada.
         assertEquals(401, controller.stream(ticket).getStatusCode().value());
-        verify(broker).subscribe(id(7), false);
+        verify(broker).subscribe(id(7), com.mesaayuda.service.AlcanceTickets.soloPropios(id(7)));
     }
 
     @Test
     void unTicketInventadoOAusenteSeRechaza() {
         assertEquals(401, controller.stream("abc").getStatusCode().value());
         assertEquals(401, controller.stream(null).getStatusCode().value());
-        verify(broker, never()).subscribe(any(), anyBoolean());
+        verify(broker, never()).subscribe(any(), any(com.mesaayuda.service.AlcanceTickets.class));
     }
 
     @Test
@@ -113,6 +114,6 @@ class SseControllerTest {
         when(userRepository.findByCorporateEmailUser(CORREO)).thenReturn(Optional.of(inactivo));
 
         assertEquals(401, controller.stream(pedirTicket()).getStatusCode().value());
-        verify(broker, never()).subscribe(any(), anyBoolean());
+        verify(broker, never()).subscribe(any(), any(com.mesaayuda.service.AlcanceTickets.class));
     }
 }

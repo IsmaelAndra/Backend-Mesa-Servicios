@@ -41,7 +41,7 @@ public class AdminSeedInitializer implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(AdminSeedInitializer.class);
 
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
-    private static final String TI_AREA = "TI";
+    private static final String TI_AREA = "Tecnología";
     private static final String TI_TEAM = "Equipo TI";
 
     private final UserRepository userRepository;
@@ -84,7 +84,7 @@ public class AdminSeedInitializer implements ApplicationRunner {
         Role superAdminRole = roleRepository.findByNameRole(SUPER_ADMIN_ROLE)
                 .orElseThrow(() -> new IllegalStateException(
                         "Falta el rol " + SUPER_ADMIN_ROLE + " en la base. Revisa db/migration/R__datos_base.sql."));
-        Area tiArea = areaRepository.findByNameArea(TI_AREA)
+        Area tiArea = areaRepository.tecnologia()
                 .orElseThrow(() -> new IllegalStateException(
                         "Falta el area " + TI_AREA + " en la base. Revisa db/migration/R__datos_base.sql."));
 

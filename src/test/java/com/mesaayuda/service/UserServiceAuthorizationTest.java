@@ -111,32 +111,32 @@ class UserServiceAuthorizationTest {
     // ============================ ESCALADA DE PRIVILEGIOS ============================
 
     @Test
-    @DisplayName("un ADMIN no puede crear un SUPER_ADMIN")
+    @DisplayName("un jefe de área no puede crear un SUPER_ADMIN")
     void adminNoCreaSuperAdmin() {
-        actuarioComo(id(5), "admin@coacmagisterio.fin.ec", "ADMIN");
+        actuarioComo(id(5), "admin@coacmagisterio.fin.ec", "AREA_MANAGER");
         when(roleRepository.findByNameRole("SUPER_ADMIN")).thenReturn(Optional.of(rol("SUPER_ADMIN")));
 
         assertThrows(AccessDeniedException.class, () -> userService.create(
-                peticion("200", "nuevo@coacmagisterio.fin.ec", "ClaveFuerte123!", "099", "SUPER_ADMIN")));
+                peticion("200", "nuevo@coacmagisterio.fin.ec", "ClaveFuerte123!", "0990000001", "SUPER_ADMIN")));
 
         verify(userRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("un ADMIN tampoco puede promoverse a sí mismo en una actualización")
+    @DisplayName("un jefe de área tampoco puede promoverse a sí mismo en una actualización")
     void adminNoSePromueve() {
-        actuarioComo(id(5), "admin@coacmagisterio.fin.ec", "ADMIN");
+        actuarioComo(id(5), "admin@coacmagisterio.fin.ec", "AREA_MANAGER");
 
         User objetivo = new User();
         objetivo.setIdUser(id(5));
         objetivo.setCorporateEmailUser("admin@coacmagisterio.fin.ec");
         objetivo.setIdentificationUser("1000000002");
-        objetivo.setRolUser(rol("ADMIN"));
+        objetivo.setRolUser(rol("AREA_MANAGER"));
         when(userRepository.findById(id(5))).thenReturn(Optional.of(objetivo));
         when(roleRepository.findByNameRole("SUPER_ADMIN")).thenReturn(Optional.of(rol("SUPER_ADMIN")));
 
         assertThrows(AccessDeniedException.class, () -> userService.update(id(5),
-                peticion("1000000002", "admin@coacmagisterio.fin.ec", null, "099", "SUPER_ADMIN")));
+                peticion("1000000002", "admin@coacmagisterio.fin.ec", null, "0990000001", "SUPER_ADMIN")));
     }
 
     @Test
@@ -151,7 +151,7 @@ class UserServiceAuthorizationTest {
 
         // No debe lanzar por el rol: el SUPER_ADMIN sí puede crear otro.
         assertDoesNotThrow(() -> userService.create(
-                peticion("200", "nuevo@coacmagisterio.fin.ec", "ClaveFuerte123!", "099", "SUPER_ADMIN")));
+                peticion("200", "nuevo@coacmagisterio.fin.ec", "ClaveFuerte123!", "0990000001", "SUPER_ADMIN")));
     }
 
     // ============================ REVOCACIÓN DE SESIONES ============================
@@ -202,7 +202,7 @@ class UserServiceAuthorizationTest {
         when(userMapper.toResponse(any())).thenReturn(null);
 
         userService.update(id(9),
-                peticion("1000000003", "agente@coacmagisterio.fin.ec", null, "099", "USER"));
+                peticion("1000000003", "agente@coacmagisterio.fin.ec", null, "0990000001", "USER"));
 
         verify(refreshTokenRepository).revokeAllByUser(id(9));
     }
@@ -251,6 +251,85 @@ class UserServiceAuthorizationTest {
         // La revocación es defensa adicional: si falla, el usuario ya está
         // guardado igual, así que no debe tumbar la operación.
         assertDoesNotThrow(() -> userService.update(id(9),
-                peticion("1000000003", "agente@coacmagisterio.fin.ec", null, "099", "USER")));
+                peticion("1000000003", "agente@coacmagisterio.fin.ec", null, "0990000001", "USER")));
+    }
+
+    // ============================ JEFES QUE GESTIONAN USUARIOS ============================
+
+    private User actuarioJefe(boolean areaGestionaUsuarios) {
+        actuarioComo(id(20), "jefe@coacmagisterio.fin.ec", "AREA_MANAGER");
+        User jefe = userRepository.findByCorporateEmailUser("jefe@coacmagisterio.fin.ec").orElseThrow();
+        Area a = area(id(30));
+        a.setManagesUsersArea(areaGestionaUsuarios);
+        jefe.setArea(a);
+        return jefe;
+    }
+
+    @Test
+    @DisplayName("un jefe de Tecnología o Desarrollo puede gestionar usuarios")
+    void jefeDeAreaQueGestionaUsuariosPuede() {
+        actuarioJefe(true);
+        assertDoesNotThrow(() -> userService.exigirGestionDeUsuarios());
+    }
+
+    @Test
+    @DisplayName("el jefe de otra área no gestiona usuarios")
+    void jefeDeOtraAreaNoGestionaUsuarios() {
+        actuarioJefe(false);
+        assertThrows(AccessDeniedException.class, () -> userService.exigirGestionDeUsuarios());
+    }
+
+    @Test
+    @DisplayName("un agente no gestiona usuarios")
+    void agenteNoGestionaUsuarios() {
+        actuarioComo(id(21), "agente2@coacmagisterio.fin.ec", "AGENT");
+        assertThrows(AccessDeniedException.class, () -> userService.exigirGestionDeUsuarios());
+    }
+
+    @Test
+    @DisplayName("el auditor consulta usuarios pero no los gestiona")
+    void auditorSoloConsultaUsuarios() {
+        actuarioComo(id(22), "auditor@coacmagisterio.fin.ec", "AUDITOR");
+        assertDoesNotThrow(() -> userService.exigirLecturaDeUsuarios());
+        assertThrows(AccessDeniedException.class, () -> userService.exigirGestionDeUsuarios());
+    }
+
+    @Test
+    @DisplayName("un jefe no puede crear un auditor")
+    void jefeNoCreaAuditor() {
+        actuarioJefe(true);
+        when(roleRepository.findByNameRole("AUDITOR")).thenReturn(Optional.of(rol("AUDITOR")));
+
+        assertThrows(AccessDeniedException.class, () -> userService.create(
+                peticion("201", "auditor2@coacmagisterio.fin.ec", "ClaveFuerte123!", "0990000001", "AUDITOR")));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("un jefe no puede tocar la cuenta de un auditor")
+    void jefeNoEditaAuditor() {
+        actuarioJefe(true);
+        User objetivo = new User();
+        objetivo.setIdUser(id(23));
+        objetivo.setCorporateEmailUser("auditor@coacmagisterio.fin.ec");
+        objetivo.setIdentificationUser("1000000023");
+        objetivo.setRolUser(rol("AUDITOR"));
+        when(userRepository.findById(id(23))).thenReturn(Optional.of(objetivo));
+
+        assertThrows(AccessDeniedException.class, () -> userService.changeStatus(id(23), "INACTIVE"));
+        assertThrows(AccessDeniedException.class, () -> userService.delete(id(23)));
+    }
+
+    @Test
+    @DisplayName("el rol ADMIN retirado ya no se puede asignar")
+    void elRolAdminRetiradoNoSeAsigna() {
+        actuarioComo(id(1), "superadmin@coacmagisterio.fin.ec", "SUPER_ADMIN");
+        Role retirado = rol("ADMIN");
+        retirado.setDeletedRole(true);
+        when(roleRepository.findByNameRole("ADMIN")).thenReturn(Optional.of(retirado));
+
+        assertThrows(com.mesaayuda.exception.BadRequestException.class, () -> userService.create(
+                peticion("202", "viejo@coacmagisterio.fin.ec", "ClaveFuerte123!", "0990000001", "ADMIN")));
+        verify(userRepository, never()).save(any());
     }
 }

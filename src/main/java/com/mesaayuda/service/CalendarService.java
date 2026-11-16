@@ -32,20 +32,21 @@ public class CalendarService {
     @Autowired
     private UserService userService;
 
+    @Autowired
+    private TicketAccessPolicy ticketAccessPolicy;
+
     public List<CalendarEventResponse> events(OffsetDateTime start, OffsetDateTime end) {
         User current = userService.getCurrentUser();
         String role = current.getRolUser().getNameRole();
-        boolean isAdmin = role.equals("ADMIN") || role.equals("SUPER_ADMIN");
+        boolean isAdmin = com.mesaayuda.security.Roles.veTodo(role);
 
         List<CalendarEventResponse> result = new ArrayList<>();
 
         // ===== TAREAS =====
         // Se listan todas (sin filtrar por fecha en BD): muchas tareas no tienen
         // fecha de inicio y con un BETWEEN directo desaparecían del calendario.
-        List<Task> tasks = isAdmin
-                ? taskRepository.findByDeletedTaskFalseOrderByStartTaskAscCreatedAtTaskDesc()
-                : taskRepository.findByAssignedUserIdUserAndDeletedTaskFalseOrderByStartTaskAscCreatedAtTaskDesc(
-                        current.getIdUser());
+        // El calendario es personal: las actividades propias y las encargadas a otros.
+        List<Task> tasks = taskRepository.findMias(current.getIdUser());
         for (Task t : tasks) {
             // Lo terminado ya no es algo por hacer: no ocupa lugar en el calendario.
             if (Task.STATUS_HECHO.equals(t.getStatusTask())) {
@@ -96,7 +97,18 @@ public class CalendarService {
                 slas.put(ts.getTicket().getIdTicket(), ts);
             }
         }
+        AlcanceTickets alcance = null;
         for (Ticket tk : tickets) {
+            // Un confidencial que la persona no puede leer no sale: en el calendario
+            // no sirve de nada y al abrirlo daría 403. Si puede leerlo, con su título.
+            if (TicketAccessPolicy.esConfidencial(tk)) {
+                if (alcance == null) {
+                    alcance = ticketAccessPolicy.alcanceDe(current);
+                }
+                if (!ticketAccessPolicy.puedeLeer(tk, alcance)) {
+                    continue;
+                }
+            }
             TicketSla sla = slas.get(tk.getIdTicket());
             OffsetDateTime evStart = tk.getCreatedAtTicket();
             OffsetDateTime evEnd = sla != null && sla.getResolutionDueAt() != null

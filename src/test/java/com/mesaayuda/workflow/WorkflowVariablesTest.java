@@ -67,4 +67,13 @@ class WorkflowVariablesTest {
         assertEquals(true, claves.contains("ticket.sla.venceResolucion"));
         assertEquals(true, claves.contains("usuario.rol"));
     }
+
+    @Test
+    void laSucursalSeOfreceConSuNombreYElAnteriorSigueValiendo() {
+        // El catálogo del constructor ofrece ticket.sucursal; ticket.sede ya no se
+        // muestra, pero un workflow publicado con ese nombre sigue validando.
+        assertEquals(true, WorkflowVariables.CATALOGO_TICKET.containsKey("ticket.sucursal"));
+        assertEquals(false, WorkflowVariables.CATALOGO_TICKET.containsKey("ticket.sede"));
+        assertEquals(true, WorkflowVariables.clavesVivas().contains("ticket.sede"));
+    }
 }

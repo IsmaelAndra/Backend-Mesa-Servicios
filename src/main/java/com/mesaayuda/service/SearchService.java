@@ -107,9 +107,9 @@ public class SearchService {
         List<SearchAssetItem> assets = List.of();
 
         if (personal) {
-            // Solicitantes: usuarios y jefes de área. Personal: agentes y administradores.
-            users = buscarPersonas(termino, List.of("USER", "AREA_MANAGER"), limite);
-            agents = buscarPersonas(termino, List.of("AGENT", "ADMIN", "SUPER_ADMIN"), limite);
+            // Solicitantes: usuarios. Personal: agentes, jefes de área y súper admin.
+            users = buscarPersonas(termino, List.of("USER"), limite);
+            agents = buscarPersonas(termino, List.of("AGENT", "AREA_MANAGER", "SUPER_ADMIN"), limite);
         }
         if (superAdmin) {
             workflows = buscarWorkflows(termino, limite);

@@ -19,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,7 +66,9 @@ public class AdminService {
     @Transactional(readOnly = true)
     public Map<String, Object> getCatalog() {
         Map<String, Object> catalog = new HashMap<>();
-        catalog.put("roles", roleRepository.findAll().stream().map(Role::getNameRole).toList());
+        catalog.put("roles", roleRepository.findAll().stream()
+                .filter(r -> !Boolean.TRUE.equals(r.getDeletedRole()))
+                .map(Role::getNameRole).toList());
         catalog.put("areas", areaRepository.findByDeletedAreaFalseOrderByPriorityLevelDesc().stream()
                 .map(a -> {
                     Map<String, Object> m = new HashMap<>();
@@ -78,7 +81,7 @@ public class AdminService {
                     return m;
                 }).toList());
         // El catalogo es publico y lo consumen todos los selectores de la
-        // aplicacion, asi que la sede tambien va aqui en vez de obligar a un
+        // aplicacion, asi que la sucursal tambien va aqui en vez de obligar a un
         // endpoint por cada formulario.
         catalog.put("sucursales", sucursalRepository
                 .findByDeletedSucursalFalseAndStatusSucursalTrueOrderByNameSucursalAsc().stream()
@@ -114,6 +117,7 @@ public class AdminService {
             m.put("id", t.getIdTeam());
             m.put("name", t.getNameTeam());
             m.put("method", t.getAssignmentMethod());
+            m.put("areaId", t.getAreaId());
             m.put("icon", orEmpty(t.getIconTeam()));
             m.put("color", orEmpty(t.getColorTeam()));
             return m;
@@ -127,6 +131,7 @@ public class AdminService {
             m.put("icon", orEmpty(c.getIconCategory()));
             m.put("color", orEmpty(c.getColorCategory()));
             m.put("teamId", c.getTeamCategory() != null ? c.getTeamCategory().getIdTeam() : null);
+            m.put("areaId", c.getAreaId());
             return m;
         }).toList());
         catalog.put("ticketTypes", ticketTypeRepository.findByDeletedTicketTypeFalseOrderByNameTicketTypeAsc().stream()
@@ -177,14 +182,10 @@ public class AdminService {
 
     @Transactional
     public Map<String, Object> saveTicketType(String name, String description, String icon, String color) {
-        if (name == null || name.isBlank()) {
-            throw new BadRequestException("El nombre del tipo es obligatorio");
-        }
-        if (ticketTypeRepository.existsByNameTicketType(name.trim())) {
-            throw new BadRequestException("Ya existe un tipo con ese nombre");
-        }
+        String nombre = nombreObligatorio(name, "del tipo", 100).toUpperCase();
+        exigirTipoLibre(nombre, null);
         TicketType t = new TicketType();
-        t.setNameTicketType(name.trim().toUpperCase());
+        t.setNameTicketType(nombre);
         t.setDescriptionTicketType(description == null ? null : description.trim());
         t.setIconTicketType(icon == null || icon.isBlank() ? null : icon.trim());
         t.setColorTicketType(color == null || color.isBlank() ? null : color.trim());
@@ -200,8 +201,10 @@ public class AdminService {
         TicketType t = ticketTypeRepository.findById(id)
                 .filter(x -> !x.getDeletedTicketType())
                 .orElseThrow(() -> new ResourceNotFoundException("Tipo de ticket", "id", id));
-        if (name != null && !name.isBlank()) {
-            t.setNameTicketType(name.trim().toUpperCase());
+        if (name != null) {
+            String nombre = nombreObligatorio(name, "del tipo", 100).toUpperCase();
+            exigirTipoLibre(nombre, t.getIdTicketType());
+            t.setNameTicketType(nombre);
         }
         if (description != null) {
             t.setDescriptionTicketType(description.trim());
@@ -224,7 +227,19 @@ public class AdminService {
                 .filter(x -> !x.getDeletedTicketType())
                 .orElseThrow(() -> new ResourceNotFoundException("Tipo de ticket", "id", id));
         t.setDeletedTicketType(true);
+        t.setNameTicketType(nombreDeEliminado(t.getNameTicketType(), 100));
         ticketTypeRepository.save(t);
+    }
+
+    /** Se guarda en mayúsculas: "Incidente" y "INCIDENTE" chocaban en la base (500). */
+    private void exigirTipoLibre(String nombre, UUID propio) {
+        boolean repetido = ticketTypeRepository.findAll().stream()
+                .anyMatch(x -> !Boolean.TRUE.equals(x.getDeletedTicketType())
+                        && !x.getIdTicketType().equals(propio)
+                        && mismoNombre(x.getNameTicketType(), nombre));
+        if (repetido) {
+            throw new BadRequestException("Ya existe un tipo llamado \"" + nombre + "\"");
+        }
     }
 
     // ============================ BRANDING ============================
@@ -645,31 +660,186 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
         return areaRepository.findByDeletedAreaFalseOrderByPriorityLevelDesc();
     }
 
+    /**
+     * Nombre con el que queda un registro borrado (borrado lógico). La columna
+     * del nombre es UNIQUE e incluye los borrados: sin esto, el nombre de un
+     * área, categoría, equipo o tipo eliminado no se podía volver a usar (500).
+     */
+    static String nombreDeEliminado(String nombre, int max) {
+        String marca = " (eliminado " + java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
+                .format(java.time.LocalDateTime.now()) + ")";
+        String base = nombre == null ? "" : nombre;
+        if (base.length() + marca.length() > max) {
+            base = base.substring(0, Math.max(0, max - marca.length()));
+        }
+        return base + marca;
+    }
+
+    private static final java.util.regex.Pattern SUFIJO_ELIMINADO =
+            java.util.regex.Pattern.compile(" \\(eliminado \\d{14}\\)$");
+
+    /**
+     * Nombre para mostrar: "Atención (eliminado 20261112155109)" → "Atención
+     * (eliminada)". El sufijo con fecha solo existe para liberar el nombre.
+     */
+    public static String nombreVisible(String nombre) {
+        if (nombre == null) return null;
+        return SUFIJO_ELIMINADO.matcher(nombre).find()
+                ? SUFIJO_ELIMINADO.matcher(nombre).replaceAll(" (eliminada)") : nombre;
+    }
+
+    /** Nombre limpio y obligatorio (espacios repetidos fuera). */
+    static String nombreObligatorio(String nombre, String que, int max) {
+        String n = nombre == null ? "" : nombre.strip().replaceAll("\\s+", " ");
+        if (n.isEmpty()) {
+            throw new BadRequestException("Escriba el nombre " + que);
+        }
+        if (n.length() > max) {
+            throw new BadRequestException("El nombre admite hasta " + max + " caracteres");
+        }
+        return n;
+    }
+
+    private static boolean mismoNombre(String a, String b) {
+        return a != null && b != null && a.strip().equalsIgnoreCase(b.strip());
+    }
+
+    /** Escala de prioridad de un área: 1 (baja) a 10 (alta). */
+    public static final int PRIORIDAD_AREA_MIN = 1;
+    public static final int PRIORIDAD_AREA_MAX = 10;
+    private static final java.util.regex.Pattern COLOR_HEX = java.util.regex.Pattern.compile("^#[0-9a-fA-F]{6}$");
+    private static final java.util.regex.Pattern ICONO_FA =
+            java.util.regex.Pattern.compile("^fa-(solid|regular|brands) fa-[a-z0-9-]+$");
+
     public Area saveArea(UUID id, String name, String description, Integer priorityLevel, Boolean status,
                          String icon, String color) {
         Area area = id != null
                 ? areaRepository.findById(id).filter(a -> !a.getDeletedArea())
                         .orElseThrow(() -> new ResourceNotFoundException("Área", "id", id))
                 : new Area();
-        if (name != null) area.setNameArea(name);
-        if (description != null) area.setDescriptionArea(description);
-        if (icon != null) area.setIconArea(icon.isBlank() ? null : icon.trim());
-        if (color != null) area.setColorArea(color.isBlank() ? null : color.trim());
-        if (priorityLevel != null) area.setPriorityLevel(priorityLevel);
-        if (status != null) area.setStatusArea(status);
-        if (area.getCreatedAtArea() == null) {
-            // nuevo
-            if (areaRepository.existsByNameArea(name)) {
-                throw new BadRequestException("El área ya existe: " + name);
-            }
+        boolean nueva = area.getCreatedAtArea() == null;
+        String nombre = name == null ? null : name.strip().replaceAll("\\s+", " ");
+        if (nueva && (nombre == null || nombre.isEmpty())) {
+            throw new BadRequestException("Escriba el nombre del área");
         }
+        if (nombre != null) {
+            if (nombre.isEmpty()) {
+                throw new BadRequestException("Escriba el nombre del área");
+            }
+            if (nombre.length() > 100) {
+                throw new BadRequestException("El nombre admite hasta 100 caracteres");
+            }
+            // Sin distinguir mayúsculas: "tecnología" y "Tecnología" se ven iguales en la tabla.
+            String clave = nombre.toLowerCase(java.util.Locale.ROOT);
+            boolean repetida = areaRepository.findByDeletedAreaFalseOrderByPriorityLevelDesc().stream()
+                    .anyMatch(a -> !a.getIdArea().equals(area.getIdArea())
+                            && a.getNameArea() != null
+                            && a.getNameArea().strip().toLowerCase(java.util.Locale.ROOT).equals(clave));
+            if (repetida) {
+                throw new BadRequestException("Ya existe un área llamada \"" + nombre + "\"");
+            }
+            area.setNameArea(nombre);
+        }
+        if (description != null) {
+            String d = description.strip();
+            if (d.length() > 255) {
+                throw new BadRequestException("La descripción admite hasta 255 caracteres");
+            }
+            area.setDescriptionArea(d.isEmpty() ? null : d);
+        }
+        if (icon != null) {
+            String i = icon.strip();
+            if (!i.isEmpty() && !ICONO_FA.matcher(i).matches()) {
+                throw new BadRequestException("Icono no válido: elíjalo de la lista");
+            }
+            area.setIconArea(i.isEmpty() ? null : i);
+        }
+        if (color != null) {
+            String c = color.strip();
+            if (!c.isEmpty() && !COLOR_HEX.matcher(c).matches()) {
+                throw new BadRequestException("El color debe tener la forma #RRGGBB");
+            }
+            area.setColorArea(c.isEmpty() ? null : c);
+        }
+        if (priorityLevel != null) {
+            if (priorityLevel < PRIORIDAD_AREA_MIN || priorityLevel > PRIORIDAD_AREA_MAX) {
+                throw new BadRequestException("La prioridad va de " + PRIORIDAD_AREA_MIN + " a " + PRIORIDAD_AREA_MAX);
+            }
+            area.setPriorityLevel(priorityLevel);
+        }
+        if (status != null) area.setStatusArea(status);
         return areaRepository.save(area);
     }
 
-    public void deleteArea(UUID id) {
-        Area area = areaRepository.findById(id)
+    /** Lo que todavía apunta a un área: personas, equipos, categorías, tickets abiertos y proyectos. */
+    public record UsoArea(long usuarios, long equipos, long categorias, long ticketsAbiertos, long proyectos) {
+        public boolean enUso() {
+            return usuarios + equipos + categorias + ticketsAbiertos + proyectos > 0;
+        }
+
+        public String resumen() {
+            List<String> p = new ArrayList<>();
+            if (usuarios > 0) p.add(usuarios + (usuarios == 1 ? " persona" : " personas"));
+            if (equipos > 0) p.add(equipos + (equipos == 1 ? " equipo" : " equipos"));
+            if (categorias > 0) p.add(categorias + (categorias == 1 ? " categoría" : " categorías"));
+            if (ticketsAbiertos > 0) p.add(ticketsAbiertos + (ticketsAbiertos == 1 ? " ticket abierto" : " tickets abiertos"));
+            if (proyectos > 0) p.add(proyectos + (proyectos == 1 ? " proyecto" : " proyectos"));
+            return String.join(", ", p);
+        }
+    }
+
+    private static final String TICKET_ABIERTO =
+            " AND t.deleted_ticket = FALSE AND t.status_ticket NOT IN "
+            + "(SELECT id_status FROM status WHERE upper(name_status) IN ('RESUELTO','CERRADO'))";
+
+    @Transactional(readOnly = true)
+    public UsoArea usoDeArea(UUID id) {
+        if (jdbcTemplateIa == null) {
+            return new UsoArea(0, 0, 0, 0, 0);
+        }
+        return new UsoArea(
+                contar("SELECT count(*) FROM users WHERE deleted_user = FALSE AND area_id = ?", id),
+                contar("SELECT count(*) FROM support_team WHERE active_team = TRUE AND area_team = ?", id),
+                contar("SELECT count(*) FROM category WHERE deleted_category = FALSE AND area_category = ?", id),
+                contar("SELECT count(*) FROM ticket t WHERE (t.area_destino_ticket = ? OR t.area_ticket = ?)" + TICKET_ABIERTO, id, id),
+                contar("SELECT count(*) FROM proyecto WHERE deleted_proyecto = FALSE AND area_proyecto = ? "
+                        + "AND estado_proyecto NOT IN ('TERMINADO','CANCELADO')", id));
+    }
+
+    private long contar(String sql, Object... args) {
+        Long n = jdbcTemplateIa.queryForObject(sql, Long.class, args);
+        return n == null ? 0 : n;
+    }
+
+    /**
+     * Borrado lógico. Si el área está en uso exige otra área a la que pasar
+     * personas, equipos, categorías, tickets abiertos y proyectos; sin ella
+     * responde 400 con el detalle (antes quedaban referencias huérfanas).
+     */
+    public void deleteArea(UUID id, UUID reasignarA) {
+        Area area = areaRepository.findById(id).filter(a -> !a.getDeletedArea())
                 .orElseThrow(() -> new ResourceNotFoundException("Área", "id", id));
+        UsoArea uso = usoDeArea(id);
+        if (uso.enUso()) {
+            if (reasignarA == null) {
+                throw new BadRequestException("El área está en uso (" + uso.resumen()
+                        + "). Elija a qué área pasarlos antes de eliminarla.");
+            }
+            if (reasignarA.equals(id)) {
+                throw new BadRequestException("Elija un área distinta para reasignar");
+            }
+            areaRepository.findById(reasignarA).filter(a -> !a.getDeletedArea() && Boolean.TRUE.equals(a.getStatusArea()))
+                    .orElseThrow(() -> new BadRequestException("El área de destino no existe o está inactiva"));
+            jdbcTemplateIa.update("UPDATE users SET area_id = ? WHERE area_id = ? AND deleted_user = FALSE", reasignarA, id);
+            jdbcTemplateIa.update("UPDATE support_team SET area_team = ? WHERE area_team = ?", reasignarA, id);
+            jdbcTemplateIa.update("UPDATE category SET area_category = ? WHERE area_category = ?", reasignarA, id);
+            jdbcTemplateIa.update("UPDATE ticket t SET area_destino_ticket = ? WHERE t.area_destino_ticket = ?" + TICKET_ABIERTO, reasignarA, id);
+            jdbcTemplateIa.update("UPDATE ticket t SET area_ticket = ? WHERE t.area_ticket = ?" + TICKET_ABIERTO, reasignarA, id);
+            jdbcTemplateIa.update("UPDATE proyecto SET area_proyecto = ? WHERE area_proyecto = ? AND deleted_proyecto = FALSE", reasignarA, id);
+        }
         area.setDeletedArea(true);
+        area.setStatusArea(false);
+        area.setNameArea(nombreDeEliminado(area.getNameArea(), 100));
         areaRepository.save(area);
     }
 
@@ -681,9 +851,9 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
     }
 
     /**
-     * Alta o edición de una sede. El borrado es lógico: los tickets y las
+     * Alta o edición de una sucursal. El borrado es lógico: los tickets y las
      * personas que apuntan a ella tienen que seguir siendo legibles aunque la
-     * sede se deje de usar.
+     * sucursal se deje de usar.
      */
     public Sucursal saveSucursal(UUID id, String code, String name, String description,
                                  String address, String phone, String icon, String color,
@@ -697,24 +867,27 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
         if (code != null) {
             String limpio = code.trim().toUpperCase();
             // El codigo es la clave corta de los reportes, asi que no puede
-            // repetirse. Solo se rechaza si pertenece a OTRA sede: al editar
+            // repetirse. Solo se rechaza si pertenece a OTRA sucursal: al editar
             // una, su propio codigo no cuenta como duplicado.
             Optional<Sucursal> conEseCodigo = sucursalRepository.findByCodeSucursal(limpio);
             if (conEseCodigo.isPresent()
                     && !conEseCodigo.get().getIdSucursal().equals(sucursal.getIdSucursal())) {
-                throw new BadRequestException("El código de sede ya existe: " + limpio);
+                throw new BadRequestException("El código de sucursal ya existe: " + limpio);
             }
             sucursal.setCodeSucursal(limpio);
         }
         if (name != null) {
             if (esNueva && sucursalRepository.existsByNameSucursal(name.trim())) {
-                throw new BadRequestException("La sede ya existe: " + name);
+                throw new BadRequestException("La sucursal ya existe: " + name);
             }
             sucursal.setNameSucursal(name.trim());
         }
         if (description != null) sucursal.setDescriptionSucursal(description);
         if (address != null) sucursal.setAddressSucursal(address);
-        if (phone != null) sucursal.setPhoneSucursal(blankToNull(phone));
+        // Solo se valida si cambia: un teléfono viejo mal escrito no impide editar lo demás.
+        if (phone != null && !phone.trim().equals(java.util.Objects.toString(sucursal.getPhoneSucursal(), ""))) {
+            sucursal.setPhoneSucursal(UserService.telefonoValido(phone));
+        }
         if (icon != null) sucursal.setIconSucursal(blankToNull(icon));
         if (color != null) sucursal.setColorSucursal(blankToNull(color));
         if (status != null) sucursal.setStatusSucursal(status);
@@ -723,7 +896,7 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
     }
 
     /**
-     * Borra lógicamente la sede. Se comprueba antes si algo la referencia, para
+     * Borra lógicamente la sucursal. Se comprueba antes si algo la referencia, para
      * avisar en vez de dejar tickets y usuarios apuntando a un sitio que ya no
      * existe en la lista.
      */
@@ -734,15 +907,15 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
         long usuarios = userRepository.countBySucursal_IdSucursalAndDeletedUserFalse(id);
         if (usuarios > 0) {
             throw new BadRequestException(
-                    "La sede tiene " + usuarios + " persona(s) asignada(s). "
+                    "La sucursal tiene " + usuarios + " persona(s) asignada(s). "
                     + "Reasígnalas antes de eliminarla, o desactívala en vez de borrarla.");
         }
         // Aunque no queden personas, puede haber tickets históricos apuntando a la
-        // sede: si se borrara en cascada se perderían, así que se avisa igual.
+        // sucursal: si se borrara en cascada se perderían, así que se avisa igual.
         long tickets = ticketRepository.countBySucursalTicket_IdSucursalAndDeletedTicketFalse(id);
         if (tickets > 0) {
             throw new BadRequestException(
-                    "La sede tiene " + tickets + " ticket(s) asociado(s). "
+                    "La sucursal tiene " + tickets + " ticket(s) asociado(s). "
                     + "Desactívala en vez de eliminarla para conservar el historial.");
         }
         sucursal.setDeletedSucursal(true);
@@ -758,8 +931,56 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
     }
 
     @Transactional(readOnly = true)
+    /**
+     * Exige que el área esté en el ámbito (null = súper admin, sin límite). El
+     * jefe solo gestiona lo de sus áreas.
+     */
+    public void exigirAmbito(java.util.Set<UUID> ambito, UUID areaId, String que) {
+        if (ambito != null && (areaId == null || !ambito.contains(areaId))) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Solo puede " + que + " de las áreas a su cargo");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public UUID areaDeEquipo(UUID teamId) {
+        return teamId == null ? null : teamRepository.findById(teamId).map(SupportTeam::getAreaId).orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public UUID areaDeCategoria(UUID categoryId) {
+        return categoryId == null ? null : categoryRepository.findById(categoryId).map(Category::getAreaId).orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public UUID areaDePoliticaSla(UUID policyId) {
+        return policyId == null ? null : slaPolicyRepository.findById(policyId)
+                .map(SlaPolicy::getAreaSlaPolicy).orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public UUID areaDeReglaSla(UUID ruleId) {
+        return ruleId == null ? null : slaRuleRepository.findById(ruleId)
+                .map(r -> r.getArea() == null ? null : r.getArea().getIdArea()).orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public UUID areaDeUsuario(UUID userId) {
+        return userId == null ? null : userRepository.findById(userId)
+                .map(u -> u.getArea() == null ? null : u.getArea().getIdArea()).orElse(null);
+    }
+
     public List<Map<String, Object>> getCategoriesForAdmin() {
-        return categoryRepository.findByDeletedCategoryFalse().stream().map(c -> {
+        return categoryRepository.findByDeletedCategoryFalse().stream().map(this::vistaCategoria).toList();
+    }
+
+    /**
+     * Lo que la pantalla necesita de una categoría. Crear y editar devolvían la
+     * entidad con sus relaciones perezosas sin cargar y Jackson fallaba al
+     * escribirla (500 "ByteBuddyInterceptor"), aunque el cambio sí se guardaba.
+     */
+    public Map<String, Object> vistaCategoria(Category c) {
+        {
             Map<String, Object> m = new HashMap<>();
             m.put("idCategory", c.getIdCategory());
             m.put("nameCategory", c.getNameCategory());
@@ -770,17 +991,40 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
             team.put("idTeam", c.getTeamCategory() != null ? c.getTeamCategory().getIdTeam() : null);
             team.put("nameTeam", c.getTeamCategory() != null ? c.getTeamCategory().getNameTeam() : null);
             m.put("teamCategory", team);
+            m.put("areaId", c.getAreaId());
+            m.put("area", c.getAreaCategory() != null ? c.getAreaCategory().getNameArea() : null);
             return m;
-        }).toList();
+        }
+    }
+
+    /** Guarda y devuelve la vista (dentro de la transacción del servicio). */
+    public Map<String, Object> guardarCategoria(UUID id, String name, String description, UUID teamId,
+                                                String icon, String color, UUID areaId) {
+        return vistaCategoria(saveCategory(id, name, description, teamId, icon, color, areaId));
     }
 
     public Category saveCategory(UUID id, String name, String description, UUID teamId,
                                  String icon, String color) {
+        return saveCategory(id, name, description, teamId, icon, color, null);
+    }
+
+    /** Con área (V28). Si no se indica, la categoría toma la de su equipo. */
+    public Category saveCategory(UUID id, String name, String description, UUID teamId,
+                                 String icon, String color, UUID areaId) {
         Category category = id != null
                 ? categoryRepository.findById(id).filter(c -> !c.getDeletedCategory())
                         .orElseThrow(() -> new ResourceNotFoundException("Categoría", "id", id))
                 : new Category();
-        if (name != null) category.setNameCategory(name);
+        if (category.getIdCategory() == null || name != null) {
+            String nombre = nombreObligatorio(name, "de la categoría", 100);
+            UUID propia = category.getIdCategory();
+            boolean repetida = categoryRepository.findByDeletedCategoryFalse().stream()
+                    .anyMatch(x -> !x.getIdCategory().equals(propia) && mismoNombre(x.getNameCategory(), nombre));
+            if (repetida) {
+                throw new BadRequestException("Ya existe una categoría llamada \"" + nombre + "\"");
+            }
+            category.setNameCategory(nombre);
+        }
         if (description != null) category.setDescriptionCategory(description);
         if (icon != null) category.setIconCategory(icon.isBlank() ? null : icon.trim());
         if (color != null) category.setColorCategory(color.isBlank() ? null : color.trim());
@@ -788,8 +1032,22 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
             category.setTeamCategory(teamRepository.findById(teamId)
                     .orElseThrow(() -> new ResourceNotFoundException("Equipo", "id", teamId)));
         }
-        if (category.getIdCategory() == null && categoryRepository.existsByNameCategory(name)) {
-            throw new BadRequestException("La categoría ya existe: " + name);
+        if (areaId != null) {
+            category.setAreaCategory(areaRepository.findById(areaId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Área", "id", areaId)));
+        } else if (category.getTeamCategory() != null && category.getTeamCategory().getAreaTeam() != null) {
+            // Sin área explícita, la categoría es del área de su equipo: así
+            // cambiar de equipo la mueve con él en lugar de chocar con la regla
+            // de abajo.
+            category.setAreaCategory(category.getTeamCategory().getAreaTeam());
+        }
+        if (category.getAreaCategory() != null && category.getTeamCategory() != null
+                && category.getTeamCategory().getAreaTeam() != null
+                && !category.getTeamCategory().getAreaTeam().getIdArea().equals(category.getAreaCategory().getIdArea())) {
+            throw new BadRequestException("El equipo de la categoría tiene que ser de la misma área");
+        }
+        if (category.getTeamCategory() == null) {
+            throw new BadRequestException("Elija el equipo que atiende la categoría");
         }
         return categoryRepository.save(category);
     }
@@ -798,6 +1056,7 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
         Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Categoría", "id", id));
         category.setDeletedCategory(true);
+        category.setNameCategory(nombreDeEliminado(category.getNameCategory(), 100));
         categoryRepository.save(category);
     }
 
@@ -820,18 +1079,34 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
 
     public SupportTeam saveTeam(UUID id, String name, String description, String method, Boolean active,
                                 String icon, String color, Boolean autoMembers) {
+        return saveTeam(id, name, description, method, active, icon, color, autoMembers, null);
+    }
+
+    /** Con área (V28): los equipos atienden los tickets de su área. */
+    public SupportTeam saveTeam(UUID id, String name, String description, String method, Boolean active,
+                                String icon, String color, Boolean autoMembers, UUID areaId) {
         SupportTeam team = id != null
                 ? teamRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Equipo", "id", id))
                 : new SupportTeam();
-        if (name != null) team.setNameTeam(name);
+        if (team.getIdTeam() == null || name != null) {
+            String nombre = nombreObligatorio(name, "del equipo", 100);
+            UUID propio = team.getIdTeam();
+            boolean repetido = teamRepository.findAll().stream()
+                    .anyMatch(x -> !x.getIdTeam().equals(propio) && mismoNombre(x.getNameTeam(), nombre));
+            if (repetido) {
+                throw new BadRequestException("Ya existe un equipo llamado \"" + nombre + "\"");
+            }
+            team.setNameTeam(nombre);
+        }
         if (description != null) team.setDescriptionTeam(description);
         if (method != null) team.setAssignmentMethod(method);
         if (active != null) team.setActiveTeam(active);
         if (icon != null) team.setIconTeam(icon.isBlank() ? null : icon.trim());
         if (color != null) team.setColorTeam(color.isBlank() ? null : color.trim());
         if (autoMembers != null) team.setAutoMembersTeam(autoMembers);
-        if (team.getIdTeam() == null && teamRepository.existsByNameTeam(name)) {
-            throw new BadRequestException("El equipo ya existe: " + name);
+        if (areaId != null) {
+            team.setAreaTeam(areaRepository.findById(areaId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Área", "id", areaId)));
         }
         SupportTeam guardado = teamRepository.save(team);
         if (Boolean.TRUE.equals(guardado.getAutoMembersTeam()) && routingService != null) {
@@ -839,6 +1114,36 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
             routingService.sincronizarAgentes(guardado);
         }
         return guardado;
+    }
+
+    /**
+     * Eliminar un equipo = desactivarlo y liberar su nombre (los tickets
+     * cerrados siguen apuntando a él). Antes no había ruta DELETE y respondía 405.
+     * No se permite si todavía atiende categorías o tickets abiertos.
+     */
+    public void deleteTeam(UUID id) {
+        SupportTeam team = teamRepository.findById(id)
+                .filter(t -> Boolean.TRUE.equals(t.getActiveTeam()))
+                .orElseThrow(() -> new ResourceNotFoundException("Equipo", "id", id));
+        long categorias = categoryRepository.findByDeletedCategoryFalse().stream()
+                .filter(c -> c.getTeamCategory() != null && id.equals(c.getTeamCategory().getIdTeam()))
+                .count();
+        if (categorias > 0) {
+            throw new BadRequestException("El equipo atiende " + categorias
+                    + (categorias == 1 ? " categoría" : " categorías") + ": páselas a otro equipo antes de eliminarlo");
+        }
+        if (jdbcTemplateIa != null) {
+            Long abiertos = jdbcTemplateIa.queryForObject("SELECT count(*) FROM ticket t WHERE t.team_ticket = ?"
+                    + TICKET_ABIERTO, Long.class, id);
+            if (abiertos != null && abiertos > 0) {
+                throw new BadRequestException("El equipo tiene " + abiertos
+                        + (abiertos == 1 ? " ticket abierto" : " tickets abiertos") + ": reasígnelos antes de eliminarlo");
+            }
+            jdbcTemplateIa.update("UPDATE team_user SET active_team_user = FALSE WHERE team_id = ?", id);
+        }
+        team.setActiveTeam(false);
+        team.setNameTeam(nombreDeEliminado(team.getNameTeam(), 100));
+        teamRepository.save(team);
     }
 
     public void addMemberToTeam(UUID teamId, UUID userId) {
@@ -879,16 +1184,44 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
     public SlaPolicy saveSlaPolicy(UUID id, String name, String description,
                                    Integer responseMinutes, Integer resolutionMinutes, Boolean active,
                                    String icon, String color) {
+        return saveSlaPolicy(id, name, description, responseMinutes, resolutionMinutes, active, icon, color, null, false);
+    }
+
+    /**
+     * Guarda una política. {@code cambiarArea} indica si {@code areaId} se debe
+     * aplicar (null = global); el controlador ya comprobó el ámbito del jefe.
+     */
+    public SlaPolicy saveSlaPolicy(UUID id, String name, String description,
+                                   Integer responseMinutes, Integer resolutionMinutes, Boolean active,
+                                   String icon, String color, UUID areaId, boolean cambiarArea) {
         SlaPolicy policy = id != null
                 ? slaPolicyRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("SLA", "id", id))
                 : new SlaPolicy();
-        if (name != null) policy.setNameSlaPolicy(name);
+        // Lo valida la base (chk_response_gt0/chk_resolution_gt0), pero ahí salía
+        // como error 500; aquí se responde 400 con un mensaje que se entiende.
+        String nombre = name == null ? null : name.strip();
+        if (policy.getIdSlaPolicy() == null && (nombre == null || nombre.isEmpty())) {
+            throw new BadRequestException("Escriba el nombre de la política");
+        }
+        if (responseMinutes != null && responseMinutes <= 0) {
+            throw new BadRequestException("El tiempo de respuesta debe ser mayor que 0 minutos");
+        }
+        if (resolutionMinutes != null && resolutionMinutes <= 0) {
+            throw new BadRequestException("El tiempo de resolución debe ser mayor que 0 minutos");
+        }
+        Integer respuesta = responseMinutes != null ? responseMinutes : policy.getResponseTimeMinutes();
+        Integer resolucion = resolutionMinutes != null ? resolutionMinutes : policy.getResolutionTimeMinutes();
+        if (respuesta != null && resolucion != null && resolucion < respuesta) {
+            throw new BadRequestException("La resolución no puede vencer antes que la primera respuesta");
+        }
+        if (nombre != null && !nombre.isEmpty()) policy.setNameSlaPolicy(nombre);
         if (description != null) policy.setDescriptionSlaPolicy(description);
         if (responseMinutes != null) policy.setResponseTimeMinutes(responseMinutes);
         if (resolutionMinutes != null) policy.setResolutionTimeMinutes(resolutionMinutes);
         if (active != null) policy.setActiveSlaPolicy(active);
         if (icon != null) policy.setIconSlaPolicy(blankToNull(icon));
         if (color != null) policy.setColorSlaPolicy(blankToNull(color));
+        if (cambiarArea) policy.setAreaSlaPolicy(areaId);
         if (policy.getIdSlaPolicy() == null && slaPolicyRepository.existsByNameSlaPolicy(name)) {
             throw new BadRequestException("La política SLA ya existe: " + name);
         }
@@ -900,8 +1233,14 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
         SlaRule rule = id != null
                 ? slaRuleRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Regla SLA", "id", id))
                 : new SlaRule();
-        rule.setSlaPolicy(slaPolicyRepository.findById(policyId)
-                .orElseThrow(() -> new ResourceNotFoundException("Política SLA", "id", policyId)));
+        SlaPolicy politica = slaPolicyRepository.findById(policyId)
+                .orElseThrow(() -> new ResourceNotFoundException("Política SLA", "id", policyId));
+        // Una regla de un área solo usa políticas globales o de esa misma área.
+        if (politica.getAreaSlaPolicy() != null && !politica.getAreaSlaPolicy().equals(areaId)) {
+            throw new BadRequestException("La política \"" + politica.getNameSlaPolicy()
+                    + "\" es de otra área: elija una global o del área de la regla");
+        }
+        rule.setSlaPolicy(politica);
         rule.setArea(areaRepository.findById(areaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Área", "id", areaId)));
         rule.setPriority(priorityRepository.findById(priorityId)
@@ -934,6 +1273,9 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
             Map<String, Object> m = new HashMap<>();
             m.put("idSlaRule", r.getIdSlaRule());
             m.put("slaPolicyId", r.getSlaPolicy() != null ? r.getSlaPolicy().getIdSlaPolicy() : null);
+            // El jefe no lista las políticas globales, pero sus reglas antiguas
+            // pueden usarlas: el nombre viaja con la regla.
+            m.put("slaPolicyName", r.getSlaPolicy() != null ? r.getSlaPolicy().getNameSlaPolicy() : null);
             m.put("areaId", r.getArea() != null ? r.getArea().getIdArea() : null);
             m.put("priorityId", r.getPriority() != null ? r.getPriority().getIdPriority() : null);
             m.put("categoryId", r.getCategory() != null ? r.getCategory().getIdCategory() : null);
@@ -1303,8 +1645,38 @@ private boolean esRutaDeImagenDePlantilla(String valor) {
     }
 
     @Transactional(readOnly = true)
-    public List<TeamUser> teamMembers(UUID teamId) {
-        return teamUserRepository.findByTeamIdTeamAndActiveTeamUserTrue(teamId);
+    public List<com.mesaayuda.dto.MiembroEquipoResponse> teamMembers(UUID teamId) {
+        return teamUserRepository.findByTeamIdTeamAndActiveTeamUserTrue(teamId).stream()
+                .filter(tu -> tu.getUser() != null && !Boolean.TRUE.equals(tu.getUser().getDeletedUser()))
+                .map(tu -> aMiembro(tu.getUser(), tu.getLastAssignedAt()))
+                .sorted(java.util.Comparator.comparing(m -> m.nombre().toLowerCase(java.util.Locale.ROOT)))
+                .toList();
+    }
+
+    /**
+     * Personal que se puede añadir al equipo a mano: agentes y jefes activos del
+     * área del equipo (de cualquier área si el equipo no tiene), que no estén ya.
+     */
+    @Transactional(readOnly = true)
+    public List<com.mesaayuda.dto.MiembroEquipoResponse> candidatosDeEquipo(UUID teamId) {
+        UUID area = areaDeEquipo(teamId);
+        java.util.Set<UUID> yaEstan = new java.util.HashSet<>();
+        teamUserRepository.findByTeamIdTeamAndActiveTeamUserTrue(teamId)
+                .forEach(tu -> yaEstan.add(tu.getUser().getIdUser()));
+        return userRepository.personalActivo(List.of(com.mesaayuda.security.Roles.AGENTE, com.mesaayuda.security.Roles.JEFE))
+                .stream()
+                .filter(u -> !yaEstan.contains(u.getIdUser()))
+                .filter(u -> area == null || (u.getArea() != null && area.equals(u.getArea().getIdArea())))
+                .map(u -> aMiembro(u, null))
+                .toList();
+    }
+
+    private com.mesaayuda.dto.MiembroEquipoResponse aMiembro(User u, java.time.OffsetDateTime ultima) {
+        String nombre = u.getDisplayName() != null && !u.getDisplayName().isBlank()
+                ? u.getDisplayName() : u.getCorporateEmailUser();
+        return new com.mesaayuda.dto.MiembroEquipoResponse(u.getIdUser(), nombre, u.getCorporateEmailUser(),
+                u.getRolUser() == null ? null : u.getRolUser().getNameRole(),
+                u.getArea() == null ? null : u.getArea().getNameArea(), ultima);
     }
 
     // ============================ AUDITORÍA DEL SISTEMA ============================

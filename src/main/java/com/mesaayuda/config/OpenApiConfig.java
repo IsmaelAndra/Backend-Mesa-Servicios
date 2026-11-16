@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
                 title = "Mesa de Ayuda COAC API",
                 version = "1.0.0",
                 description = "API REST del Sistema de Mesa de Ayuda / Help Desk. "
-                        + "Roles: ADMIN, AGENT, USER. Autenticación mediante JWT Bearer.",
+                        + "Roles: SUPER_ADMIN, AREA_MANAGER (jefe de área), AGENT, USER, AUDITOR. Autenticación mediante JWT Bearer.",
                 contact = @Contact(name = "Mesa de Ayuda COAC", email = "soporte@coac.local"),
                 license = @License(name = "Uso interno")
         ),

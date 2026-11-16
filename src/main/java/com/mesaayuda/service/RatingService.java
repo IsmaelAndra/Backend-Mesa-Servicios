@@ -96,8 +96,9 @@ public class RatingService {
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket", "id", ticketId));
         accessPolicy.exigirLectura(ticket, "ver la calificación", ticketId);
 
-        return ratingRepository.findByTicketIdTicket(ticketId).map(this::toResponse)
-                .orElseThrow(() -> new ResourceNotFoundException("Calificación", "ticket", ticketId));
+        // Sin calificación todavía = null (el controlador responde 204). Antes era
+        // un 404 que el detalle pedía siempre y ensuciaba la consola.
+        return ratingRepository.findByTicketIdTicket(ticketId).map(this::toResponse).orElse(null);
     }
 
     private RatingResponse toResponse(TicketRating r) {

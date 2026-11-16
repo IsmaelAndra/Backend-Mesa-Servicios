@@ -167,12 +167,17 @@ private final ExpiringStateMap<String, String> chatState = new ExpiringStateMap<
         exigirAccion(cfg, ACCION_CLASIFICAR);
 
         List<com.mesaayuda.entity.Priority> prioridades = priorityRepository.findAllActive();
-        List<com.mesaayuda.entity.Category> categorias = categoryRepository.findByDeletedCategoryFalse();
+        List<com.mesaayuda.entity.Category> todas = categoryRepository.findByDeletedCategoryFalse();
         List<com.mesaayuda.entity.SupportTeam> equipos = supportTeamRepository.findByActiveTeamTrue();
         List<com.mesaayuda.entity.TicketType> tipos = ticketTypeRepository == null ? List.of()
                 : ticketTypeRepository.findByDeletedTicketTypeFalseOrderByNameTicketTypeAsc();
 
         TicketResponse ticket = ticketService.findById(ticketId);
+        // Mesa multi-área: MAPI elige solo entre las categorías del área que
+        // atiende el ticket (si el área no tiene ninguna, entre todas).
+        List<com.mesaayuda.entity.Category> delArea = ticket.areaDestinoId() == null ? List.of()
+                : todas.stream().filter(c -> ticket.areaDestinoId().equals(c.getAreaId())).toList();
+        List<com.mesaayuda.entity.Category> categorias = delArea.isEmpty() ? todas : delArea;
         StringBuilder sb = new StringBuilder("Actúa como analista de una mesa de servicios (COAC). ")
                 .append("Clasifica el ticket. Responde SOLO con un objeto JSON, sin texto alrededor ni Markdown, ")
                 .append("con estas claves: \"prioridad\", \"categoria\", \"tipo\", \"equipo\" (cada una exactamente uno ")
@@ -442,7 +447,7 @@ private final ExpiringStateMap<String, String> chatState = new ExpiringStateMap<
     static String instruccionesPorRol(String rol) {
         String r = rol == null ? "USER" : rol.trim().toUpperCase(java.util.Locale.ROOT);
         return switch (r) {
-            case "AGENT", "ADMIN", "SUPER_ADMIN" -> "QUIÉN PREGUNTA: personal de TI de la mesa de servicios ("
+            case "AGENT", "AREA_MANAGER", "SUPER_ADMIN" -> "QUIÉN PREGUNTA: personal de la mesa de servicios ("
                     + r + "). Puedes dar diagnóstico técnico, pasos de resolución, comandos, comprobaciones y "
                     + "redactar respuestas para el solicitante (de usted, bajo \"### Respuesta al solicitante\"). "
                     + "Distingue claramente lo que hace el agente de lo que debe hacer el usuario.";

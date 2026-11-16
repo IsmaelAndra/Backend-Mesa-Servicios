@@ -62,10 +62,10 @@ class ActividadSospechosaServiceTest {
         assertTrue(alertas.get(0).contains("10.0.0.8"));
         verify(systemAuditService).record(eq("SUSPICIOUS_ACTIVITY"), eq("Seguridad"), isNull(),
                 eq("sistema"), startsWith("clave=LOGIN_FAILED_IP|10.0.0.8;"));
-        verify(notificationService).sendNotification(isNull(), eq(superAdmin1), eq("ALERTA_SEGURIDAD"),
-                anyString(), anyString());
-        verify(notificationService).sendNotification(isNull(), eq(superAdmin2), eq("ALERTA_SEGURIDAD"),
-                anyString(), anyString());
+        verify(notificationService).notifyConPlantilla(isNull(), eq(superAdmin1), eq("ALERTA_SEGURIDAD"),
+                anyString(), anyString(), anyString());
+        verify(notificationService).notifyConPlantilla(isNull(), eq(superAdmin2), eq("ALERTA_SEGURIDAD"),
+                anyString(), anyString(), anyString());
     }
 
     @Test
@@ -88,12 +88,12 @@ class ActividadSospechosaServiceTest {
 
         assertTrue(service.revisar().isEmpty());
         verify(systemAuditService, never()).record(anyString(), anyString(), any(), anyString(), anyString());
-        verify(notificationService, never()).sendNotification(any(), any(), anyString(), anyString(), anyString());
+        verify(notificationService, never()).notifyConPlantilla(any(), any(), anyString(), anyString(), anyString(), any());
     }
 
     @Test
     void sinEventosNoHayAvisos() {
         assertTrue(service.revisar().isEmpty());
-        verify(notificationService, times(0)).sendNotification(any(), any(), anyString(), anyString(), anyString());
+        verify(notificationService, times(0)).notifyConPlantilla(any(), any(), anyString(), anyString(), anyString(), any());
     }
 }

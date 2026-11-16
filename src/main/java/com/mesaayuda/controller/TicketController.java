@@ -79,12 +79,35 @@ public class TicketController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ticketService.create(request));
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN','AGENT')")
+    // Asignar o reasignar es del jefe del área (y del súper admin). El agente no
+    // reasigna: la asignación la hace MAPI o, si no responde, el turno rotativo.
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','AREA_MANAGER')")
     @PostMapping("/{id}/assign")
     @Operation(summary = "Asignar ticket a un agente o equipo")
     public ResponseEntity<TicketResponse> assign(@PathVariable UUID id,
                                                  @Valid @RequestBody AssignRequest request) {
         return ResponseEntity.ok(ticketService.assign(id, request));
+    }
+
+    /** Trasladar a otra área (agente asignado, jefe del área o súper admin; lo comprueba el servicio). */
+    @PostMapping("/{id}/trasladar")
+    @Operation(summary = "Trasladar el ticket a otra área")
+    public ResponseEntity<TicketResponse> trasladar(@PathVariable UUID id,
+                                                    @Valid @RequestBody TrasladoRequest request) {
+        return ResponseEntity.ok(ticketService.trasladar(id, request));
+    }
+
+    @GetMapping("/{id}/confidencialidad")
+    @Operation(summary = "Confidencialidad del ticket y personas autorizadas")
+    public ResponseEntity<ConfidencialidadResponse> confidencialidad(@PathVariable UUID id) {
+        return ResponseEntity.ok(ticketService.confidencialidad(id));
+    }
+
+    @PutMapping("/{id}/confidencialidad")
+    @Operation(summary = "Marcar o desmarcar el ticket como confidencial")
+    public ResponseEntity<ConfidencialidadResponse> cambiarConfidencialidad(@PathVariable UUID id,
+                                                                         @RequestBody ConfidencialidadRequest request) {
+        return ResponseEntity.ok(ticketService.cambiarConfidencialidad(id, request));
     }
 
     @PostMapping("/{id}/status")
@@ -166,7 +189,8 @@ public class TicketController {
     @GetMapping("/{id}/rating")
     @Operation(summary = "Ver calificación de un ticket")
     public ResponseEntity<RatingResponse> getRating(@PathVariable UUID id) {
-        return ResponseEntity.ok(ratingService.getByTicket(id));
+        RatingResponse r = ratingService.getByTicket(id);
+        return r == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(r);
     }
 
     // ============================ SLA ============================
@@ -176,6 +200,13 @@ public class TicketController {
     public ResponseEntity<TicketSlaResponse> sla(@PathVariable UUID id) {
         TicketSlaResponse sla = ticketService.sla(id);
         return sla == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(sla);
+    }
+
+    /** Plazos de resolución de varios tickets (tablero). Solo los que la persona puede leer. */
+    @PostMapping("/sla/plazos")
+    @Operation(summary = "Plazos de resolución de varios tickets abiertos")
+    public ResponseEntity<java.util.Map<UUID, TicketService.PlazoSla>> plazos(@RequestBody List<UUID> ids) {
+        return ResponseEntity.ok(ticketService.plazos(ids));
     }
 
     // ============================ AUDITORÍA ============================

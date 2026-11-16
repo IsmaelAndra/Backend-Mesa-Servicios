@@ -189,8 +189,8 @@ public AuthResponse login(AuthRequest request) {
     }
 
     /**
-     * Sede de la persona. Opcional a proposito: si no se elige, o si la sede ya
-     * no existe, la cuenta se queda sin sede en vez de fallar el alta.
+     * Sucursal de la persona. Opcional a proposito: si no se elige, o si la sucursal ya
+     * no existe, la cuenta se queda sin sucursal en vez de fallar el alta.
      */
     private Sucursal resolverSucursal(UUID sucursalId) {
         if (sucursalId == null) {

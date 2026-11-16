@@ -78,7 +78,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         Role role = new Role();
-        role.setNameRole("ADMIN");
+        role.setNameRole("AREA_MANAGER");
         Area area = new Area();
         area.setNameArea("TI");
         user = new User();
@@ -344,7 +344,7 @@ class AuthServiceTest {
 
         assertEquals("TOKEN", res.token());
         assertEquals(user.getIdUser(), res.userId());
-        assertEquals("ADMIN", res.role());
+        assertEquals("AREA_MANAGER", res.role());
         assertEquals("TI", res.area());
         assertEquals(List.of("ROLE_ADMIN"), res.permissions());
         assertTrue(res.mustChangePassword());
@@ -445,7 +445,7 @@ class AuthServiceTest {
 
         assertEquals("NEW-ACCESS", res.token());
         assertEquals(user.getIdUser(), res.userId());
-        assertEquals("ADMIN", res.role());
+        assertEquals("AREA_MANAGER", res.role());
         assertNotNull(res.refreshToken());
         assertTrue(stored.getRevoked(), "el token viejo debe revocarse (rotación)");
         verify(refreshTokenRepository, times(2)).save(any(RefreshToken.class));

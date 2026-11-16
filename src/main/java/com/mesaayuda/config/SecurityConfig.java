@@ -129,20 +129,52 @@ public class SecurityConfig {
                 // lo que empiece por /admin; sin esta linea, el endpoint de solo
                 // lectura quedaria restringido y el chat no tendria acuses.
                 .requestMatchers("/admin/chat-config/mi-visibilidad").authenticated()
-                .requestMatchers("/admin/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
+                // La auditoría la consulta también el auditor (solo lectura).
+                .requestMatchers(HttpMethod.GET, "/admin/audit-logs", "/admin/audit-sistema", "/admin/audit-sistema/**")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AUDITOR")
+                // Configuración de su área para el jefe: equipos, categorías, reglas
+                // SLA y evaluaciones. AdminController la acota a sus áreas.
+                .requestMatchers(HttpMethod.GET, "/admin/areas")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AREA_MANAGER")
+                // Políticas SLA por área (V32): el jefe gestiona las de sus áreas.
+                .requestMatchers("/admin/sla/policies", "/admin/sla/policies/**",
+                        "/admin/sla/rules", "/admin/sla/rules/**", "/admin/teams", "/admin/teams/**",
+                        "/admin/categories", "/admin/categories/**")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AREA_MANAGER")
+                .requestMatchers(HttpMethod.GET, "/admin/evaluations")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AREA_MANAGER")
+                // Plantillas de correo por área (V38): el servicio acota al área del jefe.
+                .requestMatchers("/plantillas-area", "/plantillas-area/**")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AREA_MANAGER", "ROLE_AUDITOR")
+                .requestMatchers(HttpMethod.POST, "/admin/evaluations/generate")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AREA_MANAGER")
+                .requestMatchers(HttpMethod.PUT, "/admin/evaluations/*/review")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AREA_MANAGER")
+                // Reportes del modal: súper admin, jefes y auditor (este solo lee;
+                // AuditorSoloLecturaFilter le corta lo demás).
+                .requestMatchers("/reportes-personalizados", "/reportes-personalizados/**")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AREA_MANAGER", "ROLE_AUDITOR")
+                // Sin el rol ADMIN, la configuración general es del súper admin. Lo
+                // que el jefe configura de su área tendrá sus propias rutas acotadas.
+                .requestMatchers("/admin/**").hasAuthority("ROLE_SUPER_ADMIN")
                 // Las comprobaciones de rol de estos controladores siguen en su
                 // sitio; estas reglas las adelantan al filtro. Sin ellas, Spring
                 // valida el cuerpo y los parámetros antes de llegar al chequeo, y un
                 // USER recibía un 400 con los mensajes de validación (o un 500 si
                 // faltaba un parámetro) en lugar de un 403.
-                .requestMatchers("/users/me").authenticated()
+                .requestMatchers("/users/me", "/users/me/**").authenticated()
                 .requestMatchers(HttpMethod.GET, "/users/agents")
-                        .hasAnyAuthority("ROLE_AGENT", "ROLE_ADMIN", "ROLE_SUPER_ADMIN")
-                .requestMatchers("/users", "/users/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
+                        .hasAnyAuthority("ROLE_AGENT", "ROLE_AREA_MANAGER", "ROLE_SUPER_ADMIN", "ROLE_AUDITOR")
+                // El jefe entra si su área gestiona usuarios (lo comprueba
+                // UserService.exigirGestionDeUsuarios); el auditor solo lee.
+                .requestMatchers("/users", "/users/**")
+                        .hasAnyAuthority("ROLE_AREA_MANAGER", "ROLE_SUPER_ADMIN", "ROLE_AUDITOR")
                 .requestMatchers("/workflows/aprobaciones", "/workflows/aprobaciones/**")
-                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
-                .requestMatchers("/calendar/**", "/tasks/**", "/quick-replies", "/quick-replies/**")
-                        .hasAnyAuthority("ROLE_AGENT", "ROLE_ADMIN", "ROLE_SUPER_ADMIN")
+                        .hasAnyAuthority("ROLE_AREA_MANAGER", "ROLE_SUPER_ADMIN")
+                // Actividades y calendario propios para todos.
+                .requestMatchers("/calendar/**", "/tasks/**").authenticated()
+                .requestMatchers("/quick-replies", "/quick-replies/**")
+                        .hasAnyAuthority("ROLE_AGENT", "ROLE_AREA_MANAGER", "ROLE_SUPER_ADMIN")
                 .anyRequest().authenticated()
             )
 .exceptionHandling(ex -> ex
@@ -162,7 +194,9 @@ public class SecurityConfig {
                      response.getWriter().write("{\"message\":\"Acceso denegado\"}");
                  })
              )
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+            // Después del JWT: necesita saber ya quién es para frenar al auditor.
+            .addFilterAfter(new com.mesaayuda.security.AuditorSoloLecturaFilter(), JwtAuthenticationFilter.class);
         return http.build();
     }
 

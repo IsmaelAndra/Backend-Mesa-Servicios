@@ -11,15 +11,14 @@
 -- ===== ROLES =====
 INSERT INTO role (name_role, description_role) VALUES
     ('SUPER_ADMIN', 'Super administrador con acceso total al sistema, configuración de marca, SLA, equipos, maestros'),
-    ('ADMIN',       'Administrador del sistema con permisos de gestión de usuarios, tickets, reportes'),
     ('AGENT',       'Agente de soporte de mesa de ayuda, resuelve tickets asignados'),
     ('USER',        'Usuario final solicitante de tickets'),
-    ('AREA_MANAGER','Jefe de área con permisos de gestión de activos y reportes de su área')
+    ('AREA_MANAGER','Jefe de área: gestiona los tickets, el equipo y la configuración de su área'),
+    ('AUDITOR',     'Auditor: consulta tickets, auditoría, activos y reportes en solo lectura')
 ON CONFLICT (name_role) DO NOTHING;
 
 -- ===== ÁREAS =====
 INSERT INTO area (name_area, description_area, icon_area, color_area, priority_level, status_area) VALUES
-    ('TI',          'Tecnología de la información',   'fa-solid fa-desktop',      '#2563EB', 5, TRUE),
     ('Operaciones', 'Área operativa principal',        'fa-solid fa-gears',        '#0D9488', 3, TRUE),
     ('Finanzas',    'Gestión financiera y contable',   'fa-solid fa-money-bill-wave','#059669', 4, TRUE),
     ('RRHH',        'Recursos humanos',                'fa-solid fa-users-gear',   '#7C3AED', 2, TRUE),
@@ -27,13 +26,22 @@ INSERT INTO area (name_area, description_area, icon_area, color_area, priority_l
 ON CONFLICT (name_area) DO NOTHING;
 
 -- Normalizar icono y color en bases ya creadas
-UPDATE area SET icon_area = 'fa-solid fa-desktop',        color_area = '#2563EB' WHERE name_area = 'TI'          AND (icon_area IS NULL OR color_area IS NULL OR icon_area LIKE 'pi %');
+-- Tecnología y Desarrollo solo si no existen con otro nombre ("Tecnologías", "TI"):
+-- un INSERT por nombre exacto crearía una segunda área de tecnología vacía.
+INSERT INTO area (name_area, description_area, icon_area, color_area, priority_level, status_area)
+SELECT 'Tecnología', 'Soporte técnico, infraestructura y equipos', 'fa-solid fa-desktop', '#2563EB', 5, TRUE
+WHERE NOT EXISTS (SELECT 1 FROM area WHERE lower(name_area) LIKE 'tecnolog%' OR upper(name_area) = 'TI');
+INSERT INTO area (name_area, description_area, icon_area, color_area, priority_level, status_area)
+SELECT 'Desarrollo', 'Desarrollo y mantenimiento de sistemas', 'fa-solid fa-code', '#7C3AED', 5, TRUE
+WHERE NOT EXISTS (SELECT 1 FROM area WHERE lower(name_area) = 'desarrollo');
+
+UPDATE area SET icon_area = 'fa-solid fa-desktop',        color_area = '#2563EB' WHERE lower(name_area) LIKE 'tecnolog%' AND (icon_area IS NULL OR color_area IS NULL OR icon_area LIKE 'pi %');
 UPDATE area SET icon_area = 'fa-solid fa-gears',          color_area = '#0D9488' WHERE name_area = 'Operaciones' AND (icon_area IS NULL OR color_area IS NULL OR icon_area LIKE 'pi %');
 UPDATE area SET icon_area = 'fa-solid fa-money-bill-wave',color_area = '#059669' WHERE name_area = 'Finanzas'    AND (icon_area IS NULL OR color_area IS NULL OR icon_area LIKE 'pi %');
 UPDATE area SET icon_area = 'fa-solid fa-users-gear',     color_area = '#7C3AED' WHERE name_area = 'RRHH'        AND (icon_area IS NULL OR color_area IS NULL OR icon_area LIKE 'pi %');
 UPDATE area SET icon_area = 'fa-solid fa-headset',        color_area = '#DB2777' WHERE name_area = 'Atención'    AND (icon_area IS NULL OR color_area IS NULL OR icon_area LIKE 'pi %');
 
--- ===== SEDES =====
+-- ===== SUCURSALES =====
 -- Se siembran para que la pantalla de alta de personas y la de ticket nuevo
 -- tengan algo que elegir de entrada. Con ON CONFLICT no se pisan las que haya
 -- creado o editado un administrador.
@@ -467,279 +475,9 @@ FROM users u, users ev,
 WHERE u.corporate_email_user = m.email AND ev.corporate_email_user = 'admin@coacmagisterio.fin.ec'
   AND NOT EXISTS (SELECT 1 FROM monthly_evaluation me WHERE me.agent_id = u.id_user AND me.evaluation_month = m.month);
 
--- ===== REPORTES PERSONALIZADOS =====
--- Cada reporte define su propia consulta SQL; las columnas del PDF se generan
--- solas a partir de los alias de esa consulta. Solo se admiten consultas de
--- lectura (SELECT) y se filtran por :desde / :hasta / :tipoId.
--- La cabecera y el icono salen de reports/reporte.jrxml y de la Marca y Colores.
-
-INSERT INTO report_config (name_report, title_report, description_report, query_sql, active_report,
-                           icon_report, color_report) VALUES
-('REPORTE_TICKETS',
-      'Detalle de tickets',
-      'Tickets del periodo con solicitante, sede, agente, área, prioridad y estado.',
-      'SELECT t.number_ticket AS "Ticket",
-              t.title_ticket AS "Título",
-              us.corporate_email_user AS "Solicitante",
-              sc.name_sucursal AS "Sede",
-              ag.corporate_email_user AS "Agente",
-              a.name_area AS "Área",
-              c.name_category AS "Categoría",
-              p.name_priority AS "Prioridad",
-              s.name_status AS "Estado",
-              TO_CHAR(t.created_at_ticket, ''YYYY-MM-DD HH24:MI'') AS "Creado",
-              TO_CHAR(t.closing_date_ticket, ''YYYY-MM-DD'') AS "Cierre"
-      FROM ticket t
-      LEFT JOIN users us ON us.id_user = t.user_ticket
-      LEFT JOIN sucursal sc ON sc.id_sucursal = t.sucursal_id
-      LEFT JOIN users ag ON ag.id_user = t.agent_ticket
-      LEFT JOIN area a ON a.id_area = t.area_ticket
-      LEFT JOIN category c ON c.id_category = t.category_ticket
-      LEFT JOIN priority p ON p.id_priority = t.priority_ticket
-      LEFT JOIN status s ON s.id_status = t.status_ticket
-      WHERE t.deleted_ticket = FALSE
-        AND (:desde IS NULL OR t.created_at_ticket >= :desde)
-        AND (:hasta IS NULL OR t.created_at_ticket < :hasta)
-        AND (:tipoId IS NULL OR t.type_ticket = :tipoId)
-        AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
-        AND (:areaId IS NULL OR t.area_ticket = :areaId)
-      ORDER BY t.number_ticket DESC',
-     TRUE, 'fa-solid fa-list-check', '#062e86'),
-
-    ('REPORTE_SLA',
-     'Cumplimiento de SLA',
-     'Tickets con su política SLA, sede y si cumplieron los plazos de respuesta y resolución.',
-     'SELECT t.number_ticket AS "Ticket",
-             t.title_ticket AS "Título",
-             sc.name_sucursal AS "Sede",
-             a.name_area AS "Área",
-             p.name_priority AS "Prioridad",
-             pol.name_sla_policy AS "Política",
-             pol.response_time_minutes AS "Respuesta máx. (min)",
-             pol.resolution_time_minutes AS "Resolución máx. (min)",
-             CASE WHEN ts.response_breached THEN ''Fuera de plazo'' ELSE ''En plazo'' END AS "Respuesta",
-             CASE WHEN ts.resolution_breached THEN ''Fuera de plazo'' ELSE ''En plazo'' END AS "Resolución",
-             TO_CHAR(ts.resolution_completed_at, ''YYYY-MM-DD HH24:MI'') AS "Resuelto"
-      FROM ticket_sla ts
-      JOIN ticket t ON t.id_ticket = ts.ticket_id
-      LEFT JOIN sucursal sc ON sc.id_sucursal = t.sucursal_id
-      LEFT JOIN area a ON a.id_area = t.area_ticket
-      LEFT JOIN priority p ON p.id_priority = t.priority_ticket
-      LEFT JOIN sla_policy pol ON pol.id_sla_policy = ts.sla_policy_id
-      WHERE t.deleted_ticket = FALSE
-        AND (:desde IS NULL OR ts.created_at >= :desde)
-        AND (:hasta IS NULL OR ts.created_at < :hasta)
-        AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
-        AND (:areaId IS NULL OR t.area_ticket = :areaId)
-      ORDER BY ts.resolution_breached DESC, t.number_ticket DESC',
-     TRUE, 'fa-solid fa-stopwatch', '#B45309'),
-
-    ('REPORTE_AGENTES',
-     'Rendimiento de agentes',
-     'Resumen por agente: tickets atendidos, pendientes, fuera de SLA y satisfacción promedio.',
-     'SELECT COALESCE(ag.corporate_email_user, ''Sin agente'') AS "Agente",
-             COUNT(DISTINCT t.id_ticket) AS "Tickets",
-             COUNT(DISTINCT t.id_ticket) FILTER (WHERE s.name_status IN (''NUEVO'',''ASIGNADO'')) AS "Pendientes",
-             COUNT(DISTINCT t.id_ticket) FILTER (WHERE s.name_status IN (''RESUELTO'',''CERRADO'')) AS "Resueltos",
-             COUNT(DISTINCT t.id_ticket) FILTER (WHERE ts.resolution_breached) AS "Fuera de SLA",
-             ROUND(AVG(r.overall_satisfaction)::numeric, 2) AS "Satisfacción prom."
-      FROM ticket t
-      LEFT JOIN users ag ON ag.id_user = t.agent_ticket
-      LEFT JOIN status s ON s.id_status = t.status_ticket
-      LEFT JOIN ticket_sla ts ON ts.ticket_id = t.id_ticket
-      LEFT JOIN ticket_rating r ON r.ticket_id = t.id_ticket
-WHERE t.deleted_ticket = FALSE
-        AND (:desde IS NULL OR t.created_at_ticket >= :desde)
-       AND (:hasta IS NULL OR t.created_at_ticket < :hasta)
-       AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
-       AND (:areaId IS NULL OR t.area_ticket = :areaId)
-     GROUP BY ag.corporate_email_user
-     ORDER BY 2 DESC',
-     TRUE, 'fa-solid fa-users', '#0F766E'),
-
-    ('REPORTE_CALIFICACIONES',
-     'Calificaciones recibidas',
-     'Evaluaciones de satisfacción de los solicitantes, desglosadas por criterio.',
-     'SELECT t.number_ticket AS "Ticket",
-             t.title_ticket AS "Título",
-             TO_CHAR(r.rated_at, ''YYYY-MM-DD'') AS "Fecha",
-             us.corporate_email_user AS "Solicitante",
-             ag.corporate_email_user AS "Agente",
-             r.requirements_met AS "Requisitos",
-             r.response_time_rating AS "Tiempo de resp.",
-             r.resolution_quality AS "Calidad de solución",
-             r.agent_communication AS "Comunicación",
-             r.overall_satisfaction AS "Satisfacción",
-COALESCE(r.comments, ''Sin comentario'') AS "Comentarios"
-      FROM ticket_rating r
-      JOIN ticket t ON t.id_ticket = r.ticket_id
-      LEFT JOIN users us ON us.id_user = t.user_ticket
-      LEFT JOIN sucursal sc ON sc.id_sucursal = t.sucursal_id
-      LEFT JOIN users ag ON ag.id_user = t.agent_ticket
-      WHERE t.deleted_ticket = FALSE
-        AND (:desde IS NULL OR r.rated_at >= :desde)
-        AND (:hasta IS NULL OR r.rated_at < :hasta)
-        AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
-        AND (:areaId IS NULL OR t.area_ticket = :areaId)
-      ORDER BY r.overall_satisfaction DESC NULLS LAST, r.rated_at DESC',
-     TRUE, 'fa-solid fa-star', '#7C3AED'),
-
-    -- Rendimiento por sede. Es un reporte nuevo y no una variante del de agentes:
-    -- ese agrupa por persona y su grano no debe cambiar por añadir una dimension.
-    -- Este responde la otra pregunta, que es cuanto trabajo sale de cada oficina.
-    -- Los tickets sin sede se agrupan aparte con COALESCE en vez de desaparecer:
-    -- las sedes nuevas empiezan vacias y un ticket sin asignar sigue siendo real.
-    ('REPORTE_SEDES',
-     'Rendimiento por sede',
-     'Volumen, cumplimiento de SLA y satisfacción agrupados por sede física.',
-     'SELECT COALESCE(sc.name_sucursal, ''Sin sede'') AS "Sede",
-             COUNT(DISTINCT t.id_ticket) AS "Tickets",
-             COUNT(DISTINCT t.id_ticket) FILTER (WHERE s.name_status IN (''NUEVO'',''ASIGNADO'')) AS "Pendientes",
-             COUNT(DISTINCT t.id_ticket) FILTER (WHERE s.name_status IN (''RESUELTO'',''CERRADO'')) AS "Resueltos",
-             COUNT(DISTINCT t.id_ticket) FILTER (WHERE ts.resolution_breached) AS "Fuera de SLA",
-             ROUND(AVG(r.overall_satisfaction)::numeric, 2) AS "Satisfacción prom."
-      FROM ticket t
-      LEFT JOIN sucursal sc ON sc.id_sucursal = t.sucursal_id
-      LEFT JOIN status s ON s.id_status = t.status_ticket
-      LEFT JOIN ticket_sla ts ON ts.ticket_id = t.id_ticket
-      LEFT JOIN ticket_rating r ON r.ticket_id = t.id_ticket
-      WHERE t.deleted_ticket = FALSE
-        AND (:desde IS NULL OR t.created_at_ticket >= :desde)
-        AND (:hasta IS NULL OR t.created_at_ticket < :hasta)
-        AND (:tipoId IS NULL OR t.type_ticket = :tipoId)
-        AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
-        AND (:areaId IS NULL OR t.area_ticket = :areaId)
-      GROUP BY sc.name_sucursal
-      ORDER BY 2 DESC',
-     TRUE, 'fa-solid fa-city', '#0F766E')
- ON CONFLICT (name_report) DO NOTHING;
-
-UPDATE report_config SET icon_report = 'fa-solid fa-list-check', color_report = '#062e86'
-WHERE name_report = 'REPORTE_TICKETS' AND (icon_report IS NULL OR color_report IS NULL);
-
--- ============================================================================
--- SEDE EN LOS REPORTES YA EXISTENTES
--- ============================================================================
--- Los INSERT de arriba usan ON CONFLICT DO NOTHING, asi que en una base que ya
--- tiene los cuatro reportes sembrados el SQL antiguo se queda como esta y la
--- columna Sede nunca aparece. Estos UPDATE son los que traen el cambio a una
--- instalacion existente.
---
--- Solo se tocan las consultas de los reportes del sistema. Un reporte que haya
--- escrito un administrador no se reescribe: su SQL es suyo, y pisarlo seria
--- perder su trabajo. Para anadirle la sede puede editarlo desde el panel.
---
--- La guarda "AND query_sql NOT LIKE '%sucursal%'" evita repetir el trabajo en
--- cada arranque y, sobre todo, evita que un administrador que haya quitado la
--- sede a mano se la aplique sola en el siguiente reinicio.
-
-UPDATE report_config SET
-    query_sql = 'SELECT t.number_ticket AS "Ticket",
-              t.title_ticket AS "Título",
-              us.corporate_email_user AS "Solicitante",
-              sc.name_sucursal AS "Sede",
-              ag.corporate_email_user AS "Agente",
-              a.name_area AS "Área",
-              c.name_category AS "Categoría",
-              p.name_priority AS "Prioridad",
-              s.name_status AS "Estado",
-              TO_CHAR(t.created_at_ticket, ''YYYY-MM-DD HH24:MI'') AS "Creado",
-              TO_CHAR(t.closing_date_ticket, ''YYYY-MM-DD'') AS "Cierre"
-      FROM ticket t
-      LEFT JOIN users us ON us.id_user = t.user_ticket
-      LEFT JOIN sucursal sc ON sc.id_sucursal = t.sucursal_id
-      LEFT JOIN users ag ON ag.id_user = t.agent_ticket
-      LEFT JOIN area a ON a.id_area = t.area_ticket
-      LEFT JOIN category c ON c.id_category = t.category_ticket
-      LEFT JOIN priority p ON p.id_priority = t.priority_ticket
-      LEFT JOIN status s ON s.id_status = t.status_ticket
-      WHERE t.deleted_ticket = FALSE
-        AND (:desde IS NULL OR t.created_at_ticket >= :desde)
-        AND (:hasta IS NULL OR t.created_at_ticket < :hasta)
-        AND (:tipoId IS NULL OR t.type_ticket = :tipoId)
-        AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
-        AND (:areaId IS NULL OR t.area_ticket = :areaId)
-      ORDER BY t.number_ticket DESC',
-    description_report = 'Tickets del periodo con solicitante, sede, agente, área, prioridad y estado.'
-WHERE name_report = 'REPORTE_TICKETS'
-  AND query_sql NOT LIKE '%sucursal%';
-
-UPDATE report_config SET
-    query_sql = 'SELECT t.number_ticket AS "Ticket",
-              t.title_ticket AS "Título",
-              sc.name_sucursal AS "Sede",
-              a.name_area AS "Área",
-              p.name_priority AS "Prioridad",
-              pol.name_sla_policy AS "Política",
-              pol.response_time_minutes AS "Respuesta máx. (min)",
-              pol.resolution_time_minutes AS "Resolución máx. (min)",
-              CASE WHEN ts.response_breached THEN ''Fuera de plazo'' ELSE ''En plazo'' END AS "Respuesta",
-              CASE WHEN ts.resolution_breached THEN ''Fuera de plazo'' ELSE ''En plazo'' END AS "Resolución",
-              TO_CHAR(ts.resolution_completed_at, ''YYYY-MM-DD HH24:MI'') AS "Resuelto"
-      FROM ticket_sla ts
-      JOIN ticket t ON t.id_ticket = ts.ticket_id
-      LEFT JOIN sucursal sc ON sc.id_sucursal = t.sucursal_id
-      LEFT JOIN area a ON a.id_area = t.area_ticket
-      LEFT JOIN priority p ON p.id_priority = t.priority_ticket
-      LEFT JOIN sla_policy pol ON pol.id_sla_policy = ts.sla_policy_id
-      WHERE t.deleted_ticket = FALSE
-        AND (:desde IS NULL OR ts.created_at >= :desde)
-        AND (:hasta IS NULL OR ts.created_at < :hasta)
-        AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
-        AND (:areaId IS NULL OR t.area_ticket = :areaId)
-      ORDER BY ts.resolution_breached DESC, t.number_ticket DESC',
-    description_report = 'Tickets con su política SLA, sede y si cumplieron los plazos de respuesta y resolución.'
-WHERE name_report = 'REPORTE_SLA'
-  AND query_sql NOT LIKE '%sucursal%';
-
-UPDATE report_config SET
-    query_sql = 'SELECT COALESCE(ag.corporate_email_user, ''Sin agente'') AS "Agente",
-              COUNT(DISTINCT t.id_ticket) AS "Tickets",
-              COUNT(DISTINCT t.id_ticket) FILTER (WHERE s.name_status IN (''NUEVO'',''ASIGNADO'')) AS "Pendientes",
-              COUNT(DISTINCT t.id_ticket) FILTER (WHERE s.name_status IN (''RESUELTO'',''CERRADO'')) AS "Resueltos",
-              COUNT(DISTINCT t.id_ticket) FILTER (WHERE ts.resolution_breached) AS "Fuera de SLA",
-              ROUND(AVG(r.overall_satisfaction)::numeric, 2) AS "Satisfacción prom."
-      FROM ticket t
-      LEFT JOIN users ag ON ag.id_user = t.agent_ticket
-      LEFT JOIN status s ON s.id_status = t.status_ticket
-      LEFT JOIN ticket_sla ts ON ts.ticket_id = t.id_ticket
-      LEFT JOIN ticket_rating r ON r.ticket_id = t.id_ticket
-      WHERE t.deleted_ticket = FALSE
-        AND (:desde IS NULL OR t.created_at_ticket >= :desde)
-        AND (:hasta IS NULL OR t.created_at_ticket < :hasta)
-        AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
-        AND (:areaId IS NULL OR t.area_ticket = :areaId)
-      GROUP BY ag.corporate_email_user
-      ORDER BY 2 DESC'
-WHERE name_report = 'REPORTE_AGENTES'
-  AND query_sql NOT LIKE '%sucursal%';
-
-UPDATE report_config SET
-    query_sql = 'SELECT t.number_ticket AS "Ticket",
-              t.title_ticket AS "Título",
-              TO_CHAR(r.rated_at, ''YYYY-MM-DD'') AS "Fecha",
-              us.corporate_email_user AS "Solicitante",
-              sc.name_sucursal AS "Sede",
-              ag.corporate_email_user AS "Agente",
-              r.requirements_met AS "Requisitos",
-              r.response_time_rating AS "Tiempo de resp.",
-              r.resolution_quality AS "Calidad de solución",
-              r.agent_communication AS "Comunicación",
-              r.overall_satisfaction AS "Satisfacción",
-              COALESCE(r.comments, ''Sin comentario'') AS "Comentarios"
-      FROM ticket_rating r
-      JOIN ticket t ON t.id_ticket = r.ticket_id
-      LEFT JOIN users us ON us.id_user = t.user_ticket
-      LEFT JOIN sucursal sc ON sc.id_sucursal = t.sucursal_id
-      LEFT JOIN users ag ON ag.id_user = t.agent_ticket
-      WHERE t.deleted_ticket = FALSE
-        AND (:desde IS NULL OR r.rated_at >= :desde)
-        AND (:hasta IS NULL OR r.rated_at < :hasta)
-        AND (:sucursalId IS NULL OR t.sucursal_id = :sucursalId)
-        AND (:areaId IS NULL OR t.area_ticket = :areaId)
-      ORDER BY r.overall_satisfaction DESC NULLS LAST, r.rated_at DESC'
-WHERE name_report = 'REPORTE_CALIFICACIONES'
-  AND query_sql NOT LIKE '%sucursal%';
+-- ===== REPORTES =====
+-- Ya no se siembran reportes en SQL (report_config): los reportes del sistema
+-- se crean con el modal y viven en reporte_usuario (V34).
 
 -- ============================================================================
 -- SEMILLA DE PAGINAS DE ERROR Y POLITICA DE PRIVACIDAD
@@ -864,3 +602,20 @@ UPDATE notification_template
 INSERT INTO mfa_setting (id_mfa_setting, mfa_enabled, issuer_mfa)
 VALUES ('00000000-0000-0000-0000-000000000006', FALSE, 'Mesa de Servicios')
 ON CONFLICT (id_mfa_setting) DO NOTHING;
+
+-- ===== ÁREAS DE EQUIPOS Y CATEGORÍAS (V28) =====
+-- Los equipos y categorías sembrados arriba son de Tecnología. Solo se rellena
+-- lo vacío: nunca se mueve lo que un administrador cambió de área.
+-- Cada equipo sembrado, a su área; el resto (y lo que no case) a Tecnología.
+UPDATE support_team t SET area_team = a.id_area
+FROM area a
+WHERE t.area_team IS NULL
+  AND ((t.name_team = 'Equipo Operaciones' AND a.name_area = 'Operaciones')
+    OR (t.name_team = 'Equipo RRHH' AND a.name_area = 'RRHH')
+    OR (t.name_team = 'Equipo Finanzas' AND a.name_area = 'Finanzas'));
+UPDATE support_team SET area_team = (SELECT id_area FROM area WHERE deleted_area = FALSE AND (lower(name_area) LIKE 'tecnolog%' OR upper(name_area) = 'TI') ORDER BY CASE WHEN upper(name_area) = 'TI' THEN 1 ELSE 0 END, created_at_area LIMIT 1)
+WHERE area_team IS NULL;
+UPDATE category SET area_category = COALESCE(
+        (SELECT t.area_team FROM support_team t WHERE t.id_team = category.team_category),
+        (SELECT id_area FROM area WHERE deleted_area = FALSE AND (lower(name_area) LIKE 'tecnolog%' OR upper(name_area) = 'TI') ORDER BY CASE WHEN upper(name_area) = 'TI' THEN 1 ELSE 0 END, created_at_area LIMIT 1))
+WHERE area_category IS NULL;

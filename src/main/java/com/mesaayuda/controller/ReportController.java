@@ -21,7 +21,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/reports")
 @Tag(name = "Reportes", description = "Generación de reportes con JasperReports")
-@PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+@PreAuthorize("hasAnyRole('SUPER_ADMIN','AUDITOR')")
 public class ReportController {
 
     private static final java.util.Map<String, String> MIME_BY_FORMAT = java.util.Map.of(
@@ -80,7 +80,7 @@ public class ReportController {
         // Un reporte es una extracción masiva de datos de la mesa: se deja constancia
         // de quién lo sacó, cuál y con qué filtros.
         systemAuditService.record("REPORT_GENERATE", "ReportConfig", id, actual.getCorporateEmailUser(),
-                "formato=" + format + " desde=" + from + " hasta=" + to + " sede=" + sucursalId + " area=" + areaId);
+                "formato=" + format + " desde=" + from + " hasta=" + to + " sucursal=" + sucursalId + " area=" + areaId);
         String mime = MIME_BY_FORMAT.getOrDefault(format.toUpperCase(), MediaType.APPLICATION_PDF_VALUE);
         String ext = "PDF".equalsIgnoreCase(format) ? "pdf"
                 : ("EXCEL".equalsIgnoreCase(format) || "XLSX".equalsIgnoreCase(format)) ? "xlsx" : "html";

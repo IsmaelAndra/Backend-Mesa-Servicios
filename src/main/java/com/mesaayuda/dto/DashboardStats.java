@@ -46,7 +46,11 @@ public record DashboardStats(
         /** Carga por agente (solo administración; vacío para el resto). */
         List<AgentLoad> agentLoad,
         /** Tickets abiertos que necesitan atención: SLA vencido primero, luego los que vencen antes. */
-        List<TicketAtencion> attention
+        List<TicketAtencion> attention,
+        /** Tickets terminados (resueltos o cerrados) del periodo: base del % de SLA. */
+        long slaTerminados,
+        /** De esos, cuántos terminaron dentro del plazo. */
+        long slaATiempo
 ) {
 
     public record AgentLoad(UUID agentId, String name, String photoUrl,

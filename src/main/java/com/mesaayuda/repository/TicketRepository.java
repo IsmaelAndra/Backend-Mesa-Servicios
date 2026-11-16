@@ -25,15 +25,15 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
      * agente, área, estado, prioridad...), y la lista crecía con el número de filas.
      */
     @Override
-    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"userTicket", "userTicket.rolUser", "userTicket.area", "userTicket.sucursal", "agentTicket", "agentTicket.rolUser", "agentTicket.area", "agentTicket.sucursal", "teamTicket", "areaTicket", "sucursalTicket", "categoryTicket", "typeTicket", "statusTicket", "priorityTicket"})
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"userTicket", "userTicket.rolUser", "userTicket.area", "userTicket.sucursal", "agentTicket", "agentTicket.rolUser", "agentTicket.area", "agentTicket.sucursal", "teamTicket", "areaTicket", "areaDestinoTicket", "sucursalTicket", "categoryTicket", "typeTicket", "statusTicket", "priorityTicket"})
     org.springframework.data.domain.Page<Ticket> findAll(
             org.springframework.data.jpa.domain.Specification<Ticket> spec,
             org.springframework.data.domain.Pageable pageable);
 
-    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"userTicket", "userTicket.rolUser", "userTicket.area", "userTicket.sucursal", "agentTicket", "agentTicket.rolUser", "agentTicket.area", "agentTicket.sucursal", "teamTicket", "areaTicket", "sucursalTicket", "categoryTicket", "typeTicket", "statusTicket", "priorityTicket"})
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"userTicket", "userTicket.rolUser", "userTicket.area", "userTicket.sucursal", "agentTicket", "agentTicket.rolUser", "agentTicket.area", "agentTicket.sucursal", "teamTicket", "areaTicket", "areaDestinoTicket", "sucursalTicket", "categoryTicket", "typeTicket", "statusTicket", "priorityTicket"})
     List<Ticket> findByUserTicketIdUserAndDeletedTicketFalseOrderByCreatedAtTicketDesc(UUID userId);
 
-    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"userTicket", "userTicket.rolUser", "userTicket.area", "userTicket.sucursal", "agentTicket", "agentTicket.rolUser", "agentTicket.area", "agentTicket.sucursal", "teamTicket", "areaTicket", "sucursalTicket", "categoryTicket", "typeTicket", "statusTicket", "priorityTicket"})
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"userTicket", "userTicket.rolUser", "userTicket.area", "userTicket.sucursal", "agentTicket", "agentTicket.rolUser", "agentTicket.area", "agentTicket.sucursal", "teamTicket", "areaTicket", "areaDestinoTicket", "sucursalTicket", "categoryTicket", "typeTicket", "statusTicket", "priorityTicket"})
     List<Ticket> findByAgentTicketIdUserAndDeletedTicketFalseOrderByCreatedAtTicketDesc(UUID agentId);
 
     /** Tickets aún en curso para el calendario (lo resuelto o cerrado ya no se planifica). */
@@ -87,6 +87,13 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
            "ORDER BY t.createdAtTicket DESC")
     List<Ticket> findTicketsBetween(@Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to);
 
+    /** Tickets que atienden estas áreas (dashboard del jefe). */
+    @Query("SELECT t FROM Ticket t WHERE t.deletedTicket = false " +
+           "AND t.createdAtTicket >= :from AND t.createdAtTicket < :to " +
+           "AND t.areaDestinoTicket.idArea IN :areas ORDER BY t.createdAtTicket DESC")
+    List<Ticket> findTicketsBetweenByAreasDestino(@Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to,
+                                                  @Param("areas") java.util.Collection<UUID> areas);
+
     @Query("SELECT COUNT(t) FROM Ticket t WHERE t.deletedTicket = false " +
            "AND t.createdAtTicket BETWEEN :from AND :to")
     long countCreatedBetween(@Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to);
@@ -96,8 +103,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
            "AND t.createdAtTicket BETWEEN :from AND :to")
     long countResolvedBetween(@Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to);
 /**
-         * Tickets no eliminados que apuntan a una sede. Se usa para impedir el
-         * borrado logico de una sede con historial, en lugar de perderlo en cascada.
+         * Tickets no eliminados que apuntan a una sucursal. Se usa para impedir el
+         * borrado logico de una sucursal con historial, en lugar de perderlo en cascada.
          *
          * <p>El guion bajo no es decorativo: sin él, Spring Data leería
          * {@code sucursalTicketId} como la propiedad {@code id} de la entidad

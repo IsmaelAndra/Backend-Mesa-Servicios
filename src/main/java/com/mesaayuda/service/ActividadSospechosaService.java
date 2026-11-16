@@ -116,8 +116,9 @@ public class ActividadSospechosaService {
                 .findByRolUserNameRoleAndStatusUserAndDeletedUserFalseOrderByCreatedAtUserAsc("SUPER_ADMIN", "ACTIVE");
         for (User superAdmin : destinatarios) {
             try {
-                notificationService.sendNotification(null, superAdmin, TIPO_NOTIFICACION,
-                        "Alerta de seguridad", descripcion);
+                notificationService.notifyConPlantilla(null, superAdmin, TIPO_NOTIFICACION,
+                        "Alerta de seguridad", "<p>" + org.springframework.web.util.HtmlUtils.htmlEscape(descripcion) + "</p>",
+                        "administracion/auditoria");
             } catch (Exception e) {
                 // Un fallo al avisar a uno no debe dejar sin aviso a los demás.
                 log.error("No se pudo avisar a {} de la alerta de seguridad: {}",

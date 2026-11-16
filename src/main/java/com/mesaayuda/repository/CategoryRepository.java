@@ -17,4 +17,7 @@ public interface CategoryRepository extends JpaRepository<Category, UUID>, JpaSp
     List<Category> findByDeletedCategoryFalse();
     List<Category> findByTeamCategoryIdTeamAndDeletedCategoryFalse(UUID teamId);
     Optional<Category> findFirstByDeletedCategoryFalseOrderByCreatedAtCategoryAsc();
+
+    /** Primera categoría de un área: la que se usa si el ticket llega sin categoría. */
+    Optional<Category> findFirstByAreaCategoryIdAreaAndDeletedCategoryFalseOrderByCreatedAtCategoryAsc(UUID areaId);
 }

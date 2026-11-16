@@ -25,6 +25,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import com.mesaayuda.activos.AssetType;
+import com.mesaayuda.activos.AssetTypeRepository;
+import com.mesaayuda.activos.NumeracionActivos;
+import com.mesaayuda.activos.PermisosActivos;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
 
@@ -57,17 +62,30 @@ class AssetServiceTest {
     @Mock private UserService userService;
     @Mock private SystemAuditService systemAuditService;
     @Mock private PresenceService presenceService;
+    @Spy private PermisosActivos permisos = new PermisosActivos();
+    @Mock private NumeracionActivos numeracion;
+    @Mock private AssetTypeRepository tipos;
 
     @InjectMocks private AssetService assetService;
 
-    private final Area ti = area(id(50));
-    private final Area finanzas = area(id(51));
+    private final Area ti = area(id(50), true);
+    private final Area finanzas = area(id(51), false);
 
-    private static Area area(UUID id) {
+    /** gestiona: Tecnología y Desarrollo gestionan los activos (V36). */
+    private static Area area(UUID id, boolean gestiona) {
         Area a = new Area();
         a.setIdArea(id);
         a.setNameArea("Area " + id);
+        a.setGestionaActivosArea(gestiona);
         return a;
+    }
+
+    private void tipoLaptop() {
+        AssetType t = new AssetType();
+        t.setIdAssetType(id(70));
+        t.setNombre("Laptop");
+        t.setPrefijo("LAP");
+        lenient().when(tipos.porNombre("LAPTOP")).thenReturn(Optional.of(t));
     }
 
     private static User usuario(UUID id, String rol, Area area) {
@@ -88,7 +106,7 @@ class AssetServiceTest {
         a.setCodeAsset("TI-LAP-001");
         a.setNameAsset("Laptop");
         a.setTypeAsset("LAPTOP");
-        a.setStatusAsset(asignado != null ? "ASIGNADO" : "DISPONIBLE");
+        a.setStatusAsset(asignado != null ? "ASIGNADO" : "EN_BODEGA");
         a.setAssignedUser(asignado);
         a.setArea(area);
         a.setDeletedAsset(false);
@@ -98,10 +116,11 @@ class AssetServiceTest {
     private static AssetRequest peticion(UUID asignadoId, UUID areaId, String estado) {
         return new AssetRequest("TI-LAP-001", "Laptop", "LAPTOP", "Dell", "XPS",
                 "SN-1", estado, null, null, BigDecimal.TEN, null, null, null, null,
-                asignadoId, areaId, null);
+                asignadoId, areaId, null, null, null, null, null, null, null, null);
     }
 
     private void guardarDevuelveLoMismo() {
+        tipoLaptop();
         lenient().when(assetRepository.save(any(Asset.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
@@ -115,7 +134,7 @@ class AssetServiceTest {
 
     @Test
     void sinAsignadoNaceDisponibleYQuedaElAlta() {
-        User admin = usuario(id(1), "ADMIN", ti);
+        User admin = usuario(id(1), "SUPER_ADMIN", ti);
         when(userService.getCurrentUser()).thenReturn(admin);
         guardarDevuelveLoMismo();
 
@@ -129,7 +148,7 @@ class AssetServiceTest {
 
     @Test
     void conAsignadoNaceAsignadoConAltaYAsignacion() {
-        User admin = usuario(id(1), "ADMIN", ti);
+        User admin = usuario(id(1), "SUPER_ADMIN", ti);
         User destino = usuario(id(2), "USER", ti);
         when(userService.getCurrentUser()).thenReturn(admin);
         when(userRepository.findById(id(2))).thenReturn(Optional.of(destino));
@@ -147,16 +166,17 @@ class AssetServiceTest {
 
     @Test
     void conAreaYSedeLasResuelveDesdeElCatalogo() {
-        User admin = usuario(id(1), "ADMIN", ti);
-        Sucursal sede = new Sucursal();
-        sede.setIdSucursal(id(4));
+        User admin = usuario(id(1), "SUPER_ADMIN", ti);
+        Sucursal sucursal = new Sucursal();
+        sucursal.setIdSucursal(id(4));
         when(userService.getCurrentUser()).thenReturn(admin);
         when(areaRepository.findById(id(51))).thenReturn(Optional.of(finanzas));
-        when(sucursalRepository.findById(id(4))).thenReturn(Optional.of(sede));
+        when(sucursalRepository.findById(id(4))).thenReturn(Optional.of(sucursal));
         guardarDevuelveLoMismo();
 
         assetService.create(new AssetRequest("TI-LAP-001", "Laptop", "LAPTOP", null, null, null, null,
-                null, null, null, null, null, null, null, null, id(51), id(4)));
+                null, null, null, null, null, null, null, null, id(51), id(4),
+                null, null, null, null, null, null, null));
 
         ArgumentCaptor<Asset> captor = ArgumentCaptor.forClass(Asset.class);
         verify(assetRepository, atLeastOnce()).save(captor.capture());
@@ -183,62 +203,57 @@ class AssetServiceTest {
     }
 
     @Test
-    void elJefeDeAreaVeLoDeSuAreaPorActivoOPorPersona() {
-        User jefe = usuario(id(1), "AREA_MANAGER", ti);
-        User deTi = usuario(id(2), "USER", ti);
+    void tecnologiaYDesarrolloGestionanTodosLosActivos() {
+        User agenteTi = usuario(id(1), "AGENT", ti);
         User deFinanzas = usuario(id(3), "USER", finanzas);
-
-        assertTrue(assetService.puedeVer(jefe, activo(id(9), null, ti)), "activo del área, sin persona");
-        assertTrue(assetService.puedeVer(jefe, activo(id(9), deTi, null)), "activo de una persona del área");
-        assertFalse(assetService.puedeVer(jefe, activo(id(9), deFinanzas, finanzas)), "otra área");
-        assertFalse(assetService.puedeGestionar(jefe, activo(id(9), deFinanzas, finanzas)));
+        assertTrue(assetService.puedeVer(agenteTi, activo(id(9), deFinanzas, finanzas)), "de otra área también");
+        assertTrue(assetService.puedeGestionar(agenteTi, activo(id(9), deFinanzas, finanzas)));
     }
 
     @Test
-    void unJefeSinAreaSoloVeLoSuyo() {
-        User jefe = usuario(id(1), "AREA_MANAGER", null);
-        assertFalse(assetService.puedeVer(jefe, activo(id(9), null, ti)));
-        assertTrue(assetService.puedeVer(jefe, activo(id(9), jefe, ti)));
-    }
-
-    // --------------------------------------------------------- jefe de área
-
-    @Test
-    void elJefeNoAsignaAPersonasDeOtraArea() {
-        User jefe = usuario(id(1), "AREA_MANAGER", ti);
-        when(userService.getCurrentUser()).thenReturn(jefe);
-        when(assetRepository.findById(id(9))).thenReturn(Optional.of(activo(id(9), null, ti)));
-        when(userRepository.findById(id(3))).thenReturn(Optional.of(usuario(id(3), "USER", finanzas)));
-
-        assertThrows(AccessDeniedException.class, () -> assetService.assign(id(9), id(3), null));
+    void elJefeDeOtraAreaSoloVeLoSuyo() {
+        User jefeFinanzas = usuario(id(1), "AREA_MANAGER", finanzas);
+        User deFinanzas = usuario(id(3), "USER", finanzas);
+        assertFalse(assetService.puedeVer(jefeFinanzas, activo(id(9), deFinanzas, finanzas)));
+        assertFalse(assetService.puedeGestionar(jefeFinanzas, activo(id(9), jefeFinanzas, finanzas)));
+        assertTrue(assetService.puedeVer(jefeFinanzas, activo(id(9), jefeFinanzas, finanzas)));
     }
 
     @Test
-    void elJefeNoRegistraActivosDeOtraArea() {
-        User jefe = usuario(id(1), "AREA_MANAGER", ti);
-        when(userService.getCurrentUser()).thenReturn(jefe);
-
-        assertThrows(AccessDeniedException.class, () -> assetService.create(peticion(null, id(51), null)));
+    void elAuditorVeTodoPeroNoGestiona() {
+        User auditor = usuario(id(1), "AUDITOR", finanzas);
+        assertTrue(assetService.puedeVer(auditor, activo(id(9), null, ti)));
+        assertFalse(assetService.puedeGestionar(auditor, activo(id(9), null, ti)));
     }
 
     @Test
-    void sinAreaElActivoDelJefeQuedaEnSuArea() {
-        User jefe = usuario(id(1), "AREA_MANAGER", ti);
-        when(userService.getCurrentUser()).thenReturn(jefe);
+    void otraAreaNoRegistraActivos() {
+        when(userService.getCurrentUser()).thenReturn(usuario(id(1), "AREA_MANAGER", finanzas));
+        assertThrows(AccessDeniedException.class, () -> assetService.create(peticion(null, null, null)));
+    }
+
+    @Test
+    void sinCodigoTomaElSiguienteDeLaNumeracion() {
+        when(userService.getCurrentUser()).thenReturn(usuario(id(1), "AGENT", ti));
+        when(numeracion.siguienteCodigo("LAP")).thenReturn("TI-LAP-000124");
         guardarDevuelveLoMismo();
 
-        assetService.create(peticion(null, null, null));
+        assetService.create(new AssetRequest(" ", "Laptop", "LAPTOP", null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null));
 
         ArgumentCaptor<Asset> captor = ArgumentCaptor.forClass(Asset.class);
         verify(assetRepository, atLeastOnce()).save(captor.capture());
-        assertEquals(ti, captor.getValue().getArea());
+        assertEquals("TI-LAP-000124", captor.getValue().getCodeAsset());
+        assertEquals(id(70), captor.getValue().getAssetTypeId());
+        assertEquals("EN_BODEGA", captor.getValue().getStatusAsset());
     }
 
     // ------------------------------------------------- movimientos y estados
 
     @Test
     void reasignarGuardaQuienLoTeniaQuienLoRecibeYLaNota() {
-        User admin = usuario(id(1), "ADMIN", ti);
+        User admin = usuario(id(1), "SUPER_ADMIN", ti);
         User antes = usuario(id(2), "USER", ti);
         User despues = usuario(id(3), "USER", ti);
         when(userService.getCurrentUser()).thenReturn(admin);
@@ -258,7 +273,7 @@ class AssetServiceTest {
 
     @Test
     void asignarALaMismaPersonaSeRechaza() {
-        User admin = usuario(id(1), "ADMIN", ti);
+        User admin = usuario(id(1), "SUPER_ADMIN", ti);
         User duenio = usuario(id(2), "USER", ti);
         when(userService.getCurrentUser()).thenReturn(admin);
         when(assetRepository.findById(id(9))).thenReturn(Optional.of(activo(id(9), duenio, ti)));
@@ -269,7 +284,7 @@ class AssetServiceTest {
 
     @Test
     void enReparacionNoSePuedeAsignar() {
-        User admin = usuario(id(1), "ADMIN", ti);
+        User admin = usuario(id(1), "SUPER_ADMIN", ti);
         Asset a = activo(id(9), null, ti);
         a.setStatusAsset("EN_REPARACION");
         when(userService.getCurrentUser()).thenReturn(admin);
@@ -281,7 +296,7 @@ class AssetServiceTest {
 
     @Test
     void darDeBajaDevuelveAntesElActivo() {
-        User admin = usuario(id(1), "ADMIN", ti);
+        User admin = usuario(id(1), "SUPER_ADMIN", ti);
         User duenio = usuario(id(2), "USER", ti);
         Asset a = activo(id(9), duenio, ti);
         when(userService.getCurrentUser()).thenReturn(admin);
@@ -297,7 +312,7 @@ class AssetServiceTest {
 
     @Test
     void asignadoNoSePideAMano() {
-        User admin = usuario(id(1), "ADMIN", ti);
+        User admin = usuario(id(1), "SUPER_ADMIN", ti);
         when(userService.getCurrentUser()).thenReturn(admin);
         when(assetRepository.findById(id(9))).thenReturn(Optional.of(activo(id(9), null, ti)));
 
@@ -306,7 +321,7 @@ class AssetServiceTest {
 
     @Test
     void alTerminarLaReparacionVuelveConSuDuenio() {
-        User admin = usuario(id(1), "ADMIN", ti);
+        User admin = usuario(id(1), "SUPER_ADMIN", ti);
         User duenio = usuario(id(2), "USER", ti);
         Asset a = activo(id(9), duenio, ti);
         a.setStatusAsset("EN_REPARACION");
@@ -314,6 +329,7 @@ class AssetServiceTest {
         when(assetRepository.findById(id(9))).thenReturn(Optional.of(a));
         guardarDevuelveLoMismo();
 
+        // Un cliente antiguo aún manda DISPONIBLE: equivale a EN_BODEGA.
         assetService.changeStatus(id(9), "DISPONIBLE");
 
         assertEquals("ASIGNADO", a.getStatusAsset());
@@ -323,7 +339,7 @@ class AssetServiceTest {
 
     @Test
     void unEstadoFueraDelCatalogoSeRechaza() {
-        User admin = usuario(id(1), "ADMIN", ti);
+        User admin = usuario(id(1), "SUPER_ADMIN", ti);
         when(userService.getCurrentUser()).thenReturn(admin);
         when(assetRepository.findById(id(9))).thenReturn(Optional.of(activo(id(9), null, ti)));
 
@@ -332,7 +348,7 @@ class AssetServiceTest {
 
     @Test
     void devolverSinNadieAsignadoSeRechaza() {
-        User admin = usuario(id(1), "ADMIN", ti);
+        User admin = usuario(id(1), "SUPER_ADMIN", ti);
         when(userService.getCurrentUser()).thenReturn(admin);
         when(assetRepository.findById(id(9))).thenReturn(Optional.of(activo(id(9), null, ti)));
 

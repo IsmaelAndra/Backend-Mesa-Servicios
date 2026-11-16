@@ -46,7 +46,7 @@ public class WorkflowVariables {
             "ticket.tipo", "Tipo de ticket",
             "ticket.area", "Área",
             "ticket.equipo", "Equipo asignado",
-            "ticket.sede", "Sede",
+            "ticket.sucursal", "Sucursal",
             "ticket.agente", "Nombre del agente asignado",
             "ticket.agenteId", "Id del agente asignado",
             "ticket.agenteCorreo", "Correo del agente asignado",
@@ -132,7 +132,9 @@ public class WorkflowVariables {
             case "tipo" -> t.getTypeTicket() == null ? null : t.getTypeTicket().getNameTicketType();
             case "area" -> t.getAreaTicket() == null ? null : t.getAreaTicket().getNameArea();
             case "equipo" -> t.getTeamTicket() == null ? null : t.getTeamTicket().getNameTeam();
-            case "sede" -> t.getSucursalTicket() == null ? null : t.getSucursalTicket().getNameSucursal();
+            // "sede" es el nombre anterior: las versiones ya publicadas no se
+            // editan nunca y pueden seguir usando {{ticket.sede}}.
+            case "sucursal", "sede" -> t.getSucursalTicket() == null ? null : t.getSucursalTicket().getNameSucursal();
             case "agente" -> t.getAgentTicket() == null ? null : NombreVisible.de(t.getAgentTicket());
             case "agenteId" -> t.getAgentTicket() == null ? null : t.getAgentTicket().getIdUser();
             case "agenteCorreo" -> t.getAgentTicket() == null ? null : t.getAgentTicket().getCorporateEmailUser();
@@ -186,6 +188,8 @@ public class WorkflowVariables {
     public static List<String> clavesVivas() {
         List<String> claves = new java.util.ArrayList<>(CATALOGO_TICKET.keySet());
         claves.addAll(CATALOGO_USUARIO.keySet());
+        // Nombre anterior de ticket.sucursal: un borrador viejo se sigue pudiendo guardar.
+        claves.add("ticket.sede");
         return claves;
     }
 }

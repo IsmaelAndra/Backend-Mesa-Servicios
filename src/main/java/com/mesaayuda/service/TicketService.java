@@ -128,6 +128,12 @@ public class TicketService {
     private TicketAccessPolicy accessPolicy;
 
     @Autowired
+    private com.mesaayuda.repository.AreaRepository areaRepository;
+
+    @Autowired
+    private com.mesaayuda.repository.TicketAutorizadoRepository ticketAutorizadoRepository;
+
+    @Autowired
     private TicketMapper ticketMapper;
 
     @Autowired
@@ -139,9 +145,9 @@ public class TicketService {
     // ============================ CREACIÓN ============================
 
     /**
-     * Sede del ticket: la indicada en el formulario y, si no viene, la del
- * solicitante. Una sede borrada o desactivada se ignora en vez de fallar, para
- * que un ticket se pueda abrir igual y solo quede sin sede.
+     * Sucursal del ticket: la indicada en el formulario y, si no viene, la del
+ * solicitante. Una sucursal borrada o desactivada se ignora en vez de fallar, para
+ * que un ticket se pueda abrir igual y solo quede sin sucursal.
  */
 private Sucursal sucursalDelTicket(UUID sucursalId, User requester) {
     if (sucursalId != null) {
@@ -159,12 +165,7 @@ public TicketResponse create(TicketRequest request) {
         User creador = userService.getCurrentUser();
         User requester = solicitanteDe(request, creador);
 
-        Category category = (request.categoryId() != null)
-                ? categoryRepository.findById(request.categoryId())
-                        .filter(c -> !c.getDeletedCategory())
-                        .orElseThrow(() -> new ResourceNotFoundException("Categoría", "id", request.categoryId()))
-                : categoryRepository.findFirstByDeletedCategoryFalseOrderByCreatedAtCategoryAsc()
-                        .orElseThrow(() -> new BadRequestException("No hay categorías disponibles"));
+        Category category = categoriaDelTicket(request.categoryId(), request.areaDestinoId());
 
         TicketType type = (request.typeId() != null)
                 ? ticketTypeRepository.findById(request.typeId())
@@ -183,7 +184,9 @@ public TicketResponse create(TicketRequest request) {
         ticket.setDescriptionTicket(request.description());
         ticket.setUserTicket(requester);
         ticket.setAreaTicket(requester.getArea());
-        // Si no se indica sede, el ticket arranca en la del solicitante. El
+        ticket.setAreaDestinoTicket(areaQueAtiende(category, request.areaDestinoId()));
+        ticket.setConfidencialTicket(Boolean.TRUE.equals(request.confidencial()));
+        // Si no se indica sucursal, el ticket arranca en la del solicitante. El
         // formulario permite cambiarla porque el caso puede corresponder a otra
         // oficina, pero casi siempre es la misma.
         ticket.setSucursalTicket(sucursalDelTicket(request.sucursalId(), requester));
@@ -227,6 +230,45 @@ public TicketResponse create(TicketRequest request) {
       }
 
     /**
+     * Categoría del ticket nuevo. Con categoría, esa (y si además viene área,
+     * tiene que ser de esa área). Sin categoría, la primera del área elegida; sin
+     * nada, la primera de todas, como antes de la mesa multi-área.
+     */
+    private Category categoriaDelTicket(UUID categoryId, UUID areaId) {
+        if (categoryId != null) {
+            Category c = categoryRepository.findById(categoryId)
+                    .filter(x -> !x.getDeletedCategory())
+                    .orElseThrow(() -> new ResourceNotFoundException("Categoría", "id", categoryId));
+            if (areaId != null && c.getAreaCategory() != null && !areaId.equals(c.getAreaCategory().getIdArea())) {
+                throw new BadRequestException("La categoría elegida no pertenece al área seleccionada");
+            }
+            return c;
+        }
+        if (areaId != null) {
+            return categoryRepository.findFirstByAreaCategoryIdAreaAndDeletedCategoryFalseOrderByCreatedAtCategoryAsc(areaId)
+                    .orElseThrow(() -> new BadRequestException("El área elegida todavía no tiene categorías"));
+        }
+        return categoryRepository.findFirstByDeletedCategoryFalseOrderByCreatedAtCategoryAsc()
+                .orElseThrow(() -> new BadRequestException("No hay categorías disponibles"));
+    }
+
+    /** El área que atiende: la de la categoría; si no tiene, la indicada; si no, la del equipo. */
+    private com.mesaayuda.entity.Area areaQueAtiende(Category categoria, UUID areaId) {
+        if (categoria != null && categoria.getAreaCategory() != null) {
+            return categoria.getAreaCategory();
+        }
+        if (areaId != null) {
+            return areaRepository.findById(areaId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Área", "id", areaId));
+        }
+        if (categoria != null && categoria.getTeamCategory() != null && categoria.getTeamCategory().getAreaTeam() != null) {
+            return categoria.getTeamCategory().getAreaTeam();
+        }
+        return areaRepository.tecnologia()
+                .orElseThrow(() -> new BadRequestException("No se pudo determinar el área que atiende el ticket"));
+    }
+
+    /**
      * Quién figura como solicitante. Solo el personal (agente, administrador)
      * puede abrir un ticket a nombre de otra persona, y esa persona tiene que
      * existir y estar activa. Un solicitante que mande requesterId de otro
@@ -267,20 +309,15 @@ public TicketResponse create(TicketRequest request) {
         // requesterId venía del cliente sin comprobar nada, así que bastaba
         // con ?requesterId=<otro id> para ver los tickets de otra persona.
         // El personal conserva el filtro libre: el kanban lo necesita.
-        UUID solicitanteEfectivo = esPersonal(actual) ? requesterId : actual.getIdUser();
-        // Solo ADMIN y SUPER_ADMIN ven todos los tickets. Un agente ve los que
-        // abrió y los que tiene asignados: antes veía los de todo el mundo en la
-        // lista de tickets, aunque no tuviera nada que ver con ellos.
-        UUID agenteRestringido = esPersonal(actual) && !esPersonalAdministrador(actual)
-                ? actual.getIdUser() : null;
+        AlcanceTickets alcance = accessPolicy.alcanceDe(actual);
+        UUID solicitanteEfectivo = esPersonal(actual) || alcance.veTodo() ? requesterId : actual.getIdUser();
 
         Specification<Ticket> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get("deletedTicket")));
-            if (agenteRestringido != null) {
-                predicates.add(cb.or(
-                        cb.equal(root.get("userTicket").get("idUser"), agenteRestringido),
-                        cb.equal(root.get("agentTicket").get("idUser"), agenteRestringido)));
+            // Mesa multi-área: cada uno ve lo suyo y lo de su área (AlcanceTickets).
+            if (!alcance.veTodo()) {
+                predicates.add(visibles(root, cb, alcance));
             }
             if (status != null && !status.isBlank()) {
                 predicates.add(cb.equal(root.get("statusTicket").get("nameStatus"), status.toUpperCase()));
@@ -305,8 +342,14 @@ public TicketResponse create(TicketRequest request) {
             }
             if (keyword != null && !keyword.isBlank()) {
                 List<Predicate> coincidencias = new ArrayList<>();
-                coincidencias.add(cb.like(cb.lower(root.get("titleTicket")), "%" + keyword.toLowerCase() + "%"));
-                coincidencias.add(cb.like(cb.lower(root.get("descriptionTicket")), "%" + keyword.toLowerCase() + "%"));
+                // El texto de un confidencial solo se busca si la persona puede
+                // leerlo; si no, adivinar palabras revelaría su contenido. Por
+                // número sí se encuentra (sale como "Ticket confidencial").
+                Predicate texto = cb.or(
+                        cb.like(cb.lower(root.get("titleTicket")), "%" + keyword.toLowerCase() + "%"),
+                        cb.like(cb.lower(root.get("descriptionTicket")), "%" + keyword.toLowerCase() + "%"));
+                coincidencias.add(cb.and(texto, cb.or(cb.isFalse(root.get("confidencialTicket")),
+                        confidencialLegible(root, cb, alcance))));
                 // "43" o "#43": la gente busca el ticket por su número.
                 Long numero = numeroDeTicket(keyword);
                 if (numero != null) {
@@ -317,7 +360,13 @@ public TicketResponse create(TicketRequest request) {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAtTicket"));
-        return conSesion(ticketRepository.findAll(spec, pageable).map(ticketMapper::toResponse));
+        // El súper admin y el auditor ven que un confidencial existe (número,
+        // estado, área), pero no su contenido: así pueden pedir acceso.
+        return conSesion(ticketRepository.findAll(spec, pageable).map(t -> {
+            TicketResponse r = ticketMapper.toResponse(t);
+            return r != null && TicketAccessPolicy.esConfidencial(t) && !accessPolicy.puedeLeer(t, alcance)
+                    ? r.oculto() : r;
+        }));
     }
 
     /**
@@ -363,14 +412,79 @@ public TicketResponse create(TicketRequest request) {
     }
 
     @Transactional(readOnly = true)
+    /**
+     * Predicado del alcance. Se compara por el id de cada relación: Hibernate usa
+     * la clave foránea y no une la tabla, así un ticket sin agente no se pierde.
+     */
+    private Predicate visibles(jakarta.persistence.criteria.Root<Ticket> root,
+                               jakarta.persistence.criteria.CriteriaBuilder cb, AlcanceTickets alcance) {
+        List<Predicate> o = new ArrayList<>();
+        o.add(cb.equal(root.get("userTicket").get("idUser"), alcance.userId()));
+        o.add(cb.equal(root.get("agentTicket").get("idUser"), alcance.userId()));
+        if (!alcance.areasQueAtiende().isEmpty()) {
+            o.add(root.get("areaDestinoTicket").get("idArea").in(alcance.areasQueAtiende()));
+        }
+        if (!alcance.areasQueSigue().isEmpty()) {
+            o.add(root.get("areaTicket").get("idArea").in(alcance.areasQueSigue()));
+        }
+        Predicate normal = cb.and(cb.isFalse(root.get("confidencialTicket")), cb.or(o.toArray(new Predicate[0])));
+
+        return cb.or(normal, confidencialLegible(root, cb, alcance));
+    }
+
+    /**
+     * Confidenciales que la persona puede leer: solicitante, agente asignado,
+     * jefe del área que lo atiende, agentes del área si se abrió a toda el área,
+     * y autorizados (también el acceso de emergencia vigente).
+     */
+    private Predicate confidencialLegible(jakarta.persistence.criteria.Root<Ticket> root,
+                                          jakarta.persistence.criteria.CriteriaBuilder cb, AlcanceTickets alcance) {
+        List<Predicate> c = new ArrayList<>();
+        c.add(cb.equal(root.get("userTicket").get("idUser"), alcance.userId()));
+        c.add(cb.equal(root.get("agentTicket").get("idUser"), alcance.userId()));
+        if (!alcance.areasACargo().isEmpty()) {
+            c.add(root.get("areaDestinoTicket").get("idArea").in(alcance.areasACargo()));
+        }
+        if (!alcance.areasQueAtiende().isEmpty()) {
+            c.add(cb.and(cb.isTrue(root.get("confidencialAreaTicket")),
+                    root.get("areaDestinoTicket").get("idArea").in(alcance.areasQueAtiende())));
+        }
+        if (!alcance.confidencialesPermitidos().isEmpty()) {
+            c.add(root.get("idTicket").in(alcance.confidencialesPermitidos()));
+        }
+        return cb.and(cb.isTrue(root.get("confidencialTicket")), cb.or(c.toArray(new Predicate[0])));
+    }
+
     public TicketResponse findById(UUID id) {
-        TicketResponse ticket = ticketMapper.toResponse(getTicketLegible(id));
+        Ticket entidad = getTicketLegible(id);
+        TicketResponse ticket = ticketMapper.toResponse(entidad);
         if (ticket == null) {
             return null;
         }
+        User actual = userService.getCurrentUser();
+        boolean gestiona = accessPolicy.esPersonal(actual) && accessPolicy.puedeEscribir(entidad, actual);
+        // Quien entra a un confidencial con acceso de emergencia deja rastro en
+        // cada apertura, no solo al pedirlo.
+        // El solicitante o el agente de su propio ticket no entran "de emergencia".
+        if (TicketAccessPolicy.esConfidencial(entidad) && actual.getRolUser() != null
+                && com.mesaayuda.security.Roles.veTodo(actual.getRolUser().getNameRole())
+                && !esPropio(entidad, actual)) {
+            auditService.record(entidad, "CONFIDENTIAL_READ", null, actual.getCorporateEmailUser(),
+                    "Lectura con acceso de emergencia aprobado");
+            log.warn("Ticket confidencial #{} abierto por {} con acceso de emergencia",
+                    entidad.getNumberTicket(), actual.getCorporateEmailUser());
+        }
         // La cabecera de la ficha de detalle muestra el punto de sesión del solicitante,
         // y este endpoint es el que la alimenta.
-        return ticket.withUserSessionState(presenceService.estadoDe(ticket.userId()));
+        return ticket.withUserSessionState(presenceService.estadoDe(ticket.userId()))
+                .conPermisos(gestiona, accessPolicy.puedeComentar(entidad, actual));
+    }
+
+    /** Si la persona es el solicitante o el agente asignado del ticket. */
+    private static boolean esPropio(Ticket t, User u) {
+        UUID id = u.getIdUser();
+        return id != null && ((t.getUserTicket() != null && id.equals(t.getUserTicket().getIdUser()))
+                || (t.getAgentTicket() != null && id.equals(t.getAgentTicket().getIdUser())));
     }
 
     @Transactional(readOnly = true)
@@ -510,6 +624,10 @@ public TicketResponse changeStatus(UUID ticketId, StatusChangeRequest request) {
         if (oldStatus.equals("CERRADO") && !newStatus.getNameStatus().equals("REABIERTO")) {
             throw new BadRequestException("Un ticket cerrado solo puede reabrirse");
         }
+        // Se cierra lo que ya se resolvió: antes se podía pasar de ASIGNADO a CERRADO.
+        if (newStatus.getNameStatus().equals("CERRADO") && !oldStatus.equals("RESUELTO")) {
+            throw new BadRequestException("Primero marque el ticket como Resuelto; luego se puede cerrar");
+        }
 
         ticket.setStatusTicket(newStatus);
 
@@ -538,10 +656,20 @@ publishSse("TICKET_STATUS_CHANGED", ticket, current.getIdUser(), current.getCorp
     // ============================ RESPUESTAS ============================
 
     public AnswerResponse addAnswer(UUID ticketId, AnswerRequest request) {
-        Ticket ticket = getTicketEscribible(ticketId);
+        Ticket ticket = getTicket(ticketId);
         User current = userService.getCurrentUser();
+        // El jefe que sigue un ticket de su gente también comenta (puedeComentar).
+        if (!accessPolicy.puedeComentar(ticket, current)) {
+            log.warn("Acceso denegado: {} intentó responder en el ticket #{}.", current.getCorporateEmailUser(), ticketId);
+            throw new AccessDeniedException("No tiene acceso a este ticket");
+        }
+        // Un ticket cerrado ya no recibe mensajes: hay que reabrirlo.
+        if (ticket.getStatusTicket() != null && "CERRADO".equals(ticket.getStatusTicket().getNameStatus())) {
+            throw new BadRequestException("El ticket está cerrado: reábralo para seguir conversando");
+        }
 
-        boolean isStaff = esPersonalAdministrador(current) || esAgenteAsignado(ticket, current);
+        boolean isStaff = esPersonalAdministrador(current) || esAgenteAsignado(ticket, current)
+                || accessPolicy.esJefeDelArea(ticket, current);
 
         boolean internal = Boolean.TRUE.equals(request.internal()) && isStaff;
 
@@ -583,7 +711,8 @@ publishSse("TICKET_STATUS_CHANGED", ticket, current.getIdUser(), current.getCorp
             yaAvisados.add(notified.getIdUser());
         }
         yaAvisados.add(current.getIdUser());
-        for (String rol : List.of("ADMIN", "SUPER_ADMIN")) {
+        // A un confidencial no se avisa al súper admin: no puede verlo.
+        for (String rol : TicketAccessPolicy.esConfidencial(ticket) ? List.<String>of() : List.of("SUPER_ADMIN")) {
 for (User admin : userRepository.findByRoleName(rol)) {
             if (admin.getDeletedUser() || !esActivo(admin)) {
                 continue;
@@ -881,7 +1010,11 @@ for (User admin : userRepository.findByRoleName(rol)) {
     }
 
     private Answer respuestaPropiaEditable(UUID ticketId, UUID answerId) {
-        getTicketEscribible(ticketId);
+        Ticket ticket = getTicketEscribible(ticketId);
+        // En un ticket cerrado la conversación queda como constancia.
+        if (ticket.getStatusTicket() != null && "CERRADO".equals(ticket.getStatusTicket().getNameStatus())) {
+            throw new BadRequestException("El ticket está cerrado: sus mensajes ya no se pueden editar ni eliminar");
+        }
         User current = userService.getCurrentUser();
         Answer answer = answerRepository.findById(answerId)
                 .filter(a -> !Boolean.TRUE.equals(a.getDeletedAnswer()))
@@ -994,7 +1127,7 @@ for (User admin : userRepository.findByRoleName(rol)) {
      * Comprueba que el adjunto sea de un tipo admitido y que el contenido
      * corresponda a la extensión. Devuelve el MIME con el que se guardará.
      */
-    String validarTipoAdjunto(String nombre, MultipartFile file) {
+    public String validarTipoAdjunto(String nombre, MultipartFile file) {
         String limpio = nombre == null ? "" : nombre.trim().toLowerCase(Locale.ROOT);
         int punto = limpio.lastIndexOf('.');
         String ext = punto < 0 ? "" : limpio.substring(punto + 1);
@@ -1179,7 +1312,8 @@ if (!Files.isRegularFile(candidato)) {
         if (agenteId != null) {
             destinatarios.add(agenteId);
         }
-        for (String rol : List.of("ADMIN", "SUPER_ADMIN")) {
+        // A un confidencial no se avisa al súper admin: no puede verlo.
+        for (String rol : TicketAccessPolicy.esConfidencial(ticket) ? List.<String>of() : List.of("SUPER_ADMIN")) {
             for (User admin : userRepository.findByRoleName(rol)) {
                 if (admin.getDeletedUser() || !esActivo(admin)) {
                     continue;
@@ -1211,10 +1345,13 @@ private void publishSse(String type, Ticket ticket, UUID actorId, String actorNa
                   ticket.getStatusTicket().getNameStatus(), actorId, actorName,
                   ticket.getAgentTicket() != null ? ticket.getAgentTicket().getIdUser() : null,
                   ticket.getAgentTicket() != null ? ticket.getAgentTicket().getCorporateEmailUser() : null,
-                  // El titular se envia para que el canal decida a quien le toca:
-                  // el personal lo ve todo y un solicitador solo lo suyo. Es el
-                  // equivalente en tiempo real de TicketAccessPolicy.
-                  ticket.getUserTicket() != null ? ticket.getUserTicket().getIdUser() : null);
+                  // Titular y áreas para que el canal decida a quién le toca: es
+                  // el equivalente en tiempo real de AlcanceTickets.
+                  ticket.getUserTicket() != null ? ticket.getUserTicket().getIdUser() : null,
+                  ticket.getAreaDestinoTicket() != null ? ticket.getAreaDestinoTicket().getIdArea() : null,
+                  ticket.getAreaTicket() != null ? ticket.getAreaTicket().getIdArea() : null,
+                  TicketAccessPolicy.esConfidencial(ticket),
+                  Boolean.TRUE.equals(ticket.getConfidencialAreaTicket()));
       }
 
     // ============================ INTERNOS ============================
@@ -1361,6 +1498,49 @@ private Ticket getTicketGestionable(UUID id, String queSeHacia) {
                 .orElse(null);
     }
 
+    /** Plazo de resolución de un ticket para el tablero (brillo si venció, cuenta regresiva si no). */
+    public record PlazoSla(java.time.OffsetDateTime vence, boolean vencido, boolean pausado) {
+    }
+
+    /** Máximo de tickets por consulta de plazos: un tablero no muestra más. */
+    public static final int MAX_PLAZOS = 500;
+
+    /**
+     * Plazos de resolución de varios tickets de una vez, solo de los que la
+     * persona puede leer y siguen sin resolver. Los demás no aparecen.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Map<UUID, PlazoSla> plazos(java.util.Collection<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return java.util.Map.of();
+        }
+        if (ids.size() > MAX_PLAZOS) {
+            throw new BadRequestException("Como máximo " + MAX_PLAZOS + " tickets por consulta");
+        }
+        User actual = userService.getCurrentUser();
+        AlcanceTickets alcance = accessPolicy.alcanceDe(actual);
+        java.util.Set<UUID> legibles = new java.util.HashSet<>();
+        for (Ticket t : ticketRepository.findAllById(ids)) {
+            if (!Boolean.TRUE.equals(t.getDeletedTicket()) && accessPolicy.puedeLeer(t, alcance)) {
+                legibles.add(t.getIdTicket());
+            }
+        }
+        java.util.Map<UUID, PlazoSla> out = new java.util.HashMap<>();
+        if (legibles.isEmpty()) {
+            return out;
+        }
+        for (TicketSla ts : ticketSlaRepository.findByTicketIdTicketIn(legibles)) {
+            if (ts.getResolutionCompletedAt() != null || ts.getResolutionDueAt() == null) {
+                continue;
+            }
+            out.put(ts.getTicket().getIdTicket(), new PlazoSla(ts.getResolutionDueAt(),
+                    Boolean.TRUE.equals(ts.getResolutionBreached())
+                            || ts.getResolutionDueAt().isBefore(java.time.OffsetDateTime.now()),
+                    ts.getPausedAt() != null));
+        }
+        return out;
+    }
+
     /** Asigna agente con el enrutamiento de la categoría si el ticket no tiene ninguno. */
     private void enrutarSiSinAgente(Ticket ticket, Category categoria) {
         String estado = ticket.getStatusTicket() == null ? "" : ticket.getStatusTicket().getNameStatus();
@@ -1458,6 +1638,16 @@ private Ticket getTicketGestionable(UUID id, String queSeHacia) {
         if (nueva.getTeamCategory() != null) {
             ticket.setTeamTicket(nueva.getTeamCategory());
         }
+        // Una categoría de otra área es un traslado: el ticket pasa a esa área.
+        com.mesaayuda.entity.Area areaAnterior = ticket.getAreaDestinoTicket();
+        if (nueva.getAreaCategory() != null && (areaAnterior == null
+                || !nueva.getAreaCategory().getIdArea().equals(areaAnterior.getIdArea()))) {
+            ticket.setAreaDestinoTicket(nueva.getAreaCategory());
+            auditService.record(ticket, "AREA_TRANSFER",
+                    areaAnterior == null ? null : areaAnterior.getNameArea(),
+                    nueva.getAreaCategory().getNameArea(),
+                    "Por el cambio de categoría a " + nueva.getNameCategory());
+        }
         ticket = ticketRepository.save(ticket);
         enrutarSiSinAgente(ticket, nueva);
 
@@ -1467,6 +1657,102 @@ private Ticket getTicketGestionable(UUID id, String queSeHacia) {
 log.info("Ticket #{} cambió de categoría {} -> {}", ticketId, anterior, nueva.getNameCategory());
           workflowEventPublisher.ticketCambioCategoria(ticket, anterior);
           return ticketMapper.toResponse(ticket);
+    }
+
+    /**
+     * Traslada el ticket a otra área: lo pueden hacer el agente asignado, el
+     * jefe del área que lo atiende y el súper admin. El ticket vuelve a NUEVO sin
+     * agente y se enruta en el área nueva, que es la que decide quién lo atiende.
+     */
+    @Transactional
+    public TicketResponse trasladar(UUID ticketId, com.mesaayuda.dto.TrasladoRequest request) {
+        Ticket ticket = getTicketGestionable(ticketId, "trasladar");
+        User current = userService.getCurrentUser();
+        String estado = ticket.getStatusTicket() == null ? "" : ticket.getStatusTicket().getNameStatus();
+        if ("RESUELTO".equals(estado) || "CERRADO".equals(estado)) {
+            throw new BadRequestException("Un ticket resuelto o cerrado no se puede trasladar");
+        }
+        com.mesaayuda.entity.Area destino = areaRepository.findById(request.areaId())
+                .filter(a -> !Boolean.TRUE.equals(a.getDeletedArea()))
+                .orElseThrow(() -> new BadRequestException("Área inválida"));
+        com.mesaayuda.entity.Area origen = ticket.getAreaDestinoTicket();
+        if (origen != null && origen.getIdArea().equals(destino.getIdArea())) {
+            throw new BadRequestException("El ticket ya lo atiende " + destino.getNameArea());
+        }
+        Category categoria = categoriaDelTicket(request.categoryId(), destino.getIdArea());
+
+        String agenteAnterior = ticket.getAgentTicket() == null ? null : ticket.getAgentTicket().getCorporateEmailUser();
+        ticket.setAreaDestinoTicket(destino);
+        ticket.setCategoryTicket(categoria);
+        ticket.setTeamTicket(categoria.getTeamCategory());
+        ticket.setAgentTicket(null);
+        ticket.setStatusTicket(statusByName("NUEVO"));
+        ticket = ticketRepository.save(ticket);
+
+        auditService.record(ticket, "AREA_TRANSFER", origen == null ? null : origen.getNameArea(),
+                destino.getNameArea(), "Motivo: " + request.motivo().trim()
+                        + (agenteAnterior == null ? "" : " (lo tenía " + agenteAnterior + ")"));
+        enrutarSiSinAgente(ticket, categoria);
+        recalcularSla(ticket);
+        publishSse("TICKET_UPDATED", ticket, current.getIdUser(), current.getCorporateEmailUser());
+        log.info("Ticket #{} trasladado de {} a {} por {}", ticket.getNumberTicket(),
+                origen == null ? "-" : origen.getNameArea(), destino.getNameArea(), current.getCorporateEmailUser());
+        workflowEventPublisher.ticketActualizado(ticket);
+        return ticketMapper.toResponse(ticket);
+    }
+
+    /** Confidencialidad del ticket y personas autorizadas (quien puede leerlo). */
+    @Transactional(readOnly = true)
+    public com.mesaayuda.dto.ConfidencialidadResponse confidencialidad(UUID ticketId) {
+        Ticket ticket = getTicketLegible(ticketId);
+        return confidencialidadDe(ticket);
+    }
+
+    private com.mesaayuda.dto.ConfidencialidadResponse confidencialidadDe(Ticket ticket) {
+        List<com.mesaayuda.dto.ConfidencialidadResponse.Persona> personas =
+                ticketAutorizadoRepository.autorizadosDe(ticket.getIdTicket()).stream()
+                        .map(u -> new com.mesaayuda.dto.ConfidencialidadResponse.Persona(
+                                u.getIdUser(), nombreVisible(u), u.getCorporateEmailUser()))
+                        .toList();
+        return new com.mesaayuda.dto.ConfidencialidadResponse(TicketAccessPolicy.esConfidencial(ticket),
+                Boolean.TRUE.equals(ticket.getConfidencialAreaTicket()), personas);
+    }
+
+    /**
+     * Marca o desmarca el ticket como confidencial y fija quién más lo ve. Lo
+     * hacen el agente asignado y el jefe del área que lo atiende (y el súper
+     * admin mientras el ticket aún no es confidencial).
+     */
+    @Transactional
+    public com.mesaayuda.dto.ConfidencialidadResponse cambiarConfidencialidad(
+            UUID ticketId, com.mesaayuda.dto.ConfidencialidadRequest request) {
+        Ticket ticket = getTicketGestionable(ticketId, "cambiar la confidencialidad");
+        User current = userService.getCurrentUser();
+        boolean antes = TicketAccessPolicy.esConfidencial(ticket);
+        ticket.setConfidencialTicket(request.confidencial());
+        ticket.setConfidencialAreaTicket(request.confidencial() && request.todaElArea());
+        ticket = ticketRepository.save(ticket);
+
+        ticketAutorizadoRepository.borrarDe(ticketId);
+        ticketAutorizadoRepository.flush();
+        int autorizados = 0;
+        if (request.confidencial() && request.personas() != null) {
+            for (UUID id : new java.util.LinkedHashSet<>(request.personas())) {
+                User u = userRepository.findById(id).filter(x -> !Boolean.TRUE.equals(x.getDeletedUser()))
+                        .orElseThrow(() -> new BadRequestException("Persona inválida: " + id));
+                ticketAutorizadoRepository.save(new com.mesaayuda.entity.TicketAutorizado(ticket, u));
+                autorizados++;
+            }
+        }
+        String detalle = !request.confidencial() ? "Visible para el área como cualquier ticket"
+                : (request.todaElArea() ? "Visible para toda el área" : "Solo solicitante, agente y jefe")
+                + (autorizados > 0 ? " + " + autorizados + " persona(s) autorizada(s)" : "");
+        auditService.record(ticket, "CONFIDENTIALITY_CHANGE", antes ? "Confidencial" : "Normal",
+                request.confidencial() ? "Confidencial" : "Normal", detalle);
+        publishSse("TICKET_UPDATED", ticket, current.getIdUser(), current.getCorporateEmailUser());
+        log.info("Ticket #{} confidencialidad {} -> {} por {}", ticket.getNumberTicket(), antes,
+                request.confidencial(), current.getCorporateEmailUser());
+        return confidencialidadDe(ticket);
     }
 
     /** Cambia el tipo del ticket (INCIDENTE, REQUERIMIENTO...). Lo usa el nodo TICKET_TYPE. */
