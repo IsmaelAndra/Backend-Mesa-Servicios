@@ -163,6 +163,14 @@ public class ProyectoService {
         boolean puedeTablero() {
             return (gestor || jefeParticipante || miembro) && !Roles.AUDITOR.equals(rol);
         }
+
+        /**
+         * Terminado o cancelado: como un ticket cerrado, el tablero y el chat
+         * quedan en solo lectura hasta que el gestor lo reabra.
+         */
+        boolean cerrado() {
+            return esCerrado(p);
+        }
     }
 
     private User actual() {
@@ -206,7 +214,7 @@ public class ProyectoService {
     @Transactional(readOnly = true)
     public AccesoChat accesoChat(UUID id) {
         Ctx c = lector(id);
-        return new AccesoChat(c.u(), c.p(), c.puedeTablero());
+        return new AccesoChat(c.u(), c.p(), c.puedeTablero() && !c.cerrado());
     }
 
     /**
@@ -241,10 +249,22 @@ public class ProyectoService {
         return c;
     }
 
+    public static boolean esCerrado(Proyecto p) {
+        return p != null && ("TERMINADO".equals(p.getEstado()) || "CANCELADO".equals(p.getEstado()));
+    }
+
+    public static String mensajeCerrado(Proyecto p) {
+        return "El proyecto está " + ("CANCELADO".equals(p.getEstado()) ? "cancelado" : "terminado")
+                + ": reábralo para seguir trabajando";
+    }
+
     private Ctx tablero(UUID id) {
         Ctx c = ctx(id);
         if (!c.puedeTablero()) {
             throw new AccessDeniedException("Solo el equipo del proyecto trabaja en el tablero");
+        }
+        if (c.cerrado()) {
+            throw new BadRequestException(mensajeCerrado(c.p()));
         }
         return c;
     }
@@ -374,7 +394,7 @@ public class ProyectoService {
                 .toList();
         Resumen resumen = resumen(p, its, ms.size(), pas, areas, c.gestor());
         return new Detalle(resumen, areasVista, miembrosVista, sprintsVista, itemsVista, objetivosVista,
-                new Permisos(c.gestor(), c.puedeTablero(), c.gestor() || c.jefeParticipante()));
+                new Permisos(c.gestor(), c.puedeTablero() && !c.cerrado(), c.gestor() || c.jefeParticipante()));
     }
 
     // ================================================================== áreas invitadas

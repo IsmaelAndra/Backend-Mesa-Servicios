@@ -140,6 +140,9 @@ public class ProyectoChatService {
     public MensajeVista enviar(UUID proyectoId, String texto, List<MultipartFile> archivos, List<UUID> menciones,
                                UUID respondeA) {
         ProyectoService.AccesoChat a = proyectos.accesoChat(proyectoId);
+        if (ProyectoService.esCerrado(a.p())) {
+            throw new BadRequestException(ProyectoService.mensajeCerrado(a.p()));
+        }
         if (!a.escribe()) {
             throw new AccessDeniedException("Solo el equipo del proyecto escribe en el chat");
         }
@@ -273,6 +276,9 @@ public class ProyectoChatService {
     }
 
     private ProyectoMensaje propioEditable(ProyectoService.AccesoChat a, UUID proyectoId, UUID mensajeId) {
+        if (ProyectoService.esCerrado(a.p())) {
+            throw new BadRequestException(ProyectoService.mensajeCerrado(a.p()));
+        }
         if (!a.escribe()) {
             throw new AccessDeniedException("Solo el equipo del proyecto escribe en el chat");
         }
