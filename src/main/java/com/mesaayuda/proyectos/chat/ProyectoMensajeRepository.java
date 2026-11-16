@@ -14,7 +14,8 @@ import java.util.UUID;
 public interface ProyectoMensajeRepository extends JpaRepository<ProyectoMensaje, UUID> {
 
     /** Los más recientes primero; el cliente los da vuelta. Nunca por id (son uuid). */
-    @Query("select m from ProyectoMensaje m where m.proyectoId = :p and m.deleted = false "
+    // Con los eliminados: el chat los pinta como "Se eliminó este mensaje".
+    @Query("select m from ProyectoMensaje m where m.proyectoId = :p "
             + "and (cast(:antes as OffsetDateTime) is null or m.createdAt < :antes) "
             + "order by m.createdAt desc, m.idMensaje desc")
     List<ProyectoMensaje> pagina(@Param("p") UUID proyectoId, @Param("antes") OffsetDateTime antesDe, Pageable pagina);

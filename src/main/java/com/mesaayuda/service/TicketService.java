@@ -843,14 +843,15 @@ for (User admin : userRepository.findByRoleName(rol)) {
         boolean staff = esPersonalAdministrador(current) || esAgenteAsignado(ticket, current);
 
         Pageable pageable = PageRequest.of(page, tamano);
+        // Con los eliminados: el chat los pinta como "Se eliminó este mensaje".
         List<Answer> ultimaPagina = staff
-                ? answerRepository.findByTicketAnswerIdTicketAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(ticketId, pageable)
+                ? answerRepository.findByTicketAnswerIdTicketOrderByCreatedAtAnswerDescIdAnswerDesc(ticketId, pageable)
                 : answerRepository
-                        .findByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+                        .findByTicketAnswerIdTicketAndInternalAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
                                 ticketId, pageable);
         long total = staff
-                ? answerRepository.countByTicketAnswerIdTicketAndDeletedAnswerFalse(ticketId)
-                : answerRepository.countByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalse(ticketId);
+                ? answerRepository.countByTicketAnswerIdTicket(ticketId)
+                : answerRepository.countByTicketAnswerIdTicketAndInternalAnswerFalse(ticketId);
 
         // Invertida para pintar de más antiguo a más reciente.
         List<Answer> visibles = new ArrayList<>(ultimaPagina);
@@ -862,6 +863,7 @@ for (User admin : userRepository.findByRoleName(rol)) {
         Set<UUID> sinLeerAlAbrir = Set.of();
         if (!visibles.isEmpty()) {
             List<UUID> ajenas = visibles.stream()
+                    .filter(a -> !Boolean.TRUE.equals(a.getDeletedAnswer()))
                     .filter(a -> !a.getUserAnswer().getIdUser().equals(current.getIdUser()))
                     .map(Answer::getIdAnswer)
                     .toList();
@@ -947,9 +949,11 @@ for (User admin : userRepository.findByRoleName(rol)) {
                                             Map<UUID, String> sesiones, Set<UUID> sinLeerAlAbrir) {
         DatosLectura d = datosLectura(lecturas, lector);
         UUID autorId = a.getUserAnswer() != null ? a.getUserAnswer().getIdUser() : null;
+        boolean eliminado = Boolean.TRUE.equals(a.getDeletedAnswer());
         return new AnswerResponse(
                 a.getIdAnswer(),
-                a.getMessageAnswer(),
+                // El texto de un mensaje eliminado no sale del servidor (queda en ticket_audit).
+                eliminado ? null : a.getMessageAnswer(),
                 a.getInternalAnswer(),
                 a.getUserAnswer().getCorporateEmailUser(),
                 nombreVisible(a.getUserAnswer()),
@@ -960,7 +964,8 @@ for (User admin : userRepository.findByRoleName(rol)) {
                 d.nombres(),
                 sesiones.getOrDefault(autorId, PresenceService.DESCONECTADO),
                 a.getEditedAtAnswer(),
-                sinLeerAlAbrir.contains(a.getIdAnswer()));
+                sinLeerAlAbrir.contains(a.getIdAnswer()),
+                eliminado);
     }
 
     // ============================ EDITAR / ELIMINAR UNA RESPUESTA ============================

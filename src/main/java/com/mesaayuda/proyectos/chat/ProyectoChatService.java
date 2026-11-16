@@ -100,9 +100,21 @@ public class ProyectoChatService {
     public record AdjuntoVista(UUID id, String nombre, String mime, long tamano) {
     }
 
-    public record MensajeVista(UUID id, UUID proyectoId, UUID autorId, String autor, String autorFoto, String texto,
-                               OffsetDateTime creado, boolean propio, List<AdjuntoVista> adjuntos) {
+    /** Cita del mensaje al que se responde. */
+    public record Cita(UUID id, String autor, String extracto, boolean eliminado) {
     }
+
+    /**
+     * Un mensaje eliminado viaja sin texto ni archivos (eliminado = true): el
+     * chat pinta "Se eliminó este mensaje", como WhatsApp.
+     */
+    public record MensajeVista(UUID id, UUID proyectoId, UUID autorId, String autor, String autorFoto, String texto,
+                               OffsetDateTime creado, boolean propio, List<AdjuntoVista> adjuntos,
+                               OffsetDateTime editado, boolean eliminado, Cita respondeA) {
+    }
+
+    /** Minutos durante los que el autor puede editar o eliminar su mensaje (igual que en tickets). */
+    public static final int MINUTOS_EDICION = 15;
 
     public record Descarga(String nombre, String mime, byte[] datos) {
     }
@@ -116,11 +128,17 @@ public class ProyectoChatService {
 
     @Transactional
     public MensajeVista enviar(UUID proyectoId, String texto, List<MultipartFile> archivos) {
-        return enviar(proyectoId, texto, archivos, null);
+        return enviar(proyectoId, texto, archivos, null, null);
     }
 
     @Transactional
     public MensajeVista enviar(UUID proyectoId, String texto, List<MultipartFile> archivos, List<UUID> menciones) {
+        return enviar(proyectoId, texto, archivos, menciones, null);
+    }
+
+    @Transactional
+    public MensajeVista enviar(UUID proyectoId, String texto, List<MultipartFile> archivos, List<UUID> menciones,
+                               UUID respondeA) {
         ProyectoService.AccesoChat a = proyectos.accesoChat(proyectoId);
         if (!a.escribe()) {
             throw new AccessDeniedException("Solo el equipo del proyecto escribe en el chat");
@@ -150,7 +168,14 @@ public class ProyectoChatService {
             tipos.add(ticketService.validarTipoAdjunto(f.getOriginalFilename(), f));
         }
 
+        // Solo se cita un mensaje del mismo proyecto.
+        if (respondeA != null && mensajes.findById(respondeA)
+                .filter(x -> proyectoId.equals(x.getProyectoId())).isEmpty()) {
+            throw new BadRequestException("El mensaje al que responde no existe");
+        }
+
         ProyectoMensaje m = new ProyectoMensaje();
+        m.setRespondeA(respondeA);
         m.setProyectoId(proyectoId);
         m.setAutorId(a.u().getIdUser());
         m.setTexto(limpio.isEmpty() ? null : limpio);
@@ -221,6 +246,58 @@ public class ProyectoChatService {
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
+    /** Corrige un mensaje propio durante los primeros {@link #MINUTOS_EDICION} minutos. */
+    @Transactional
+    public MensajeVista editar(UUID proyectoId, UUID mensajeId, String texto) {
+        ProyectoService.AccesoChat a = proyectos.accesoChat(proyectoId);
+        ProyectoMensaje m = propioEditable(a, proyectoId, mensajeId);
+        String limpio = limpiarHtml(texto == null ? "" : texto.strip());
+        if (textoPlano(limpio).isEmpty() && !limpio.contains("<img")) {
+            throw new BadRequestException("El mensaje no puede quedar vacío; si quiere quitarlo, elimínelo");
+        }
+        if (limpio.length() > MAX_TEXTO) {
+            throw new BadRequestException("El mensaje admite hasta " + MAX_TEXTO + " caracteres");
+        }
+        m.setTexto(limpio);
+        m.setEditadoAt(OffsetDateTime.now());
+        return publicarCambio(a, mensajes.save(m));
+    }
+
+    /** Elimina un mensaje propio: queda en el hilo como "Se eliminó este mensaje". */
+    @Transactional
+    public MensajeVista eliminar(UUID proyectoId, UUID mensajeId) {
+        ProyectoService.AccesoChat a = proyectos.accesoChat(proyectoId);
+        ProyectoMensaje m = propioEditable(a, proyectoId, mensajeId);
+        m.setDeleted(true);
+        return publicarCambio(a, mensajes.save(m));
+    }
+
+    private ProyectoMensaje propioEditable(ProyectoService.AccesoChat a, UUID proyectoId, UUID mensajeId) {
+        if (!a.escribe()) {
+            throw new AccessDeniedException("Solo el equipo del proyecto escribe en el chat");
+        }
+        ProyectoMensaje m = mensajes.findById(mensajeId)
+                .filter(x -> proyectoId.equals(x.getProyectoId()) && !Boolean.TRUE.equals(x.getDeleted()))
+                .orElseThrow(() -> new ResourceNotFoundException("Mensaje", "id", mensajeId));
+        if (!m.getAutorId().equals(a.u().getIdUser())) {
+            throw new AccessDeniedException("Solo quien escribió el mensaje puede cambiarlo");
+        }
+        if (m.getCreatedAt() != null && m.getCreatedAt().plusMinutes(MINUTOS_EDICION).isBefore(OffsetDateTime.now())) {
+            throw new BadRequestException("Solo se puede editar o eliminar un mensaje durante los primeros "
+                    + MINUTOS_EDICION + " minutos");
+        }
+        return m;
+    }
+
+    /** El cambio llega en vivo a todos (mismo evento: el cliente reemplaza por id). */
+    private MensajeVista publicarCambio(ProyectoService.AccesoChat a, ProyectoMensaje m) {
+        MensajeVista v = vistas(List.of(m), a.u().getIdUser()).get(0);
+        Set<UUID> destino = proyectos.participantes(m.getProyectoId());
+        destino.add(a.u().getIdUser());
+        sse.publishAUsuarios(destino, "proyecto-chat", v);
+        return v;
+    }
+
     @Transactional
     public void marcarLeido(UUID proyectoId) {
         ProyectoService.AccesoChat a = proyectos.accesoChat(proyectoId);
@@ -271,14 +348,36 @@ public class ProyectoChatService {
                 .collect(Collectors.groupingBy(ProyectoAdjunto::getMensajeId,
                         Collectors.mapping(x -> new AdjuntoVista(x.getIdAdjunto(), x.getNombre(), x.getMime(), x.getTamano()),
                                 Collectors.toList())));
+        // Mensajes citados (pueden ser de otra página): una consulta para todos.
+        Map<UUID, ProyectoMensaje> citados = new HashMap<>();
+        Set<UUID> idsCitados = l.stream().map(ProyectoMensaje::getRespondeA).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (!idsCitados.isEmpty()) {
+            mensajes.findAllById(idsCitados).forEach(c -> citados.put(c.getIdMensaje(), c));
+        }
+        Set<UUID> idsAutores = new HashSet<>();
+        l.forEach(m -> idsAutores.add(m.getAutorId()));
+        citados.values().forEach(c -> idsAutores.add(c.getAutorId()));
         Map<UUID, User> autores = new HashMap<>();
-        usuarios.findAllById(l.stream().map(ProyectoMensaje::getAutorId).collect(Collectors.toSet()))
-                .forEach(u -> autores.put(u.getIdUser(), u));
+        usuarios.findAllById(idsAutores).forEach(u -> autores.put(u.getIdUser(), u));
         return l.stream().map(m -> {
             User u = autores.get(m.getAutorId());
+            boolean eliminado = Boolean.TRUE.equals(m.getDeleted());
+            Cita cita = null;
+            ProyectoMensaje c = m.getRespondeA() == null ? null : citados.get(m.getRespondeA());
+            if (c != null) {
+                boolean citaEliminada = Boolean.TRUE.equals(c.getDeleted());
+                String extracto = citaEliminada ? "" : textoPlano(c.getTexto());
+                if (extracto.isEmpty() && !citaEliminada) extracto = "Archivo adjunto";
+                if (extracto.length() > 140) extracto = extracto.substring(0, 140) + "…";
+                User ua = autores.get(c.getAutorId());
+                cita = new Cita(c.getIdMensaje(), ua == null ? "—" : ua.getFullName(), extracto, citaEliminada);
+            }
             return new MensajeVista(m.getIdMensaje(), m.getProyectoId(), m.getAutorId(),
-                    u == null ? "—" : u.getFullName(), u == null ? null : u.getPhotoUrl(), m.getTexto(), m.getCreatedAt(),
-                    m.getAutorId().equals(yo), porMensaje.getOrDefault(m.getIdMensaje(), List.of()));
+                    u == null ? "—" : u.getFullName(), u == null ? null : u.getPhotoUrl(),
+                    eliminado ? null : m.getTexto(), m.getCreatedAt(),
+                    m.getAutorId().equals(yo), eliminado ? List.of() : porMensaje.getOrDefault(m.getIdMensaje(), List.of()),
+                    m.getEditadoAt(), eliminado, eliminado ? null : cita);
         }).toList();
     }
 

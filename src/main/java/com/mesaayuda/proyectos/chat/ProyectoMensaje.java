@@ -36,4 +36,12 @@ public class ProyectoMensaje {
     @CreationTimestamp
     @Column(name = "created_at_proyecto_mensaje", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
+
+    /** Última edición (el chat lo marca "editado"); null si nunca se editó. V45. */
+    @Column(name = "editado_at_proyecto_mensaje")
+    private OffsetDateTime editadoAt;
+
+    /** Mensaje al que responde (cita), del mismo proyecto. V45. */
+    @Column(name = "responde_a_proyecto_mensaje")
+    private UUID respondeA;
 }

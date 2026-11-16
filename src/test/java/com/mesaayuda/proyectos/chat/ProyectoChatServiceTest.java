@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ProyectoChatServiceTest {
@@ -117,5 +118,50 @@ class ProyectoChatServiceTest {
         chat.enviar(PROYECTO, "<p>Hola @Otro</p>", List.of(), List.of(id(2), id(9), id(1)));
         verify(avisos).notifyProyecto(eq(otro), eq("PROYECTO_MENCION"), anyString(), anyString(), anyString());
         verify(avisos, times(1)).notifyProyecto(any(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    private ProyectoMensaje mensaje(UUID autor, java.time.OffsetDateTime creado) {
+        ProyectoMensaje m = new ProyectoMensaje();
+        m.setIdMensaje(id(88));
+        m.setProyectoId(PROYECTO);
+        m.setAutorId(autor);
+        m.setTexto("<p>original</p>");
+        m.setCreatedAt(creado);
+        return m;
+    }
+
+    @Test
+    void eliminarDejaElMensajeSinTextoNiArchivosYMarcadoComoEliminado() {
+        acceso(true);
+        when(proyectos.participantes(PROYECTO)).thenReturn(new HashSet<>());
+        when(mensajes.findById(id(88))).thenReturn(java.util.Optional.of(mensaje(id(1), java.time.OffsetDateTime.now())));
+        ProyectoChatService.MensajeVista v = chat.eliminar(PROYECTO, id(88));
+        assertTrue(v.eliminado());
+        assertNull(v.texto());
+        assertTrue(v.adjuntos().isEmpty());
+    }
+
+    @Test
+    void nadieEditaElMensajeDeOtro() {
+        acceso(true);
+        when(mensajes.findById(id(88))).thenReturn(java.util.Optional.of(mensaje(id(2), java.time.OffsetDateTime.now())));
+        assertThrows(AccessDeniedException.class, () -> chat.editar(PROYECTO, id(88), "<p>cambio</p>"));
+    }
+
+    @Test
+    void pasadosLosQuinceMinutosYaNoSeEdita() {
+        acceso(true);
+        when(mensajes.findById(id(88))).thenReturn(java.util.Optional.of(mensaje(id(1), java.time.OffsetDateTime.now().minusMinutes(20))));
+        assertThrows(BadRequestException.class, () -> chat.editar(PROYECTO, id(88), "<p>cambio</p>"));
+    }
+
+    @Test
+    void editarMarcaLaHoraDeEdicion() {
+        acceso(true);
+        when(proyectos.participantes(PROYECTO)).thenReturn(new HashSet<>());
+        when(mensajes.findById(id(88))).thenReturn(java.util.Optional.of(mensaje(id(1), java.time.OffsetDateTime.now())));
+        ProyectoChatService.MensajeVista v = chat.editar(PROYECTO, id(88), "<p>corregido</p>");
+        assertEquals("<p>corregido</p>", v.texto());
+        assertNotNull(v.editado());
     }
 }

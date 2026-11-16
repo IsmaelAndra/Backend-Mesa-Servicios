@@ -33,4 +33,17 @@ public interface AnswerRepository extends JpaRepository<Answer, UUID> {
     long countByTicketAnswerIdTicketAndDeletedAnswerFalse(UUID ticketId);
 
     long countByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalse(UUID ticketId);
+
+    /**
+     * El hilo del chat CON los mensajes eliminados: como en WhatsApp, en su
+     * lugar se ve "Se eliminó este mensaje" (sin el texto).
+     */
+    List<Answer> findByTicketAnswerIdTicketOrderByCreatedAtAnswerDescIdAnswerDesc(UUID ticketId, Pageable pageable);
+
+    List<Answer> findByTicketAnswerIdTicketAndInternalAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+            UUID ticketId, Pageable pageable);
+
+    long countByTicketAnswerIdTicket(UUID ticketId);
+
+    long countByTicketAnswerIdTicketAndInternalAnswerFalse(UUID ticketId);
 }

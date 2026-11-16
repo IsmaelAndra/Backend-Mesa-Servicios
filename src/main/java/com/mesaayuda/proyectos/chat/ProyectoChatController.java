@@ -48,8 +48,25 @@ public class ProyectoChatController {
     public ProyectoChatService.MensajeVista enviar(@PathVariable UUID id,
                                                     @RequestParam(value = "texto", required = false) String texto,
                                                     @RequestParam(value = "archivos", required = false) List<MultipartFile> archivos,
-                                                    @RequestParam(value = "menciones", required = false) List<UUID> menciones) {
-        return chat.enviar(id, texto, archivos, menciones);
+                                                    @RequestParam(value = "menciones", required = false) List<UUID> menciones,
+                                                    @RequestParam(value = "respondeA", required = false) UUID respondeA) {
+        return chat.enviar(id, texto, archivos, menciones, respondeA);
+    }
+
+    public record EdicionRequest(String texto) {
+    }
+
+    /** Editar un mensaje propio (primeros 15 minutos). */
+    @PutMapping("/{id}/chat/{mensajeId}")
+    public ProyectoChatService.MensajeVista editar(@PathVariable UUID id, @PathVariable UUID mensajeId,
+                                                   @RequestBody EdicionRequest r) {
+        return chat.editar(id, mensajeId, r == null ? null : r.texto());
+    }
+
+    /** Eliminar un mensaje propio: queda "Se eliminó este mensaje" (primeros 15 minutos). */
+    @DeleteMapping("/{id}/chat/{mensajeId}")
+    public ProyectoChatService.MensajeVista eliminar(@PathVariable UUID id, @PathVariable UUID mensajeId) {
+        return chat.eliminar(id, mensajeId);
     }
 
     /** Personas que se pueden mencionar con @ (los participantes del chat). */

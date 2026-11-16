@@ -154,13 +154,13 @@ class TicketServiceAnswerPageTest {
         comoSolicitante();
         // La consulta pide los más recientes primero: 30, 20, 10.
         when(answerRepository
-                .findByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+                .findByTicketAnswerIdTicketAndInternalAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
                         any(java.util.UUID.class), any(Pageable.class)))
                 .thenReturn(List.of(respuesta(id(30), AGENTE, false),
                         respuesta(id(20), DUENA, false),
                         respuesta(id(10), AGENTE, false)));
         when(answerRepository
-                .countByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalse(TICKET))
+                .countByTicketAnswerIdTicketAndInternalAnswerFalse(TICKET))
                 .thenReturn(3L);
         when(answerReadRepository.findByAnswerIdAnswerIn(any())).thenReturn(List.of());
 
@@ -175,11 +175,11 @@ class TicketServiceAnswerPageTest {
     void calculaSiHayMas() {
         comoSolicitante();
         when(answerRepository
-                .findByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+                .findByTicketAnswerIdTicketAndInternalAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
                         any(java.util.UUID.class), any(Pageable.class)))
                 .thenReturn(List.of(respuesta(id(21), AGENTE, false), respuesta(id(20), AGENTE, false)));
         when(answerRepository
-                .countByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalse(TICKET))
+                .countByTicketAnswerIdTicketAndInternalAnswerFalse(TICKET))
                 .thenReturn(25L);
         when(answerReadRepository.findByAnswerIdAnswerIn(any())).thenReturn(List.of());
 
@@ -192,11 +192,11 @@ class TicketServiceAnswerPageTest {
     void ocultaNotasInternasAlSolicitante() {
         comoSolicitante();
         when(answerRepository
-                .findByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+                .findByTicketAnswerIdTicketAndInternalAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
                         any(java.util.UUID.class), any(Pageable.class)))
                 .thenReturn(List.of(respuesta(id(2), AGENTE, false)));
         when(answerRepository
-                .countByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalse(TICKET))
+                .countByTicketAnswerIdTicketAndInternalAnswerFalse(TICKET))
                 .thenReturn(1L);
         when(answerReadRepository.findByAnswerIdAnswerIn(any())).thenReturn(List.of());
 
@@ -206,7 +206,7 @@ class TicketServiceAnswerPageTest {
         assertThat(pagina.total()).isEqualTo(1L);
         // Se usa la consulta que filtra en el servidor, no la que trae todo.
         verify(answerRepository, never())
-                .findByTicketAnswerIdTicketAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(any(java.util.UUID.class), any());
+                .findByTicketAnswerIdTicketOrderByCreatedAtAnswerDescIdAnswerDesc(any(java.util.UUID.class), any());
     }
 
     @Test
@@ -214,9 +214,9 @@ class TicketServiceAnswerPageTest {
     void agenteAsignadoVeNotasInternas() {
         comoAgenteAsignado();
         when(answerRepository
-                .findByTicketAnswerIdTicketAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(any(java.util.UUID.class), any(Pageable.class)))
+                .findByTicketAnswerIdTicketOrderByCreatedAtAnswerDescIdAnswerDesc(any(java.util.UUID.class), any(Pageable.class)))
                 .thenReturn(List.of(respuesta(id(1), AGENTE, true)));
-        when(answerRepository.countByTicketAnswerIdTicketAndDeletedAnswerFalse(TICKET)).thenReturn(1L);
+        when(answerRepository.countByTicketAnswerIdTicket(TICKET)).thenReturn(1L);
         when(answerReadRepository.findByAnswerIdAnswerIn(any())).thenReturn(List.of());
 
         AnswerPageResponse pagina = ticketService.getAnswersPage(TICKET, 0, 20);
@@ -240,7 +240,7 @@ class TicketServiceAnswerPageTest {
         assertThatThrownBy(() -> ticketService.getAnswersPage(TICKET, 0, 20))
                 .isInstanceOf(AccessDeniedException.class);
         verify(answerRepository, never())
-                .findByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+                .findByTicketAnswerIdTicketAndInternalAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
                         any(java.util.UUID.class), any());
     }
 
@@ -249,11 +249,11 @@ class TicketServiceAnswerPageTest {
     void paginaVacia() {
         comoSolicitante();
         when(answerRepository
-                .findByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+                .findByTicketAnswerIdTicketAndInternalAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
                         any(java.util.UUID.class), any(Pageable.class)))
                 .thenReturn(List.of());
         when(answerRepository
-                .countByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalse(TICKET))
+                .countByTicketAnswerIdTicketAndInternalAnswerFalse(TICKET))
                 .thenReturn(0L);
 
         AnswerPageResponse pagina = ticketService.getAnswersPage(TICKET, 0, 20);
@@ -268,11 +268,11 @@ class TicketServiceAnswerPageTest {
     void ocultaLosAcusesCuandoNoTienePermiso() {
         comoSolicitante();
         when(answerRepository
-                .findByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+                .findByTicketAnswerIdTicketAndInternalAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
                         any(java.util.UUID.class), any(Pageable.class)))
                 .thenReturn(List.of(respuesta(id(9), AGENTE, false)));
         when(answerRepository
-                .countByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalse(TICKET))
+                .countByTicketAnswerIdTicketAndInternalAnswerFalse(TICKET))
                 .thenReturn(1L);
         when(answerReadRepository.findByAnswerIdAnswerIn(any())).thenReturn(List.of());
 
@@ -296,11 +296,11 @@ class TicketServiceAnswerPageTest {
     void conservaReadByMeCuandoNoPuedeVerLosAcuses() {
         comoSolicitante();
         when(answerRepository
-                .findByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+                .findByTicketAnswerIdTicketAndInternalAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
                         any(java.util.UUID.class), any(Pageable.class)))
                 .thenReturn(List.of(respuesta(id(9), AGENTE, false)));
         when(answerRepository
-                .countByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalse(TICKET))
+                .countByTicketAnswerIdTicketAndInternalAnswerFalse(TICKET))
                 .thenReturn(1L);
 
         // El solicitante acaba de abrir el hilo: hay marca suya, y ademas la del
@@ -331,11 +331,11 @@ class TicketServiceAnswerPageTest {
     void recuentoSinNombres() {
         comoSolicitante();
         when(answerRepository
-                .findByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+                .findByTicketAnswerIdTicketAndInternalAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
                         any(java.util.UUID.class), any(Pageable.class)))
                 .thenReturn(List.of(respuesta(id(9), AGENTE, false)));
         when(answerRepository
-                .countByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalse(TICKET))
+                .countByTicketAnswerIdTicketAndInternalAnswerFalse(TICKET))
                 .thenReturn(1L);
         AnswerRead r = new AnswerRead();
         r.setAnswer(respuesta(id(9), AGENTE, false));
@@ -355,11 +355,11 @@ class TicketServiceAnswerPageTest {
     void corrigeParametrosRaros() {
         comoSolicitante();
         when(answerRepository
-                .findByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
+                .findByTicketAnswerIdTicketAndInternalAnswerFalseOrderByCreatedAtAnswerDescIdAnswerDesc(
                         any(java.util.UUID.class), any(Pageable.class)))
                 .thenReturn(List.of());
         when(answerRepository
-                .countByTicketAnswerIdTicketAndInternalAnswerFalseAndDeletedAnswerFalse(TICKET))
+                .countByTicketAnswerIdTicketAndInternalAnswerFalse(TICKET))
                 .thenReturn(0L);
 
         // Página negativa y tamaño enorme.

@@ -41,5 +41,7 @@ public record AnswerResponse(
            * como leído en la misma petición. Con este dato el chat pinta el
            * separador "Mensajes no leídos" donde empieza lo nuevo.
            */
-          Boolean unreadOnOpen
+          Boolean unreadOnOpen,
+          /** Eliminado por su autor: el chat muestra "Se eliminó este mensaje" (sin texto). */
+          Boolean deletedAnswer
   ) {}
