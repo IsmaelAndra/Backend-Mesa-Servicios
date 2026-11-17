@@ -403,7 +403,11 @@ public class DashboardService {
         OffsetDateTime startOfDay = LocalDate.now(ZONE).atStartOfDay(ZONE).toOffsetDateTime();
         OffsetDateTime endOfDay = startOfDay.plusDays(1);
 
-        List<Ticket> open = ticketRepository.findOpenTickets();
+        // Misma regla que "en curso": ni RESUELTO ni CERRADO (findOpenTickets solo
+        // excluye CERRADO y el bloque contaba los resueltos como abiertos).
+        List<Ticket> open = ticketRepository.findOpenTickets().stream()
+                .filter(t -> !TERMINADOS.contains(estado(t)))
+                .toList();
         long unassigned = open.stream()
                 .filter(t -> t.getAgentTicket() == null)
                 .count();

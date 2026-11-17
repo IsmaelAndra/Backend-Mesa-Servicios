@@ -47,10 +47,10 @@ UPDATE area SET icon_area = 'fa-solid fa-headset',        color_area = '#DB2777'
 -- creado o editado un administrador.
 INSERT INTO sucursal (code_sucursal, name_sucursal, description_sucursal, address_sucursal,
                       phone_sucursal, icon_sucursal, color_sucursal, status_sucursal) VALUES
-    ('MAT', 'Matriz Pichincha',   'Oficina central',              'Av.Principal s/n, Pichincha', '02 2xxxxxxx', 'fa-solid fa-building-columns', '#062e86', TRUE),
-    ('QUI', 'Quito',              'Oficina regional',             'Quito',                          '02 2xxxxxxx', 'fa-solid fa-city',              '#0E7490', TRUE),
-    ('GYE', 'Guayaquil',          'Oficina regional',             'Guayaquil',                      '04 2xxxxxxx', 'fa-solid fa-city',              '#16A34A', TRUE),
-    ('AMB', 'Ambato',             'Oficina regional',             'Ambato',                         '03 2xxxxxxx', 'fa-solid fa-city',              '#D97706', TRUE)
+    ('MAT', 'Matriz Pichincha',   'Oficina central',              'Av.Principal s/n, Pichincha', NULL, 'fa-solid fa-building-columns', '#062e86', TRUE),
+    ('QUI', 'Quito',              'Oficina regional',             'Quito',                          NULL, 'fa-solid fa-city',              '#0E7490', TRUE),
+    ('GYE', 'Guayaquil',          'Oficina regional',             'Guayaquil',                      NULL, 'fa-solid fa-city',              '#16A34A', TRUE),
+    ('AMB', 'Ambato',             'Oficina regional',             'Ambato',                         NULL, 'fa-solid fa-city',              '#D97706', TRUE)
 ON CONFLICT (code_sucursal) DO NOTHING;
 
 -- ===== ESTADOS DE TICKET =====

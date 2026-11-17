@@ -1214,7 +1214,19 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
         if (respuesta != null && resolucion != null && resolucion < respuesta) {
             throw new BadRequestException("La resolución no puede vencer antes que la primera respuesta");
         }
-        if (nombre != null && !nombre.isEmpty()) policy.setNameSlaPolicy(nombre);
+        if (nombre != null && !nombre.isEmpty()) {
+            // Igual que áreas, equipos y categorías: sin distinguir mayúsculas
+            // ("sla crítico" y "SLA Crítico" son la misma política).
+            UUID propia = policy.getIdSlaPolicy();
+            slaPolicyRepository.findAll().stream()
+                    .filter(x -> !x.getIdSlaPolicy().equals(propia) && mismoNombre(x.getNameSlaPolicy(), nombre))
+                    .findFirst()
+                    .ifPresent(x -> {
+                        throw new BadRequestException("Ya existe una política SLA llamada \"" + x.getNameSlaPolicy() + "\""
+                                + (Boolean.FALSE.equals(x.getActiveSlaPolicy()) ? " (inactiva: actívela en lugar de crear otra)" : ""));
+                    });
+            policy.setNameSlaPolicy(nombre);
+        }
         if (description != null) policy.setDescriptionSlaPolicy(description);
         if (responseMinutes != null) policy.setResponseTimeMinutes(responseMinutes);
         if (resolutionMinutes != null) policy.setResolutionTimeMinutes(resolutionMinutes);
@@ -1222,9 +1234,6 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
         if (icon != null) policy.setIconSlaPolicy(blankToNull(icon));
         if (color != null) policy.setColorSlaPolicy(blankToNull(color));
         if (cambiarArea) policy.setAreaSlaPolicy(areaId);
-        if (policy.getIdSlaPolicy() == null && slaPolicyRepository.existsByNameSlaPolicy(name)) {
-            throw new BadRequestException("La política SLA ya existe: " + name);
-        }
         return slaPolicyRepository.save(policy);
     }
 
