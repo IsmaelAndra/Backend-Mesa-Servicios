@@ -344,6 +344,7 @@ public class UserService {
         comprobarPuedeAsignarRol(role);
         Area area = areaRepository.findById(request.areaId())
                 .orElseThrow(() -> new BadRequestException("Área inválida"));
+        exigirUnSoloJefe(role, area, null);
 
         String providedPassword = request.password() == null ? "" : request.password().trim();
         String generatedPassword = providedPassword.isBlank() ? PasswordGenerator.generate() : providedPassword;
@@ -458,6 +459,13 @@ public UserResponse update(UUID id, RegisterRequest request) {
         comprobarPuedeAsignarRol(role);
         Area area = areaRepository.findById(request.areaId())
                 .orElseThrow(() -> new BadRequestException("Área inválida"));
+        // Solo si pasa a ser jefe o cambia de área: editar otros datos de un jefe
+        // que ya compartía área (datos anteriores a esta regla) no se bloquea.
+        boolean pasaAJefe = !role.getNameRole().equals(user.getRolUser() == null ? null : user.getRolUser().getNameRole());
+        boolean cambiaArea = user.getArea() == null || !user.getArea().getIdArea().equals(area.getIdArea());
+        if ("ACTIVE".equals(user.getStatusUser()) && (pasaAJefe || cambiaArea)) {
+            exigirUnSoloJefe(role, area, user.getIdUser());
+        }
 
         // Si el rol o la contraseña cambian, las sesiones que ya tenía abiertas
         // dejan de ser válidas: si no, un token de refresco emitido con el rol
@@ -532,6 +540,25 @@ private void exigirSuperAdminParaSuperAdmin(User objetivo, String operacion) {
               "Solo un SUPER_ADMIN puede " + operacion + " una cuenta " + rolObjetivo);
   }
 
+  /**
+   * Un área tiene un solo jefe activo: el jefe responde por la de su cuenta
+   * (V33) y con dos, avisos, aprobaciones y accesos confidenciales se repartían
+   * sin criterio. {@code propio} es la cuenta que se edita (no choca consigo misma).
+   */
+  void exigirUnSoloJefe(Role role, Area area, UUID propio) {
+      if (role == null || area == null || !com.mesaayuda.security.Roles.JEFE.equals(role.getNameRole())) {
+          return;
+      }
+      userRepository.jefesActivosDe(area.getIdArea()).stream()
+              .filter(j -> !j.getIdUser().equals(propio))
+              .findFirst()
+              .ifPresent(j -> {
+                  throw new BadRequestException("El área " + area.getNameArea() + " ya tiene jefe: "
+                          + (j.getDisplayName() != null && !j.getDisplayName().isBlank() ? j.getDisplayName() : j.getCorporateEmailUser())
+                          + ". Cambie primero su rol o su área.");
+              });
+  }
+
   /** Si la cuenta es la de quien hace la petición (sin sesión, no). */
   private boolean esUnoMismo(User user) {
       var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
@@ -571,6 +598,9 @@ public UserResponse changeStatus(UUID id, String status) {
       // Nadie se desactiva a sí mismo: se quedaría fuera sin poder volver.
       if (esUnoMismo(user) && "INACTIVE".equals(status)) {
           throw new BadRequestException("No puede desactivar su propia cuenta");
+      }
+      if ("ACTIVE".equals(status) && !"ACTIVE".equals(estadoPrevio)) {
+          exigirUnSoloJefe(user.getRolUser(), user.getArea(), user.getIdUser());
       }
       user.setStatusUser(status);
       UserResponse respuesta = conSesion(userMapper.toResponse(userRepository.save(user)));
