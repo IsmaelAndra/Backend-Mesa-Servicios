@@ -698,7 +698,41 @@ rateLimitService.registrar("forgot-password", normalized,
         rt.setDispositivo(disp.dispositivo() != null ? disp.dispositivo() : sigue ? anterior.getDispositivo() : null);
         rt.setIp(disp.ip() != null ? disp.ip() : sigue ? anterior.getIp() : null);
         refreshTokenRepository.save(rt);
+        if (!sigue && avisoEnVivo != null) {
+            // Un dispositivo nuevo: la pantalla "Dispositivos" abierta en otro se actualiza.
+            avisoEnVivo.avisar(List.of(user.getIdUser()), "sesiones", null);
+        }
         return raw;
+    }
+
+    @Autowired
+    private AvisoEnVivoService avisoEnVivo;
+
+    /** Borra un refresh token que nunca llegó al navegador (login que sigue con MFA). */
+    @Transactional
+    public void descartarRefresh(String rawToken) {
+        if (rawToken != null && !rawToken.isBlank()) {
+            refreshTokenRepository.findByTokenHash(hashToken(rawToken)).ifPresent(refreshTokenRepository::delete);
+        }
+    }
+
+    /**
+     * El navegador volvió a iniciar sesión sin cerrar la anterior (p. ej. tras
+     * caducar por inactividad): su sesión vieja ya no la usa nadie y se cierra,
+     * sin tocar los tokens de acceso de los demás dispositivos.
+     */
+    @Transactional
+    public void cerrarSesionReemplazada(String rawAnterior, String rawNuevo) {
+        if (rawAnterior == null || rawAnterior.isBlank() || rawAnterior.equals(rawNuevo)) {
+            return;
+        }
+        refreshTokenRepository.findByTokenHash(hashToken(rawAnterior))
+                .filter(rt -> !rt.getRevoked())
+                .ifPresent(rt -> {
+                    rt.setRevoked(true);
+                    refreshTokenRepository.save(rt);
+                    avisoEnVivo.avisar(List.of(rt.getUserId()), "sesiones", null);
+                });
     }
 
     /** Id de la sesión (dispositivo) de un refresh token vivo, o null. */

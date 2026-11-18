@@ -44,8 +44,8 @@ import java.util.regex.Pattern;
  *
  * <ul>
  *   <li>Todo pide el código de la app de autenticación ({@link MfaService#exigirCodigoObligatorio}).</li>
- *   <li>Subir y restablecer BORRAN la base: solo funcionan donde se encendió
- *       {@code BD_PERMITIR_RESTAURAR=true} (pruebas). En producción solo se descarga.</li>
+ *   <li>Subir y restablecer BORRAN la base: además del código, la pantalla pide
+ *       escribir RESTAURAR / RESTABLECER. Funcionan en los dos ambientes.</li>
  *   <li>Usa {@code pg_dump}/{@code pg_restore} (imagen Docker: postgresql-client-16;
  *       en Windows se buscan en {@code BD_PG_BIN} o en C:\Program Files\PostgreSQL\*\bin).
  *       La contraseña va en PGPASSWORD, nunca en la línea de órdenes.</li>
@@ -79,7 +79,7 @@ public class BaseDatosService {
     private final String url;
     private final String usuario;
     private final String clave;
-    private final boolean permiteRestaurar;
+    private final Ambiente ambiente;
     private final String pgBin;
     /** Una sola operación a la vez. */
     private final AtomicBoolean ocupado = new AtomicBoolean(false);
@@ -90,7 +90,7 @@ public class BaseDatosService {
                             @Value("${spring.datasource.url}") String url,
                             @Value("${spring.datasource.username}") String usuario,
                             @Value("${spring.datasource.password:}") String clave,
-                            @Value("${BD_PERMITIR_RESTAURAR:false}") boolean permiteRestaurar,
+                            Ambiente ambiente,
                             @Value("${BD_PG_BIN:}") String pgBin) {
         this.dataSource = dataSource;
         this.jdbc = jdbc;
@@ -105,12 +105,12 @@ public class BaseDatosService {
         this.url = url;
         this.usuario = usuario;
         this.clave = clave;
-        this.permiteRestaurar = permiteRestaurar;
+        this.ambiente = ambiente;
         this.pgBin = pgBin;
     }
 
     /** Lo que la pantalla necesita saber antes de ofrecer los botones. */
-    public record Estado(boolean permiteRestaurar, boolean herramientas, String versionPgDump,
+    public record Estado(String ambiente, boolean herramientas, String versionPgDump,
                          String baseDatos, String tamano, boolean autenticadorListo) {
     }
 
@@ -130,7 +130,7 @@ public class BaseDatosService {
         }
         boolean autenticador = mfaService.estadoDe(yo.getIdUser())
                 .map(m -> m.isEnrolled() && m.getSecretAlmacenado() != null).orElse(false);
-        return new Estado(permiteRestaurar, version != null, version, conexion().base(), tamano, autenticador);
+        return new Estado(ambiente.valor(), version != null, version, conexion().base(), tamano, autenticador);
     }
 
     /** Nombre del archivo de la copia: mesa-servicios-<base>-<fecha>.dump */
@@ -240,10 +240,6 @@ public class BaseDatosService {
     // ------------------------------------------------------------------ interno
 
     private User exigirRestaurar(String codigoMfa) {
-        if (!permiteRestaurar) {
-            throw new BadRequestException("En este ambiente no se puede reemplazar la base. Solo se habilita en "
-                    + "pruebas con BD_PERMITIR_RESTAURAR=true.");
-        }
         User yo = userService.getCurrentUser();
         mfaService.exigirCodigoObligatorio(yo, codigoMfa);
         if (!ocupado.compareAndSet(false, true)) {
@@ -313,8 +309,16 @@ public class BaseDatosService {
 
     /** Lo que hay que hacer siempre tras cambiar la base por otra. */
     private void despuesDeCambiarLaBase() {
-        // Lo mismo que despliegue/preparar-copia-pruebas.sql: una copia (p. ej. de
-        // producción en pruebas) no debe salir hacia fuera.
+        // Las sesiones que traía la copia no sirven aquí (en los dos ambientes).
+        int sesiones = jdbc.update("UPDATE refresh_token SET revoked = TRUE WHERE revoked = FALSE");
+        log.info("Base cambiada: {} sesiones de la copia cerradas", sesiones);
+        if (!ambiente.esPruebas()) {
+            // En producción la copia es la de producción: correo y demás siguen como estaban.
+            evictarConexiones();
+            return;
+        }
+        // En pruebas, lo mismo que despliegue/preparar-copia-pruebas.sql: una copia
+        // de producción no debe escribir a personas reales.
         // 1. Correo apagado y cola cancelada.
         jdbc.update("UPDATE microsoft_graph_config SET mail_enabled = FALSE, enabled = FALSE");
         jdbc.update("UPDATE mail_outbox SET status_mail = 'CANCELADO' WHERE status_mail IN ('PENDIENTE', 'ENVIANDO')");
@@ -325,9 +329,6 @@ public class BaseDatosService {
         jdbc.update("UPDATE workflow SET status_workflow = 'INACTIVO' WHERE status_workflow = 'ACTIVO'");
         jdbc.update("UPDATE workflow_execution SET status_execution = 'CANCELADO' "
                 + "WHERE status_execution IN ('PENDIENTE', 'EJECUTANDO', 'ESPERANDO', 'APROBACION')");
-        // 4. Las sesiones de la copia no sirven aquí.
-        int sesiones = jdbc.update("UPDATE refresh_token SET revoked = TRUE WHERE revoked = FALSE");
-        log.info("Copia preparada para este ambiente: {} sesiones de la copia cerradas", sesiones);
         evictarConexiones();
     }
 

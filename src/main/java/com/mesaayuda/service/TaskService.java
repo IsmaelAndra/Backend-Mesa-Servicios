@@ -40,6 +40,17 @@ public class TaskService {
     @Autowired
     private NotificationService notificationService;
 
+    /** Aviso en vivo al asignado y a quien la encargó: su tablero y calendario se recargan. */
+    @Autowired
+    private AvisoEnVivoService avisoEnVivo;
+
+    private void avisarCambio(Task t, User otro) {
+        avisoEnVivo.avisar(java.util.Arrays.asList(
+                t.getAssignedUser() == null ? null : t.getAssignedUser().getIdUser(),
+                t.getCreatedBy() == null ? null : t.getCreatedBy().getIdUser(),
+                otro == null ? null : otro.getIdUser()), "actividad", t.getIdTask());
+    }
+
     /**
      * Encargar una actividad a otra persona es cosa del jefe de área o del súper
      * administrador. Un agente o un usuario solo se asigna actividades a sí mismo
@@ -82,6 +93,7 @@ public class TaskService {
         task = taskRepository.save(task);
 
         notificationService.notifyTaskAssigned(task);
+        avisarCambio(task, null);
         log.info("Tarea creada: '{}' asignada a {}", task.getTitleTask(), assigned.getCorporateEmailUser());
         return toResponse(task);
     }
@@ -109,7 +121,8 @@ public class TaskService {
         User assigned = userRepository.findById(request.assignedUserId())
                 .filter(u -> !u.getDeletedUser())
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario", "id", request.assignedUserId()));
-        exigirPuedeAsignarA(userService.getCurrentUser(), assigned, task.getAssignedUser());
+        User asignadoAntes = task.getAssignedUser();
+        exigirPuedeAsignarA(userService.getCurrentUser(), assigned, asignadoAntes);
 
         task.setTitleTask(request.title() == null ? task.getTitleTask() : request.title().trim());
         task.setDescriptionTask(request.description() == null ? task.getDescriptionTask() : request.description());
@@ -133,6 +146,7 @@ public class TaskService {
             task.setColorTask(request.color());
         }
         task = taskRepository.save(task);
+        avisarCambio(task, asignadoAntes);
         return toResponse(task);
     }
 
@@ -140,6 +154,7 @@ public class TaskService {
         Task task = getOwnedOrAdminTask(id);
         task.setStatusTask(normalizeStatus(status));
         task = taskRepository.save(task);
+        avisarCambio(task, null);
         return toResponse(task);
     }
 
@@ -147,6 +162,7 @@ public class TaskService {
         Task task = getOwnedOrAdminTask(id);
         task.setDeletedTask(true);
         taskRepository.save(task);
+        avisarCambio(task, null);
     }
 
     private Task getOwnedOrAdminTask(UUID id) {

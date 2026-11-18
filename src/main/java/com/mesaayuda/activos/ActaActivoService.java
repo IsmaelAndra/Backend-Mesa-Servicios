@@ -70,13 +70,22 @@ public class ActaActivoService {
     private final NotificationService notificaciones;
     private final UserService userService;
     private final SystemAuditService auditoria;
+    private final com.mesaayuda.service.AvisoEnVivoService avisoEnVivo;
+
+    /** "Mis equipos" y la lista de actas se recargan solas (custodio, anterior y quien la hizo). */
+    private void avisarCambio(ActaActivo a) {
+        avisoEnVivo.avisar(java.util.Arrays.asList(a.getCustodioId(), a.getCustodioAnteriorId(), a.getCreadaPor()),
+                "acta", a.getIdActa());
+    }
 
     public ActaActivoService(ActaActivoRepository actas, ActaActivoItemRepository items, AssetRepository activos,
                              AssetTypeRepository tipos, AssetService assetService, UserRepository userRepository,
                              AreaRepository areaRepository, SucursalRepository sucursalRepository,
                              JefaturaService jefaturaService, NumeracionActivos numeracion, PermisosActivos permisos,
                              AssetArchivoService archivos, ActaPdf actaPdf, NotificationService notificaciones,
-                             UserService userService, SystemAuditService auditoria) {
+                             UserService userService, SystemAuditService auditoria,
+                             com.mesaayuda.service.AvisoEnVivoService avisoEnVivo) {
+        this.avisoEnVivo = avisoEnVivo;
         this.actas = actas;
         this.items = items;
         this.activos = activos;
@@ -261,6 +270,7 @@ public class ActaActivoService {
                 "<p>Se generó un acta de <b>" + texto(tipo).toLowerCase() + "</b> de equipos tecnológicos ("
                         + equipos.size() + " equipo(s)) a su nombre. Revísela y fírmela cuando se la presenten.</p>",
                 "activos/mis-equipos");
+        avisarCambio(acta);
         return vista(acta, actor);
     }
 
@@ -291,6 +301,14 @@ public class ActaActivoService {
         a.setEstado("FIRMADA");
         actas.save(a);
         auditoria.record("ACTA_FIRMADA", "ActaActivo", id, u.getCorporateEmailUser(), a.getNumero());
+        // El custodio se entera sin tener que salir y volver a entrar.
+        if (!a.getCustodioId().equals(u.getIdUser())) {
+            userRepository.findById(a.getCustodioId()).ifPresent(c -> notificaciones.notifyConEnlace(c, "ACTA_ACTIVO",
+                    "Acta " + a.getNumero() + " firmada",
+                    "<p>Se registró el acta <b>" + esc(a.getNumero()) + "</b> firmada. Queda firmada y aceptada.</p>",
+                    "activos/mis-equipos"));
+        }
+        avisarCambio(a);
         return vista(a, u);
     }
 

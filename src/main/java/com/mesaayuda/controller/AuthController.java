@@ -91,6 +91,8 @@ public class AuthController {
     public ResponseEntity<?> login(@Valid @RequestBody AuthRequest request,
                                    @CookieValue(name = RefreshTokenCookie.COOKIE_EQUIPO, required = false)
                                    String equipo,
+                                   @CookieValue(name = RefreshTokenCookie.COOKIE_REFRESH, required = false)
+                                   String refreshAnterior,
                                    HttpServletResponse response) {
         // Se autentica primero. El MFA va después: si fallara el código, la
         // contraseña ya era correcta, y el orden inverso filtraría información.
@@ -100,10 +102,15 @@ public class AuthController {
         MfaChallengeResponse desafio = mfaService.prepararDesafio(
                 authService.buscarPorCorreo(request.email()), equipo);
         if (desafio != null) {
+            // La sesión sale tras confirmar el código: la de este paso no llega al
+            // navegador y aparecía duplicada en "Dispositivos".
+            authService.descartarRefresh(res.refreshToken());
             return ResponseEntity.ok(desafio);
         }
 
         refreshTokenCookie.emitir(response, res.refreshToken());
+        // Volver a entrar desde el mismo navegador reemplaza su sesión anterior.
+        authService.cerrarSesionReemplazada(refreshAnterior, res.refreshToken());
         return ResponseEntity.ok(res.sinRefreshToken());
     }
 
@@ -124,6 +131,8 @@ public class AuthController {
             description = "Completa el alta del doble factor o verifica el inicio de sesión y devuelve "
                     + "la sesión. Es pública porque quien todavía no tiene sesión es quien la usa")
     public ResponseEntity<?> confirmarMfa(@Valid @RequestBody MfaConfirmRequest request,
+                                          @CookieValue(name = RefreshTokenCookie.COOKIE_REFRESH, required = false)
+                                          String refreshAnterior,
                                           HttpServletRequest httpRequest,
                                           HttpServletResponse response) {
         List<String> recuperacion = mfaService.confirmar(
@@ -131,6 +140,7 @@ public class AuthController {
 
         AuthResponse res = authService.sesionTrasMfa(request.challenge());
         refreshTokenCookie.emitir(response, res.refreshToken());
+        authService.cerrarSesionReemplazada(refreshAnterior, res.refreshToken());
         if (!Boolean.FALSE.equals(request.recordar())) {
             String equipo = mfaService.recordarEquipo(res.userId(), httpRequest.getHeader("User-Agent"));
             refreshTokenCookie.emitirEquipo(response, equipo,

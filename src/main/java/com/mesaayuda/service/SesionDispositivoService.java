@@ -36,6 +36,7 @@ public class SesionDispositivoService {
     private final AuthService authService;
     private final SystemAuditService systemAuditService;
     private final SseEventBroker sseEventBroker;
+    private final AvisoEnVivoService avisoEnVivo;
 
     @Transactional(readOnly = true)
     public List<SesionDispositivoResponse> misSesiones(String refreshActual) {
@@ -81,6 +82,7 @@ public class SesionDispositivoService {
      */
     private void avisarDispositivos(User yo) {
         UUID id = yo.getIdUser();
+        avisoEnVivo.avisar(List.of(id), "sesiones", null);
         Runnable aviso = () -> {
             try {
                 sseEventBroker.publishAUsuarios(List.of(id), "sesion-revisar", Map.of());
