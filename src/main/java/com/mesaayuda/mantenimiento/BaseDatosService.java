@@ -74,6 +74,7 @@ public class BaseDatosService {
     private final RoleRepository roleRepository;
     private final AreaRepository areaRepository;
     private final SystemAuditService auditoria;
+    private final ArchivosCopia archivos;
     private final TransactionTemplate tx;
 
     private final String url;
@@ -87,6 +88,7 @@ public class BaseDatosService {
     public BaseDatosService(DataSource dataSource, JdbcTemplate jdbc, Flyway flyway, MfaService mfaService,
                             UserService userService, UserRepository userRepository, RoleRepository roleRepository,
                             AreaRepository areaRepository, SystemAuditService auditoria, TransactionTemplate tx,
+                            ArchivosCopia archivos,
                             @Value("${spring.datasource.url}") String url,
                             @Value("${spring.datasource.username}") String usuario,
                             @Value("${spring.datasource.password:}") String clave,
@@ -102,6 +104,7 @@ public class BaseDatosService {
         this.areaRepository = areaRepository;
         this.auditoria = auditoria;
         this.tx = tx;
+        this.archivos = archivos;
         this.url = url;
         this.usuario = usuario;
         this.clave = clave;
@@ -133,10 +136,43 @@ public class BaseDatosService {
         return new Estado(ambiente.valor(), version != null, version, conexion().base(), tamano, autenticador);
     }
 
-    /** Nombre del archivo de la copia: mesa-servicios-<base>-<fecha>.dump */
+    /** Nombre del archivo de la copia: mesa-servicios-<base>-<fecha>.zip (base + archivos). */
     public String nombreCopia() {
         return "mesa-servicios-" + conexion().base() + "-"
-                + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")) + ".dump";
+                + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")) + ".zip";
+    }
+
+    /** Nombre de la base dentro del .zip. */
+    static final String ENTRADA_BASE = "base-datos.dump";
+    /** Límites al descomprimir una copia subida. */
+    private static final long MAX_DESCOMPRIMIDO = 40L * 1024 * 1024 * 1024;
+    private static final int MAX_ENTRADAS = 500_000;
+
+    /**
+     * La copia completa: un .zip con la base ({@code base-datos.dump}, pg_dump -Fc)
+     * y los archivos subidos bajo {@code archivos/} (logos, fondos, adjuntos, fotos
+     * de activos, actas firmadas...). Se escribe al vuelo, sin archivo temporal.
+     */
+    public void descargarCompleta(OutputStream salida) throws IOException {
+        java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(salida);
+        // Las imágenes y los PDF ya van comprimidos: compresión rápida.
+        zip.setLevel(java.util.zip.Deflater.BEST_SPEED);
+        zip.putNextEntry(new java.util.zip.ZipEntry(ENTRADA_BASE));
+        descargar(new java.io.FilterOutputStream(zip) {
+            @Override
+            public void write(byte[] b, int off, int len) throws IOException {
+                out.write(b, off, len);
+            }
+
+            @Override
+            public void close() {
+                // el zip sigue abierto para los archivos
+            }
+        });
+        zip.closeEntry();
+        archivos.agregarAlZip(zip);
+        zip.finish();
+        zip.flush();
     }
 
     /** Permisos de descarga de un solo uso: valor → caducidad. */
@@ -199,19 +235,102 @@ public class BaseDatosService {
     }
 
     public void restaurar(Path copia, User yo) {
+        Path trabajo = null;
         try {
-            if (!esCopiaValida(copia)) {
-                throw new BadRequestException("El archivo no es una copia de la base (formato de pg_dump). "
-                        + "Use una copia descargada desde esta pantalla.");
+            Path base = copia;
+            Path carpetaArchivos = null;
+            if (esZip(copia)) {
+                // Copia completa (.zip): base + archivos. Se descomprime en una carpeta temporal.
+                trabajo = Files.createTempDirectory("mesa-copia-");
+                carpetaArchivos = descomprimir(copia, trabajo);
+                base = trabajo.resolve(ENTRADA_BASE);
+                if (!Files.isRegularFile(base)) {
+                    throw new BadRequestException("El .zip no trae la base (" + ENTRADA_BASE + "). "
+                            + "Use una copia descargada desde esta pantalla.");
+                }
             }
-            reemplazarCon(() -> restaurarArchivo(copia));
+            if (!esCopiaValida(base)) {
+                throw new BadRequestException("El archivo no es una copia de la base. Use una copia descargada "
+                        + "desde esta pantalla (.zip, o .dump de las versiones anteriores).");
+            }
+            Path baseFinal = base;
+            reemplazarCon(() -> restaurarArchivo(baseFinal));
             despuesDeCambiarLaBase();
+            if (carpetaArchivos != null) {
+                reemplazarArchivos(carpetaArchivos);
+            }
             log.warn("Base de datos RESTAURADA desde una copia por {}", yo.getCorporateEmailUser());
             auditarDespues("BD_RESTAURADA", yo.getCorporateEmailUser());
+        } catch (IOException e) {
+            throw new BadRequestException("No se pudo leer la copia: " + e.getMessage());
         } finally {
             ocupado.set(false);
             borrar(copia);
+            ArchivosCopia.borrarArbol(trabajo);
         }
+    }
+
+    /** Los archivos de la copia sustituyen a los actuales (con vuelta atrás si falla). */
+    private void reemplazarArchivos(Path carpeta) {
+        ArchivosCopia.Apartado antes = archivos.apartar();
+        try {
+            archivos.poner(carpeta);
+            archivos.descartar(antes);
+        } catch (IOException | RuntimeException e) {
+            log.error("Fallo al poner los archivos de la copia; se devuelven los anteriores", e);
+            archivos.devolver(antes);
+            throw new BadRequestException("La base se restauró, pero los archivos (imágenes, adjuntos) no: "
+                    + "quedaron los que había. Revise el espacio en disco y vuelva a intentarlo.");
+        }
+    }
+
+    private static boolean esZip(Path archivo) {
+        try (InputStream in = Files.newInputStream(archivo)) {
+            byte[] cab = in.readNBytes(4);
+            return cab.length == 4 && cab[0] == 'P' && cab[1] == 'K' && cab[2] == 3 && cab[3] == 4;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Descomprime la copia en {@code destino}: la base a {@code base-datos.dump} y
+     * los archivos a {@code destino/archivos}. Ignora cualquier otra entrada y
+     * rechaza rutas que se salgan de la carpeta. Devuelve la carpeta de archivos,
+     * o null si la copia no trae la carpeta {@code archivos/} (entonces no se tocan).
+     */
+    private Path descomprimir(Path zipArchivo, Path destino) throws IOException {
+        Path carpeta = destino.resolve("archivos");
+        boolean traeArchivos = false;
+        long total = 0;
+        int entradas = 0;
+        try (java.util.zip.ZipInputStream zip = new java.util.zip.ZipInputStream(
+                new java.io.BufferedInputStream(Files.newInputStream(zipArchivo)))) {
+            java.util.zip.ZipEntry e;
+            while ((e = zip.getNextEntry()) != null) {
+                if (++entradas > MAX_ENTRADAS) {
+                    throw new BadRequestException("La copia trae demasiados archivos");
+                }
+                String nombre = e.getName();
+                if (ENTRADA_BASE.equals(nombre)) {
+                    total += ArchivosCopia.escribir(zip, destino.resolve(ENTRADA_BASE), MAX_DESCOMPRIMIDO - total);
+                } else if (ArchivosCopia.PREFIJO.equals(nombre)) {
+                    traeArchivos = true;
+                } else if (!e.isDirectory()) {
+                    Path p = ArchivosCopia.destinoSeguro(carpeta, nombre);
+                    if (p != null) {
+                        traeArchivos = true;
+                        total += ArchivosCopia.escribir(zip, p, MAX_DESCOMPRIMIDO - total);
+                    }
+                }
+                zip.closeEntry();
+            }
+        }
+        if (!traeArchivos) {
+            return null;
+        }
+        Files.createDirectories(carpeta);
+        return carpeta;
     }
 
     /**
@@ -229,6 +348,8 @@ public class BaseDatosService {
             String telefono = yo.getPhoneUser();
             reemplazarCon(() -> { /* base vacía: solo migraciones */ });
             despuesDeCambiarLaBase();
+            // Como recién instalada: sin imágenes de marca, adjuntos ni fotos.
+            archivos.descartar(archivos.apartar());
             tx.executeWithoutResult(s -> recrearSuperAdmin(correo, hash, nombre, cedula, telefono));
             log.warn("Base de datos RESTABLECIDA a cero por {}", correo);
             auditarDespues("BD_RESTABLECIDA", correo);

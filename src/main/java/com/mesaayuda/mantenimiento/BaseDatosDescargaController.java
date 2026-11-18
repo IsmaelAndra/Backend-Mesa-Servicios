@@ -27,10 +27,10 @@ public class BaseDatosDescargaController {
     @GetMapping("/base-datos/descarga/{permiso}")
     public void descargar(@PathVariable String permiso, HttpServletResponse response) throws IOException {
         servicio.consumirPermiso(permiso);
-        response.setContentType("application/octet-stream");
+        response.setContentType("application/zip");
         response.setHeader("Content-Disposition", "attachment; filename=\"" + servicio.nombreCopia() + "\"");
         response.setHeader("Cache-Control", "no-store");
         response.setHeader("X-Accel-Buffering", "no");
-        servicio.descargar(response.getOutputStream());
+        servicio.descargarCompleta(response.getOutputStream());
     }
 }

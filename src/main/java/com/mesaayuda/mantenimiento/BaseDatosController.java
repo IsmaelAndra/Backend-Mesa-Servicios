@@ -29,7 +29,7 @@ import java.util.Map;
 public class BaseDatosController {
 
     /** Tamaño máximo de una copia subida. */
-    static final long MAX_COPIA = 2L * 1024 * 1024 * 1024;
+    static final long MAX_COPIA = 20L * 1024 * 1024 * 1024;
 
     private final BaseDatosService servicio;
 
@@ -68,7 +68,7 @@ public class BaseDatosController {
                 while ((n = in.read(buf)) > 0) {
                     total += n;
                     if (total > MAX_COPIA) {
-                        throw new BadRequestException("La copia supera el máximo de 2 GB");
+                        throw new BadRequestException("La copia supera el máximo de 20 GB");
                     }
                     out.write(buf, 0, n);
                 }
