@@ -80,6 +80,9 @@ public class SecurityConfig {
                 .requestMatchers("/auth/login", "/auth/register", "/auth/forgot-password",
                                  "/auth/reset-password", "/auth/refresh", "/auth/logout",
                                  "/auth/mfa/confirm").permitAll()
+                // Descarga de la copia de la base: la protege un permiso de un solo uso
+                // (60 s) que da POST /admin/base-datos/descargar con el código del autenticador.
+                .requestMatchers(HttpMethod.GET, "/base-datos/descarga/*").permitAll()
                 .requestMatchers(HttpMethod.GET, "/admin/catalog").permitAll()
                 .requestMatchers(HttpMethod.GET, "/admin/branding").permitAll()
                 // Swagger queda en permitAll a propósito: es una herramienta de desarrollo y

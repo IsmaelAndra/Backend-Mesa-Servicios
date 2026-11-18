@@ -35,6 +35,7 @@ public class SesionDispositivoService {
     private final UserService userService;
     private final AuthService authService;
     private final SystemAuditService systemAuditService;
+    private final SseEventBroker sseEventBroker;
 
     @Transactional(readOnly = true)
     public List<SesionDispositivoResponse> misSesiones(String refreshActual) {
@@ -70,6 +71,35 @@ public class SesionDispositivoService {
         }
         userRepository.invalidarTokensDeAcceso(yo.getIdUser(), OffsetDateTime.now());
         systemAuditService.record("SESSION_REVOKED", "User", yo.getIdUser());
+        avisarDispositivos(yo);
+    }
+
+    /**
+     * Pide a los navegadores de la persona que comprueben su sesión. El cerrado
+     * se da cuenta al renovar (y sale con aviso); los demás renuevan sin notarlo.
+     * Sin esto, el teléfono cerrado seguía mostrando la app hasta su siguiente petición.
+     */
+    private void avisarDispositivos(User yo) {
+        UUID id = yo.getIdUser();
+        Runnable aviso = () -> {
+            try {
+                sseEventBroker.publishAUsuarios(List.of(id), "sesion-revisar", Map.of());
+            } catch (RuntimeException e) {
+                // El aviso en vivo es una comodidad: el cierre ya está hecho.
+            }
+        };
+        // Después del commit: si el navegador renovara antes, el cierre aún no se vería.
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            aviso.run();
+                        }
+                    });
+        } else {
+            aviso.run();
+        }
     }
 
     /** Cierra todas las sesiones menos la del dispositivo desde el que se pide. */
@@ -84,6 +114,7 @@ public class SesionDispositivoService {
         if (n > 0) {
             userRepository.invalidarTokensDeAcceso(yo.getIdUser(), OffsetDateTime.now());
             systemAuditService.record("SESSION_REVOKED_OTHERS", "User", yo.getIdUser());
+            avisarDispositivos(yo);
         }
         return n;
     }

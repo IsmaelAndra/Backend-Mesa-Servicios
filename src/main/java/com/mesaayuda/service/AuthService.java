@@ -53,6 +53,9 @@ import java.util.UUID;
 @Transactional
 public class AuthService {
 
+    /** Mensaje del refresh cuando la sesión de este dispositivo se cerró desde otro. */
+    public static final String SESION_CERRADA = "La sesión de este dispositivo se cerró desde otro dispositivo";
+
     private static final String CORPORATE_DOMAIN = "@coacmagisterio.fin.ec";
     private static final long TEMPORAL_PASSWORD_MINUTES = 24 * 60;
 
@@ -562,8 +565,17 @@ rateLimitService.registrar("forgot-password", normalized,
           RefreshToken stored = encontrado
                   .filter(rt -> !rt.getRevoked())
                   .orElseGet(() -> {
-                      // Si venia revocado, es reutilizacion de un token robado.
-                      encontrado.ifPresent(this::detectarReutilizacion);
+                      // Solo es robo si el token ya se había ROTADO (tiene sustituto):
+                      // el titular ya tiene el par nuevo y quien devuelve el viejo es otro.
+                      // Uno revocado sin sustituto es una sesión cerrada a propósito
+                      // (logout, "Dispositivos" o cambio de contraseña): ese dispositivo
+                      // solo intenta seguir. Antes contaba como robo y cerraba TODAS las
+                      // sesiones: cerrar el teléfono desde el laptop echaba también al laptop.
+                      if (encontrado.isPresent() && encontrado.get().getReplacedByHash() != null) {
+                          detectarReutilizacion(encontrado.get());
+                      } else if (encontrado.isPresent()) {
+                          throw new BadRequestException(SESION_CERRADA);
+                      }
                       throw new BadRequestException("Refresh token inválido o revocado");
                   });
 
@@ -621,6 +633,9 @@ rateLimitService.registrar("forgot-password", normalized,
 
     public void logout(String rawToken) {
         refreshTokenRepository.findByTokenHash(hashToken(rawToken))
+                // Una sesión ya cerrada (desde otro dispositivo) no vuelve a cortar
+                // los tokens de acceso de los demás.
+                .filter(rt -> !rt.getRevoked())
                 .ifPresent(rt -> {
                     rt.setRevoked(true);
                     refreshTokenRepository.save(rt);

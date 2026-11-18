@@ -51,6 +51,8 @@ import java.util.UUID;
 public class ActaActivoService {
 
     public static final List<String> TIPOS = List.of("ENTREGA", "DEVOLUCION", "REASIGNACION");
+    /** Tipos con los que se crean actas nuevas. */
+    public static final List<String> TIPOS_NUEVOS = List.of("ENTREGA", "DEVOLUCION");
 
     private final ActaActivoRepository actas;
     private final ActaActivoItemRepository items;
@@ -122,8 +124,10 @@ public class ActaActivoService {
         User actor = userService.getCurrentUser();
         permisos.exigirGestion(actor);
         String tipo = r == null || r.tipo() == null ? "" : r.tipo().trim().toUpperCase();
-        if (!TIPOS.contains(tipo)) {
-            throw new BadRequestException("Tipo de acta no válido: ENTREGA, DEVOLUCION o REASIGNACION");
+        // Ya no hay reasignación: se devuelve a bodega y se entrega a la otra persona.
+        // Las actas de reasignación antiguas se siguen mostrando.
+        if (!TIPOS_NUEVOS.contains(tipo)) {
+            throw new BadRequestException("Tipo de acta no válido: ENTREGA o DEVOLUCION");
         }
         List<UUID> ids = r.activos() == null ? List.of() : new ArrayList<>(new LinkedHashSet<>(r.activos()));
         if (ids.isEmpty()) {
@@ -251,37 +255,25 @@ public class ActaActivoService {
         }
         auditoria.record("ACTA_" + tipo, "ActaActivo", acta.getIdActa(), actor.getCorporateEmailUser(),
                 numero + " · " + equipos.size() + " equipo(s) · custodio " + custodio.getCorporateEmailUser());
-        // El custodio la acepta en el sistema: aviso en la campana y por correo.
-        notificaciones.notifyConEnlace(custodio, "ACTA_ACTIVO", "Acta " + numero + " por aceptar",
-                "<p>Tiene un acta de <b>" + texto(tipo).toLowerCase() + "</b> de equipos tecnológicos ("
-                        + equipos.size() + " equipo(s)) por revisar y aceptar.</p>", "activos/mis-equipos");
+        // Ya no se acepta en el sistema: se firma a mano y, al subir el escaneo,
+        // queda firmada y aceptada. Se avisa al custodio para que la revise.
+        notificaciones.notifyConEnlace(custodio, "ACTA_ACTIVO", "Acta " + numero + " por firmar",
+                "<p>Se generó un acta de <b>" + texto(tipo).toLowerCase() + "</b> de equipos tecnológicos ("
+                        + equipos.size() + " equipo(s)) a su nombre. Revísela y fírmela cuando se la presenten.</p>",
+                "activos/mis-equipos");
         return vista(acta, actor);
     }
 
     // ================================================================== aceptar / firmar
 
-    /** El custodio confirma en el sistema que así se le entregó (o que así devolvió). */
+    /**
+     * Ya no se acepta en el sistema: el acta queda firmada y aceptada cuando se
+     * sube el escaneo con las firmas (subirFirmada). Se conserva la ruta para
+     * responder con un mensaje claro a clientes antiguos.
+     */
     public ActaVista aceptar(UUID id, String ip) {
-        User u = userService.getCurrentUser();
-        ActaActivo a = acta(id);
-        if (!a.getCustodioId().equals(u.getIdUser())) {
-            throw new AccessDeniedException("Solo el custodio acepta su acta");
-        }
-        if (!"PENDIENTE".equals(a.getEstado())) {
-            throw new BadRequestException("El acta ya fue aceptada");
-        }
-        a.setEstado("ACEPTADA");
-        a.setAceptadaAt(OffsetDateTime.now());
-        a.setAceptadaIp(ip == null ? null : recortar(ip, 64));
-        actas.save(a);
-        auditoria.record("ACTA_ACEPTADA", "ActaActivo", id, u.getCorporateEmailUser(), a.getNumero() + " desde " + ip);
-        if (a.getCreadaPor() != null && !a.getCreadaPor().equals(u.getIdUser())) {
-            userRepository.findById(a.getCreadaPor()).ifPresent(c -> notificaciones.notifyConEnlace(c, "ACTA_ACTIVO",
-                    "Acta " + a.getNumero() + " aceptada",
-                    "<p><b>" + esc(u.getFullName()) + "</b> aceptó el acta <b>" + esc(a.getNumero())
-                            + "</b>. Imprímala, recoja las firmas y suba el escaneo.</p>", "activos/actas"));
-        }
-        return vista(a, u);
+        acta(id);
+        throw new BadRequestException("El acta se da por aceptada al subir el escaneo firmado");
     }
 
     /** Sube el escaneo con las firmas a mano. */
@@ -419,7 +411,7 @@ public class ActaActivoService {
                 p(gente, a.getEntregadoPorId()), p(gente, a.getRecibidoPorId()), p(gente, a.getAutorizadoPorId()),
                 p(gente, a.getRevisadoPorId()), sucursal, a.getObservaciones(), a.getAceptadaAt(),
                 a.getFirmadaRuta() != null, a.getFirmadaAt(), its,
-                "PENDIENTE".equals(a.getEstado()) && u.getIdUser().equals(a.getCustodioId()),
+                false, // ya nadie la acepta en el sistema
                 permisos.gestiona(u), a.getCreatedAt());
     }
 

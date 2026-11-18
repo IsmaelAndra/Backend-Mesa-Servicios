@@ -246,6 +246,35 @@ log.info("Doble factor {} por el usuario {}", habilitado ? "activado" : "desacti
      * personales) a quien tiene el doble factor configurado. Sin MFA activo o sin
      * alta, no pide nada.
      */
+    /**
+     * Pide SIEMPRE el código de la app de autenticación (herramientas de base de
+     * datos): sin la app configurada no se puede usar, aunque el MFA general
+     * esté apagado.
+     */
+    @Transactional
+    public void exigirCodigoObligatorio(User user, String codigo) {
+        UserMfa mfa = user == null ? null : estadoDe(user.getIdUser()).orElse(null);
+        if (mfa == null || !mfa.isEnrolled() || mfa.getSecretAlmacenado() == null) {
+            throw new BadRequestException("Para usar esta herramienta configure primero su app de autenticación "
+                    + "(active el doble factor en Administración → Doble factor y vuelva a iniciar sesión).");
+        }
+        if (codigo == null || codigo.isBlank()) {
+            throw new BadRequestException("Escriba el código de 6 dígitos de su app de autenticación.");
+        }
+        rateLimitService.exigir("mfa", String.valueOf(user.getIdUser()),
+                RateLimitService.MAX_MFA, RateLimitService.VENTANA_MFA);
+        String secreto = secretCrypto.decrypt(mfa.getSecretAlmacenado());
+        long paso = totp.pasoDelCodigo(secreto, codigo, mfa.getUltimoContador());
+        if (paso < 0) {
+            systemAuditService.record("MFA_STEP_UP_FAILED", "User", user.getIdUser());
+            contarFalloMfa(user);
+            throw new BadRequestException("El código de verificación no es correcto o ya se usó.");
+        }
+        mfa.setUltimoContador(paso);
+        mfa.setVerificadoAtUserMfa(OffsetDateTime.now());
+        userMfaRepository.save(mfa);
+    }
+
     @Transactional
     public void exigirCodigoSiCorresponde(User user, String codigo) {
         if (user == null || !activo()) {

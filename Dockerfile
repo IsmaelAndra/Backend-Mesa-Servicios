@@ -39,8 +39,16 @@ LABEL org.opencontainers.image.title="mesa-servicios-backend" \
 
 # fontconfig + DejaVu: JasperReports dibuja los PDF con AWT y, sin fuentes del
 # sistema, los informes fallan o salen sin texto. curl, para el healthcheck.
+# postgresql-client-16 (repositorio oficial de PostgreSQL): pg_dump/pg_restore para
+# Administración → Base de datos (descargar y subir copias). Debe ser de la misma
+# versión mayor que el servidor (postgres:16).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core curl tzdata \
+    && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core curl tzdata ca-certificates \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt jammy-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 
 # Usuario sin privilegios: si alguien llegara a ejecutar código en el proceso,
