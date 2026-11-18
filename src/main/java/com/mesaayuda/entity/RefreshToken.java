@@ -49,6 +49,21 @@ public class RefreshToken {
     @Column(name = "reuse_detected_at")
     private OffsetDateTime reuseDetectedAt;
 
+    /** Sesión (dispositivo) a la que pertenece: se conserva al rotar el token. */
+    @Column(name = "sesion_refresh_token")
+    private UUID sesion;
+
+    /** Navegador y sistema, p. ej. "Chrome en Windows" (no el User-Agent completo). */
+    @Column(name = "dispositivo_refresh_token", length = 120)
+    private String dispositivo;
+
+    @Column(name = "ip_refresh_token", length = 64)
+    private String ip;
+
+    /** Cuándo se inició la sesión (el created_at es la última renovación). */
+    @Column(name = "inicio_refresh_token")
+    private OffsetDateTime inicio;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

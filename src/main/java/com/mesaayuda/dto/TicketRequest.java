@@ -44,8 +44,22 @@ public record TicketRequest(
         UUID areaDestinoId,
 
         /** Confidencial desde el alta (p. ej. un tema personal con Talento Humano). */
-        Boolean confidencial
+        Boolean confidencial,
+
+        /**
+         * Agente al que el jefe del área que atiende (o el súper admin) asigna el ticket
+         * al crearlo. Vacío = reparto automático del equipo.
+         */
+        UUID agentId
 ) {
+    /** Compatibilidad: sin agente elegido (reparto automático). */
+    public TicketRequest(String title, String description, UUID categoryId, UUID priorityId, UUID typeId,
+                         UUID sucursalId, UUID requesterId, Boolean priorityManual, UUID areaDestinoId,
+                         Boolean confidencial) {
+        this(title, description, categoryId, priorityId, typeId, sucursalId, requesterId, priorityManual,
+                areaDestinoId, confidencial, null);
+    }
+
     /** Compatibilidad: ticket a nombre de quien lo crea. */
     public TicketRequest(String title, String description, UUID categoryId, UUID priorityId,
                          UUID typeId, UUID sucursalId) {

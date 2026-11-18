@@ -40,7 +40,7 @@ import java.util.UUID;
 @Transactional
 public class AssetArchivoService {
 
-    public static final int MAX_FOTOS = 6;
+    public static final int MAX_FOTOS = 2;
     public static final int MAX_FOTO_MB = 5;
     public static final int MAX_PDF_MB = 10;
     private static final List<String> TIPOS = List.of("FOTO", "GARANTIA", "FACTURA", "OTRO");
@@ -190,6 +190,27 @@ public class AssetArchivoService {
         } catch (IOException e) {
             throw new BadRequestException("No se pudo guardar el acta firmada");
         }
+    }
+
+    /**
+     * Bytes de las fotos de un activo (como mucho {@value #MAX_FOTOS}), para el acta de
+     * entrega. Sin control de permiso: lo hace quien llama (el acta ya es legible).
+     * Una foto que no se pueda leer se omite.
+     */
+    @Transactional(readOnly = true)
+    public List<byte[]> fotosDe(UUID assetId) {
+        List<byte[]> fotos = new java.util.ArrayList<>();
+        for (AssetArchivo a : archivos.findByAssetIdAndDeletedFalseOrderByCreatedAtAsc(assetId)) {
+            if (!"FOTO".equals(a.getTipo()) || fotos.size() >= MAX_FOTOS) {
+                continue;
+            }
+            try {
+                fotos.add(Files.readAllBytes(carpeta().resolve(a.getRuta()).normalize()));
+            } catch (IOException e) {
+                // Sin la foto el acta igual se genera.
+            }
+        }
+        return fotos;
     }
 
     public byte[] leer(String ruta) {

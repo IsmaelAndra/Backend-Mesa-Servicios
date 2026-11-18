@@ -53,6 +53,12 @@ public class ActaPdf {
             "Comunicará de forma inmediata al Área TIC cualquier daño, pérdida, sustracción o traslado del bien.");
 
     public byte[] generar(ActaActivoService.ActaVista a, AssetConfig c, String areaCustodio, String cedula) {
+        return generar(a, c, areaCustodio, cedula, List.of());
+    }
+
+    /** Con fotos: en el acta de entrega van las del bien principal (máximo 2). */
+    public byte[] generar(ActaActivoService.ActaVista a, AssetConfig c, String areaCustodio, String cedula,
+                          List<byte[]> fotos) {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             // Márgenes: el contenido va entre el logo (arriba) y el pie con la dirección (abajo).
             Document doc = new Document(PageSize.LETTER, 48, 48, 74, 68);
@@ -123,6 +129,38 @@ public class ActaPdf {
             bien.addCell(nov);
             doc.add(bien);
 
+            // Fotos del bien (solo en la entrega). Pequeñas: el acta debe caber en una hoja.
+            if ("ENTREGA".equals(a.tipo()) && fotos != null && !fotos.isEmpty()) {
+                List<Image> imagenes = new ArrayList<>();
+                for (byte[] f : fotos) {
+                    try {
+                        Image img = Image.getInstance(f);
+                        img.scaleToFit(160, 105);
+                        imagenes.add(img);
+                    } catch (Exception e) {
+                        // Formato que OpenPDF no lee (p. ej. WEBP): se omite esa foto.
+                    }
+                }
+                if (!imagenes.isEmpty()) {
+                    doc.add(seccion("Fotografías del bien:"));
+                    PdfPTable tf = tabla(new float[]{1f, 1f});
+                    for (Image img : imagenes) {
+                        PdfPCell celda = new PdfPCell(img, false);
+                        celda.setPadding(4);
+                        celda.setHorizontalAlignment(Element.ALIGN_CENTER);
+                        celda.setVerticalAlignment(Element.ALIGN_MIDDLE);
+                        tf.addCell(celda);
+                    }
+                    if (imagenes.size() % 2 == 1) {
+                        PdfPCell vacia = new PdfPCell(new Phrase(""));
+                        vacia.setBorder(Rectangle.NO_BORDER);
+                        tf.addCell(vacia);
+                    }
+                    tf.setKeepTogether(true);
+                    doc.add(tf);
+                }
+            }
+
             // Responsabilidades
             doc.add(seccion("Responsabilidades del custodio:"));
             Paragraph decl = new Paragraph("El custodio declara que:", NORMAL);
@@ -142,15 +180,18 @@ public class ActaPdf {
             fila(firmas, "ENTREGADO POR:", a.entregadoPor(), "ENTREGA".equals(a.tipo()) ? "ASISTENTE DE TECNOLOGÍA" : "");
             fila(firmas, "RECIBIDO POR:", a.recibidoPor(), "DEVOLUCION".equals(a.tipo()) ? "ASISTENTE DE TECNOLOGÍA" : "CUSTODIO DEL BIEN");
             fila(firmas, "AUTORIZADO POR:", a.autorizadoPor(), "JEFE DE TIC");
-            fila(firmas, "REVISADO POR:", a.revisadoPor(), "");
+            // Sin "Revisado por": quien autoriza es quien revisa.
             // El cuadro de firmas nunca se parte entre dos hojas.
             firmas.setKeepTogether(true);
             doc.add(firmas);
 
             if (a.aceptadaAt() != null) {
-                Paragraph ok = new Paragraph("Aceptada en la Mesa de Servicios por " + a.custodio().nombre() + " el "
-                        + a.aceptadaAt().atZoneSameInstant(java.time.ZoneId.of("America/Guayaquil"))
-                        .format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")) + ".", PEQUENA);
+                String cuando = a.aceptadaAt().atZoneSameInstant(java.time.ZoneId.of("America/Guayaquil"))
+                        .format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
+                // Si se subió firmada a mano, esa es la aceptación (el custodio no la aceptó en el sistema).
+                Paragraph ok = new Paragraph(a.firmada() && a.firmadaAt() != null && a.firmadaAt().equals(a.aceptadaAt())
+                        ? "Acta firmada a mano; registrada en la Mesa de Servicios el " + cuando + "."
+                        : "Aceptada en la Mesa de Servicios por " + a.custodio().nombre() + " el " + cuando + ".", PEQUENA);
                 ok.setSpacingBefore(4);
                 doc.add(ok);
             }

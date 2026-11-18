@@ -228,7 +228,8 @@ public class UserService {
                         u.getCorporateEmailUser(),
                         u.getPhotoUrl(),
                         estados.getOrDefault(u.getIdUser(), "DESCONECTADO"),
-                        u.getExtensionUser()))
+                        u.getExtensionUser(),
+                        u.getArea() != null ? u.getArea().getIdArea() : null))
                 .toList();
     }
     @Transactional(readOnly = true)

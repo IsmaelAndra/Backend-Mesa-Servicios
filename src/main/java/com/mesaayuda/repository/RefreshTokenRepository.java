@@ -21,6 +21,23 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
     @Query("UPDATE RefreshToken rt SET rt.revoked = true WHERE rt.userId = :userId AND rt.revoked = false")
     void revokeAllByUser(@Param("userId") UUID userId);
 
+    /** Tokens vivos de una persona: uno por dispositivo con sesión abierta. */
+    @Query("SELECT rt FROM RefreshToken rt WHERE rt.userId = :userId AND rt.revoked = false "
+            + "AND rt.expiresAt > :ahora ORDER BY rt.createdAt DESC, rt.idRefreshToken")
+    List<RefreshToken> vivosDe(@Param("userId") UUID userId, @Param("ahora") OffsetDateTime ahora);
+
+    /** Cierra una sesión (un dispositivo) de esa persona. */
+    @Modifying
+    @Query("UPDATE RefreshToken rt SET rt.revoked = true WHERE rt.userId = :userId "
+            + "AND rt.sesion = :sesion AND rt.revoked = false")
+    int revocarSesion(@Param("userId") UUID userId, @Param("sesion") UUID sesion);
+
+    /** Cierra todas las sesiones de esa persona menos una. */
+    @Modifying
+    @Query("UPDATE RefreshToken rt SET rt.revoked = true WHERE rt.userId = :userId "
+            + "AND rt.revoked = false AND (rt.sesion IS NULL OR rt.sesion <> :sesion)")
+    int revocarOtras(@Param("userId") UUID userId, @Param("sesion") UUID sesion);
+
     /**
      * Última renovación de sesión de cada usuario, en una sola consulta para no
      * recorrer la lista. created_at se escribe en cada rotación del token (que

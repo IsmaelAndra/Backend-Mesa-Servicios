@@ -107,6 +107,47 @@ public class AssetService {
     @Autowired
     private com.mesaayuda.activos.AssetTypeRepository tipos;
 
+    @Autowired
+    @org.springframework.context.annotation.Lazy
+    private CustomReportService motorReportes;
+
+    /**
+     * Exporta a Excel o PDF los activos que cumplen los filtros de la lista. Solo
+     * quien gestiona activos (Tecnología/Desarrollo y el súper administrador): el
+     * inventario completo no es para el resto. Máximo {@value #MAX_EXPORTAR} filas.
+     */
+    @Transactional(readOnly = true)
+    public byte[] exportar(String search, String status, String type, UUID areaId, UUID sucursalId, boolean excel) {
+        permisos.exigirGestion(userService.getCurrentUser());
+        List<AssetResponse> lista = findAll(search, status, type, areaId, sucursalId,
+                org.springframework.data.domain.PageRequest.of(0, MAX_EXPORTAR)).getContent();
+        java.time.format.DateTimeFormatter dia = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        List<java.util.Map<String, Object>> filas = new ArrayList<>();
+        for (AssetResponse a : lista) {
+            java.util.Map<String, Object> f = new java.util.LinkedHashMap<>();
+            f.put("Código", a.codeAsset());
+            f.put("Tipo", a.typeAsset());
+            f.put("Nombre", a.nameAsset());
+            f.put("Marca", a.brandAsset());
+            f.put("Modelo", a.modelAsset());
+            f.put("Serie", a.serialNumberAsset());
+            f.put("Estado", a.statusAsset());
+            f.put("Estado del bien", a.estadoFisicoAsset());
+            f.put("Custodio", a.assignedUserDisplayName() != null ? a.assignedUserDisplayName() : a.assignedUser());
+            f.put("Área", a.area());
+            f.put("Sucursal", a.sucursal());
+            f.put("Ubicación", a.ubicacionAsset());
+            f.put("Garantía hasta", a.warrantyUntilAsset() == null ? "" : a.warrantyUntilAsset().format(dia));
+            filas.add(f);
+        }
+        systemAuditService.record("ASSET_EXPORT", "Asset", null, userService.getCurrentUser().getCorporateEmailUser(),
+                (excel ? "EXCEL" : "PDF") + ": " + filas.size() + " activos");
+        return motorReportes.renderizar("Inventario de activos", filas, excel ? "EXCEL" : "PDF",
+                userService.getCurrentUser().getIdUser(), "HORIZONTAL");
+    }
+
+    public static final int MAX_EXPORTAR = 5000;
+
     // ======================================================================
     // Consultas
     // ======================================================================
@@ -233,9 +274,8 @@ public class AssetService {
         permisos.exigirGestion(current);
         com.mesaayuda.activos.AssetType tipo = tipoDe(request);
         // Código: el que se escriba (inventario anterior) o el siguiente de la numeración.
-        String codigo = request.codeAsset() == null || request.codeAsset().isBlank()
-                ? numeracion.siguienteCodigo(tipo.getPrefijo())
-                : request.codeAsset().trim();
+        // El código no se escribe a mano: siempre sale de la numeración configurada.
+        String codigo = numeracion.siguienteCodigo(tipo.getPrefijo());
         if (assetRepository.existsByCodeAsset(codigo)) {
             throw new BadRequestException("Ya existe un activo con el código: " + codigo);
         }
@@ -272,8 +312,8 @@ public class AssetService {
         Asset asset = obtener(id);
         exigirGestionar(asset);
 
-        String codigo = request.codeAsset() == null || request.codeAsset().isBlank()
-                ? asset.getCodeAsset() : request.codeAsset().trim();
+        // El código no se edita: se conserva el asignado al registrar.
+        String codigo = asset.getCodeAsset();
         if (!asset.getCodeAsset().equals(codigo) && assetRepository.existsByCodeAsset(codigo)) {
             throw new BadRequestException("Ya existe un activo con el código: " + codigo);
         }

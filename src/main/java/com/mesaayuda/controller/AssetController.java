@@ -42,6 +42,27 @@ public class AssetController {
         return ResponseEntity.ok(assetService.findAll(search, status, type, areaId, sucursalId, pageable));
     }
 
+    @GetMapping("/exportar")
+    @Operation(summary = "Exportar el inventario filtrado a Excel o PDF (solo quien gestiona activos)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','AREA_MANAGER','AGENT')")
+    public ResponseEntity<byte[]> exportar(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) UUID areaId,
+            @RequestParam(required = false) UUID sucursalId,
+            @RequestParam(defaultValue = "EXCEL") String formato) {
+        boolean excel = !"PDF".equalsIgnoreCase(formato);
+        byte[] datos = assetService.exportar(search, status, type, areaId, sucursalId, excel);
+        String archivo = "inventario_activos" + (excel ? ".xlsx" : ".pdf");
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + archivo + "\"")
+                .contentType(excel
+                        ? org.springframework.http.MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                        : org.springframework.http.MediaType.APPLICATION_PDF)
+                .body(datos);
+    }
+
     @GetMapping("/asignables")
     @Operation(summary = "Personas a las que el usuario puede asignar activos (todas o las de su área)")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','AREA_MANAGER','AGENT')")

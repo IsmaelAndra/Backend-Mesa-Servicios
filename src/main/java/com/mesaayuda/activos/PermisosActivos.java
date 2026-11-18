@@ -35,6 +35,26 @@ public class PermisosActivos {
         return gestiona(u) || (u != null && u.getRolUser() != null && Roles.AUDITOR.equals(u.getRolUser().getNameRole()));
     }
 
+    /**
+     * Configurar activos (tipos y numeración): solo el súper administrador y el JEFE de
+     * un área que gestiona activos. Los agentes registran y mueven equipos, pero no
+     * cambian el maestro de tipos ni la numeración.
+     */
+    public boolean configura(User u) {
+        if (u == null || u.getRolUser() == null) {
+            return false;
+        }
+        String rol = u.getRolUser().getNameRole();
+        return Roles.esSuperAdmin(rol)
+                || (Roles.esJefe(rol) && u.getArea() != null && Boolean.TRUE.equals(u.getArea().getGestionaActivosArea()));
+    }
+
+    public void exigirConfiguracion(User u) {
+        if (!configura(u)) {
+            throw new AccessDeniedException("La configuración de activos la hacen los jefes de Tecnología y Desarrollo");
+        }
+    }
+
     public void exigirGestion(User u) {
         if (!gestiona(u)) {
             throw new AccessDeniedException("Los activos los gestionan Tecnología y Desarrollo");

@@ -576,7 +576,7 @@ rateLimitService.registrar("forgot-password", normalized,
                   .orElseThrow(() -> new BadRequestException("Usuario no encontrado"));
 
           // Se emite el sustituto primero para poder encadenarlos.
-          String nuevoToken = issueRefreshToken(user);
+          String nuevoToken = issueRefreshToken(user, stored);
 
           stored.setRevoked(true);
           stored.setReplacedByHash(hashToken(nuevoToken));
@@ -661,14 +661,40 @@ rateLimitService.registrar("forgot-password", normalized,
     }
 
     private String issueRefreshToken(User user) {
+        return issueRefreshToken(user, null);
+    }
+
+    /**
+     * Emite un refresh token. Sin anterior es una sesión nueva (un dispositivo
+     * más en "Dispositivos con sesión abierta"); con anterior, la rotación
+     * conserva la sesión y su hora de inicio.
+     */
+    private String issueRefreshToken(User user, RefreshToken anterior) {
         String raw = UUID.randomUUID() + "." + System.nanoTime();
+        com.mesaayuda.security.DispositivoCliente.Datos disp = com.mesaayuda.security.DispositivoCliente.actual();
         RefreshToken rt = new RefreshToken();
         rt.setUserId(user.getIdUser());
         rt.setTokenHash(hashToken(raw));
         rt.setExpiresAt(OffsetDateTime.now().plusNanos(refreshExpirationMs * 1_000_000));
         rt.setRevoked(false);
+        boolean sigue = anterior != null && anterior.getSesion() != null;
+        rt.setSesion(sigue ? anterior.getSesion() : UUID.randomUUID());
+        rt.setInicio(sigue && anterior.getInicio() != null ? anterior.getInicio() : OffsetDateTime.now());
+        rt.setDispositivo(disp.dispositivo() != null ? disp.dispositivo() : sigue ? anterior.getDispositivo() : null);
+        rt.setIp(disp.ip() != null ? disp.ip() : sigue ? anterior.getIp() : null);
         refreshTokenRepository.save(rt);
         return raw;
+    }
+
+    /** Id de la sesión (dispositivo) de un refresh token vivo, o null. */
+    public UUID sesionDe(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return null;
+        }
+        return refreshTokenRepository.findByTokenHash(hashToken(rawToken))
+                .filter(rt -> !rt.getRevoked())
+                .map(RefreshToken::getSesion)
+                .orElse(null);
     }
 
     private String hashToken(String raw) {

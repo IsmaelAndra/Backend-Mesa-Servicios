@@ -25,5 +25,5 @@ import java.util.UUID;
  *                    ningun dato almacenado del usuario.
  */
 public record AgentOptionResponse(UUID idUser, String displayName, String corporateEmailUser,
-        String photoUrl, String sessionState, String extension) {
+        String photoUrl, String sessionState, String extension, UUID areaId) {
 }

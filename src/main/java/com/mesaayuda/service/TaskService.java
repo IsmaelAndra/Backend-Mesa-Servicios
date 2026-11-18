@@ -40,11 +40,30 @@ public class TaskService {
     @Autowired
     private NotificationService notificationService;
 
+    /**
+     * Encargar una actividad a otra persona es cosa del jefe de área o del súper
+     * administrador. Un agente o un usuario solo se asigna actividades a sí mismo
+     * (al editar puede dejar la persona que ya tenía).
+     */
+    void exigirPuedeAsignarA(User actor, User asignado, User asignadoActual) {
+        if (actor == null || asignado == null || asignado.getIdUser().equals(actor.getIdUser())) {
+            return;
+        }
+        if (asignadoActual != null && asignadoActual.getIdUser().equals(asignado.getIdUser())) {
+            return;
+        }
+        String rol = actor.getRolUser() == null ? "" : actor.getRolUser().getNameRole();
+        if (!com.mesaayuda.security.Roles.esSuperAdmin(rol) && !com.mesaayuda.security.Roles.esJefe(rol)) {
+            throw new com.mesaayuda.exception.BadRequestException("Solo un jefe de área puede asignar actividades a otra persona");
+        }
+    }
+
     public TaskResponse create(TaskRequest request) {
         User creator = userService.getCurrentUser();
         User assigned = userRepository.findById(request.assignedUserId())
                 .filter(u -> !u.getDeletedUser())
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario", "id", request.assignedUserId()));
+        exigirPuedeAsignarA(creator, assigned, null);
 
         Task task = new Task();
         task.setTitleTask(request.title().trim());
@@ -90,6 +109,7 @@ public class TaskService {
         User assigned = userRepository.findById(request.assignedUserId())
                 .filter(u -> !u.getDeletedUser())
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario", "id", request.assignedUserId()));
+        exigirPuedeAsignarA(userService.getCurrentUser(), assigned, task.getAssignedUser());
 
         task.setTitleTask(request.title() == null ? task.getTitleTask() : request.title().trim());
         task.setDescriptionTask(request.description() == null ? task.getDescriptionTask() : request.description());

@@ -57,7 +57,7 @@ public class ActivosCatalogoService {
     }
 
     public TipoResponse guardarTipo(UUID id, TipoRequest r) {
-        permisos.exigirGestion(userService.getCurrentUser());
+        permisos.exigirConfiguracion(userService.getCurrentUser());
         if (r == null || r.nombre() == null || r.nombre().isBlank()) {
             throw new BadRequestException("Ponga un nombre al tipo");
         }
@@ -86,7 +86,7 @@ public class ActivosCatalogoService {
     }
 
     public void eliminarTipo(UUID id) {
-        permisos.exigirGestion(userService.getCurrentUser());
+        permisos.exigirConfiguracion(userService.getCurrentUser());
         AssetType t = tipos.findById(id).orElseThrow(() -> new ResourceNotFoundException("Tipo de activo", "id", id));
         t.setDeleted(true);
         tipos.save(t);
@@ -106,7 +106,7 @@ public class ActivosCatalogoService {
 
     public ConfigResponse guardarConfig(ConfigRequest r) {
         var u = userService.getCurrentUser();
-        permisos.exigirGestion(u);
+        permisos.exigirConfiguracion(u);
         AssetConfig c = numeracion.config();
         if (r.formatoCodigo() != null) {
             NumeracionActivos.validarFormato(r.formatoCodigo().trim(), "código");

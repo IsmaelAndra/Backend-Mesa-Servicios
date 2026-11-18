@@ -291,6 +291,11 @@ public class ActaActivoService {
         ActaActivo a = acta(id);
         a.setFirmadaRuta(archivos.guardarActaFirmada(file));
         a.setFirmadaAt(OffsetDateTime.now());
+        // El acta firmada a mano vale como aceptación: el custodio ya no tiene que
+        // aceptarla en el sistema (aceptar() solo admite PENDIENTE).
+        if (a.getAceptadaAt() == null) {
+            a.setAceptadaAt(a.getFirmadaAt());
+        }
         a.setEstado("FIRMADA");
         actas.save(a);
         auditoria.record("ACTA_FIRMADA", "ActaActivo", id, u.getCorporateEmailUser(), a.getNumero());
@@ -328,7 +333,11 @@ public class ActaActivoService {
     public byte[] pdf(UUID id) {
         User u = userService.getCurrentUser();
         ActaActivo a = legible(id, u);
-        return actaPdf.generar(vista(a, u), numeracion.config(), area(a.getCustodioId()), cedula(a.getCustodioId()));
+        ActaVista v = vista(a, u);
+        // En la entrega van las fotos del bien principal.
+        List<byte[]> fotos = "ENTREGA".equals(v.tipo()) && !v.items().isEmpty()
+                ? archivos.fotosDe(v.items().get(0).assetId()) : List.of();
+        return actaPdf.generar(v, numeracion.config(), area(a.getCustodioId()), cedula(a.getCustodioId()), fotos);
     }
 
     @Transactional(readOnly = true)

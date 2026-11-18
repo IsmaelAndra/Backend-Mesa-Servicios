@@ -203,7 +203,10 @@ public TicketResponse create(TicketRequest request) {
         // número: se fuerza aquí para que Hibernate lo lea antes de notificar.
         ticketRepository.flush();
 
-        User routedAgent = routingService.routeTicket(category);
+        // El jefe del área que atiende (o el súper admin) puede elegir el agente al
+        // crear el ticket; si no, lo reparte el equipo como siempre.
+        User elegido = agenteElegidoAlCrear(request.agentId(), creador, ticket);
+        User routedAgent = elegido != null ? elegido : routingService.routeTicket(category);
         if (routedAgent != null) {
             ticket = assignAgent(ticket, routedAgent, false);
         }
@@ -1360,6 +1363,34 @@ private void publishSse(String type, Ticket ticket, UUID actorId, String actorNa
       }
 
     // ============================ INTERNOS ============================
+
+    /**
+     * Agente indicado al crear el ticket. Solo lo puede elegir el súper administrador
+     * o el jefe del área que atiende el ticket, y tiene que ser un agente activo de
+     * esa área. Sin agente indicado devuelve null (reparto automático).
+     */
+    private User agenteElegidoAlCrear(UUID agentId, User creador, Ticket ticket) {
+        if (agentId == null) {
+            return null;
+        }
+        String rol = creador.getRolUser() == null ? "" : creador.getRolUser().getNameRole();
+        boolean superAdmin = com.mesaayuda.security.Roles.esSuperAdmin(rol);
+        boolean jefeDelArea = com.mesaayuda.security.Roles.esJefe(rol) && creador.getArea() != null
+                && ticket.getAreaDestinoTicket() != null
+                && creador.getArea().getIdArea().equals(ticket.getAreaDestinoTicket().getIdArea());
+        if (!superAdmin && !jefeDelArea) {
+            throw new BadRequestException("Solo el jefe del área que atiende el ticket puede elegir el agente");
+        }
+        User agente = userRepository.findById(agentId)
+                .filter(u -> !Boolean.TRUE.equals(u.getDeletedUser()) && "ACTIVE".equals(u.getStatusUser()))
+                .filter(u -> u.getRolUser() != null && "AGENT".equals(u.getRolUser().getNameRole()))
+                .orElseThrow(() -> new BadRequestException("El agente elegido no es válido"));
+        if (ticket.getAreaDestinoTicket() != null && (agente.getArea() == null
+                || !agente.getArea().getIdArea().equals(ticket.getAreaDestinoTicket().getIdArea()))) {
+            throw new BadRequestException("El agente elegido no pertenece al área que atiende el ticket");
+        }
+        return agente;
+    }
 
     private Ticket assignAgent(Ticket ticket, User agent, boolean save) {
         ticket.setAgentTicket(agent);

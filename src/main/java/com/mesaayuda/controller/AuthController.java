@@ -48,6 +48,34 @@ public class AuthController {
     @Autowired
     private MfaService mfaService;
 
+    @Autowired
+    private com.mesaayuda.service.SesionDispositivoService sesiones;
+
+    /**
+     * Dispositivos con sesión abierta de quien pregunta. Vive bajo /auth porque
+     * la cookie del refresh (Path=/api/auth) es la que dice cuál es "este" dispositivo.
+     */
+    @GetMapping("/sesiones")
+    @Operation(summary = "Mis dispositivos con sesión abierta")
+    public java.util.List<com.mesaayuda.dto.SesionDispositivoResponse> misSesiones(
+            @CookieValue(name = RefreshTokenCookie.COOKIE_REFRESH, required = false) String refreshToken) {
+        return sesiones.misSesiones(refreshToken);
+    }
+
+    @DeleteMapping("/sesiones/{id}")
+    @Operation(summary = "Cerrar la sesión de un dispositivo")
+    public ResponseEntity<Void> cerrarSesion(@PathVariable UUID id) {
+        sesiones.cerrar(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/sesiones/cerrar-las-demas")
+    @Operation(summary = "Cerrar la sesión en todos los demás dispositivos")
+    public java.util.Map<String, Integer> cerrarLasDemas(
+            @CookieValue(name = RefreshTokenCookie.COOKIE_REFRESH, required = false) String refreshToken) {
+        return java.util.Map.of("cerradas", sesiones.cerrarLasDemas(refreshToken));
+    }
+
 /**
      * Login con doble factor.
      *
