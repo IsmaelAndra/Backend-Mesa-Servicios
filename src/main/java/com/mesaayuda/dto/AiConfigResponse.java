@@ -19,5 +19,7 @@ public record AiConfigResponse(
         String enabledActions,
         /** Máximo de consultas por día (null = sin límite) y las usadas hoy. */
         Integer dailyLimit,
-        Integer usedToday
+        Integer usedToday,
+        /** MAPI responde primero al crearse un ticket (V49). */
+        Boolean respondePrimero
 ) {}

@@ -193,6 +193,27 @@ public class TicketController {
         return r == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(r);
     }
 
+    // ============================ MAPI responde primero (V49) ============================
+
+    @GetMapping("/{id}/mapi")
+    @Operation(summary = "Estado de la propuesta de MAPI (null, PROPUESTA, RESUELTO, NECESITA_AGENTE)")
+    public java.util.Map<String, String> estadoMapi(@PathVariable UUID id) {
+        String estado = ticketService.estadoMapi(id);
+        return java.util.Collections.singletonMap("estado", estado);
+    }
+
+    @PostMapping("/{id}/mapi/resuelto")
+    @Operation(summary = "El solicitante resolvió el ticket con la respuesta de MAPI")
+    public java.util.Map<String, String> mapiResuelto(@PathVariable UUID id) {
+        return java.util.Collections.singletonMap("estado", ticketService.responderPropuestaMapi(id, true));
+    }
+
+    @PostMapping("/{id}/mapi/necesito-agente")
+    @Operation(summary = "La respuesta de MAPI no le sirvió: sigue con un agente")
+    public java.util.Map<String, String> mapiNecesitoAgente(@PathVariable UUID id) {
+        return java.util.Collections.singletonMap("estado", ticketService.responderPropuestaMapi(id, false));
+    }
+
     // ============================ SLA ============================
 
     @GetMapping("/{id}/sla")

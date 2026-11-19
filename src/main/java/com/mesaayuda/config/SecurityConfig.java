@@ -146,6 +146,10 @@ public class SecurityConfig {
                         .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AREA_MANAGER")
                 .requestMatchers(HttpMethod.GET, "/admin/evaluations")
                         .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AREA_MANAGER")
+                // Horario laboral y feriados del SLA (V49): lo ven jefe y auditor;
+                // solo el súper admin lo cambia (@PreAuthorize del controlador).
+                .requestMatchers(HttpMethod.GET, "/admin/horario-laboral", "/admin/feriados")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AREA_MANAGER", "ROLE_AUDITOR")
                 // Plantillas de correo por área (V38): el servicio acota al área del jefe.
                 .requestMatchers("/plantillas-area", "/plantillas-area/**")
                         .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_AREA_MANAGER", "ROLE_AUDITOR")

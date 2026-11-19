@@ -48,4 +48,10 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     @Query("UPDATE Notification n SET n.readNotification = true, n.readAtNotification = CURRENT_TIMESTAMP "
             + "WHERE n.idNotification = :idNotification AND n.user.idUser = :userId")
     int markAsRead(@Param("idNotification") UUID idNotification, @Param("userId") UUID userId);
+
+    /** Abrir un ticket marca como leídas las notificaciones de ese ticket para esa persona. */
+    @Modifying
+    @Query("UPDATE Notification n SET n.readNotification = true, n.readAtNotification = CURRENT_TIMESTAMP "
+            + "WHERE n.user.idUser = :userId AND n.ticket.idTicket = :ticketId AND n.readNotification = false")
+    int marcarLeidasDelTicket(@Param("userId") UUID userId, @Param("ticketId") UUID ticketId);
 }

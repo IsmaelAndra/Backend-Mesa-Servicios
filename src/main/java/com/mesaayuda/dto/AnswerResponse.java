@@ -43,5 +43,7 @@ public record AnswerResponse(
            */
           Boolean unreadOnOpen,
           /** Eliminado por su autor: el chat muestra "Se eliminó este mensaje" (sin texto). */
-          Boolean deletedAnswer
+          Boolean deletedAnswer,
+          /** Escrito por MAPI (V49): la pantalla lo pinta con su icono. */
+          Boolean mapiAnswer
   ) {}

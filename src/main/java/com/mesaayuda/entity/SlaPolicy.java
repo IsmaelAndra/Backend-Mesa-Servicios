@@ -48,6 +48,13 @@ public class SlaPolicy {
     @Column(name = "area_sla_policy")
     private UUID areaSlaPolicy;
 
+    /**
+     * El plazo solo corre en horario laboral y fuera de feriados (V49). Falso =
+     * las 24 horas (p. ej. una política para caídas críticas).
+     */
+    @Column(name = "horario_laboral_sla_policy", nullable = false)
+    private Boolean horarioLaboralSlaPolicy = true;
+
     @CreationTimestamp
     @Column(name = "created_at_sla_policy", nullable = false, updatable = false)
     private OffsetDateTime createdAtSlaPolicy;

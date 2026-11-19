@@ -21,6 +21,8 @@ public final class IdsConfiguracion {
     public static final UUID MFA = UUID.fromString("00000000-0000-0000-0000-000000000006");
     public static final UUID TELEFONIA = UUID.fromString("00000000-0000-0000-0000-000000000007");
     public static final UUID TEMAS_TEMPORADA = UUID.fromString("00000000-0000-0000-0000-000000000008");
+    /** Usuario de sistema que firma los mensajes de MAPI (V49). Inactivo: nadie entra con él. */
+    public static final UUID MAPI_USUARIO = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
 
     private IdsConfiguracion() {
     }

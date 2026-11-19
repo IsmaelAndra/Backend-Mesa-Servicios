@@ -617,10 +617,14 @@ public class AdminController {
         // Global (sin área) solo el súper admin; el jefe, de sus áreas.
         UUID area = toUuid(body.get("areaId"));
         adminService.exigirAmbito(ambitoDeAreas(), area, "crear políticas SLA");
-        return ResponseEntity.status(HttpStatus.CREATED).body(adminService.saveSlaPolicy(null,
+        SlaPolicy creada = adminService.saveSlaPolicy(null,
                 value(body, "name"), value(body, "description"),
                 toInt(body.get("responseMinutes")), toInt(body.get("resolutionMinutes")),
-                toBool(body.get("active")), value(body, "icon"), value(body, "color"), area, true));
+                toBool(body.get("active")), value(body, "icon"), value(body, "color"), area, true);
+        if (body.containsKey("horarioLaboral")) {
+            creada = adminService.fijarHorarioLaboral(creada.getIdSlaPolicy(), toBool(body.get("horarioLaboral")));
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
     @PutMapping("/sla/policies/{id}")
@@ -632,10 +636,14 @@ public class AdminController {
         if (cambiaArea) {
             adminService.exigirAmbito(ambito, area, "editar políticas SLA");
         }
-        return ResponseEntity.ok(adminService.saveSlaPolicy(id,
+        SlaPolicy guardada = adminService.saveSlaPolicy(id,
                 value(body, "name"), value(body, "description"),
                 toInt(body.get("responseMinutes")), toInt(body.get("resolutionMinutes")),
-                toBool(body.get("active")), value(body, "icon"), value(body, "color"), area, cambiaArea));
+                toBool(body.get("active")), value(body, "icon"), value(body, "color"), area, cambiaArea);
+        if (body.containsKey("horarioLaboral")) {
+            guardada = adminService.fijarHorarioLaboral(id, toBool(body.get("horarioLaboral")));
+        }
+        return ResponseEntity.ok(guardada);
     }
 
     @DeleteMapping("/sla/policies/{id}")

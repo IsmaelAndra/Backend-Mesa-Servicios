@@ -27,6 +27,10 @@ public class NotificationController {
     @Autowired
     private UserService userService;
 
+    /** Leer en un dispositivo actualiza la campana de los demás de la misma persona. */
+    @Autowired
+    private com.mesaayuda.service.AvisoEnVivoService avisoEnVivo;
+
     @GetMapping
     @Transactional(readOnly = true)
     public List<NotificationResponse> myNotifications() {
@@ -66,6 +70,9 @@ public class NotificationController {
     public ResponseEntity<Map<String, Object>> markAsRead(@PathVariable UUID idNotification) {
         UUID userId = userService.getCurrentUser().getIdUser();
         int updated = notificationRepository.markAsRead(idNotification, userId);
+        if (updated > 0) {
+            avisoEnVivo.avisar(List.of(userId), "notificaciones", null);
+        }
         return ResponseEntity.ok(Map.of(
                 "success", updated > 0,
                 "message", updated > 0
@@ -79,6 +86,9 @@ public class NotificationController {
     public ResponseEntity<Map<String, Object>> markAllAsRead() {
         UUID userId = userService.getCurrentUser().getIdUser();
         int updated = notificationRepository.markAllAsRead(userId);
+        if (updated > 0) {
+            avisoEnVivo.avisar(List.of(userId), "notificaciones", null);
+        }
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "message", "Notificaciones marcadas como leídas",

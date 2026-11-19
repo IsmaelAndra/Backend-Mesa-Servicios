@@ -1237,6 +1237,17 @@ private Map<String, String> saveImage(MultipartFile file, String prefix) {
         return slaPolicyRepository.save(policy);
     }
 
+    /**
+     * Si la política cuenta solo en horario laboral (y fuera de feriados) o las
+     * 24 horas (V49). Vale para los tickets nuevos y para los que se recalculan.
+     */
+    public SlaPolicy fijarHorarioLaboral(UUID policyId, Boolean horarioLaboral) {
+        SlaPolicy policy = slaPolicyRepository.findById(policyId)
+                .orElseThrow(() -> new ResourceNotFoundException("SLA", "id", policyId));
+        policy.setHorarioLaboralSlaPolicy(!Boolean.FALSE.equals(horarioLaboral));
+        return slaPolicyRepository.save(policy);
+    }
+
     public SlaRule saveSlaRule(UUID id, UUID policyId, UUID areaId, UUID priorityId,
                                UUID categoryId, UUID typeId, Boolean active) {
         SlaRule rule = id != null
@@ -1728,6 +1739,9 @@ private boolean esRutaDeImagenDePlantilla(String valor) {
         if (request.dailyLimit() != null) {
             cfg.setDailyLimit(request.dailyLimit() <= 0 ? null : request.dailyLimit());
         }
+        if (request.respondePrimero() != null) {
+            cfg.setRespondePrimero(request.respondePrimero());
+        }
 if (request.apiKey() != null && !request.apiKey().isBlank()) {
               cfg.setApiKey(secretCryptoService.encrypt(request.apiKey().trim()));
           }
@@ -1786,7 +1800,8 @@ private AiConfigResponse toAiResponse(AiConfig cfg) {
                   cfg.getRulesText() == null ? "" : cfg.getRulesText(),
                   cfg.getEnabledActions() == null ? "SUMMARY,ANSWER" : cfg.getEnabledActions(),
                   cfg.getDailyLimit(),
-                  consultasIaHoy());
+                  consultasIaHoy(),
+                  Boolean.TRUE.equals(cfg.getRespondePrimero()));
       }
 
     /** Consultas a la IA de hoy (zona de Guayaquil), para mostrarlas junto al límite. */

@@ -215,6 +215,79 @@ private final ExpiringStateMap<String, String> chatState = new ExpiringStateMap<
         return interpretarClasificacion(respuesta, prioridades, categorias, equipos, tipos);
     }
 
+    /**
+     * MAPI responde primero (V49): ¿puede el solicitante resolverlo solo, con
+     * pasos seguros? Devuelve la respuesta en Markdown, o vacío si no (lo tiene
+     * que ver un agente) o si la IA no está activa / no tiene "responde primero".
+     *
+     * <p>Recibe el texto y no el id del ticket: se llama en segundo plano, sin
+     * sesión, y la lectura del ticket exige una.
+     */
+    public java.util.Optional<String> respuestaInicial(String titulo, String descripcion, String categoria) {
+        AiConfig cfg = aiConfigRepository.findFirstByOrderByIdAiConfigAsc().orElse(null);
+        if (cfg == null || !Boolean.TRUE.equals(cfg.getEnabled()) || !Boolean.TRUE.equals(cfg.getRespondePrimero())
+                || cfg.getApiKey() == null || cfg.getApiKey().isBlank()) {
+            return java.util.Optional.empty();
+        }
+        StringBuilder sb = new StringBuilder("Eres MAPI, la asistente de la mesa de servicios de la COAC. ")
+                .append("Acaba de llegar un ticket. Decide si la PERSONA que lo abrió puede resolverlo ella misma ")
+                .append("siguiendo pasos sencillos y seguros (reiniciar, revisar un cable, borrar caché, cambiar ")
+                .append("su propia contraseña desde la opción oficial, configurar algo en su equipo...).\n")
+                .append("NO propongas solución si hace falta un técnico, permisos de administrador, acceso a ")
+                .append("servidores o sistemas internos, compras, cambios en la cuenta de otra persona, o si el ")
+                .append("problema es de seguridad, una caída general o afecta a varias personas. Nunca pidas ")
+                .append("contraseñas ni datos personales. Ante la duda, NO propongas solución.\n")
+                .append("Responde SOLO con un objeto JSON, sin texto alrededor: ")
+                .append("{\"puedeAyudar\": true|false, \"respuesta\": \"...\"}. Si puedeAyudar es true, ")
+                .append("\"respuesta\" va en español, tratando de usted, en Markdown breve: un saludo de una ")
+                .append("línea, los pasos numerados (máximo 6) y al final: \"Si con esto se solucionó, pulse ")
+                .append("'Sí, se resolvió'; si no, pulse 'No, necesito un agente' y le atenderá una persona.\"\n");
+        agregarReglas(sb);
+        sb.append("\n\nTICKET\nTítulo: ").append(titulo == null ? "" : titulo);
+        if (categoria != null && !categoria.isBlank()) {
+            sb.append("\nCategoría: ").append(categoria);
+        }
+        sb.append("\nDescripción:\n").append(plain(descripcion == null ? "" : descripcion)).append("\n");
+        String texto;
+        try {
+            texto = "GEMINI".equalsIgnoreCase(cfg.getProvider())
+                    ? callGemini(cfg, sb.toString(), null).text()
+                    : callOpenAiCompatible(cfg, sb.toString());
+        } catch (AiException e) {
+            log.info("MAPI no respondió primero: {}", e.getMessage());
+            return java.util.Optional.empty();
+        } catch (Exception e) {
+            log.warn("MAPI no respondió primero: {}", e.getMessage());
+            return java.util.Optional.empty();
+        }
+        return interpretarRespuestaInicial(texto);
+    }
+
+    /** Lee {"puedeAyudar", "respuesta"}. Paquete para las pruebas. */
+    java.util.Optional<String> interpretarRespuestaInicial(String texto) {
+        if (texto == null) {
+            return java.util.Optional.empty();
+        }
+        int inicio = texto.indexOf('{');
+        int fin = texto.lastIndexOf('}');
+        if (inicio < 0 || fin <= inicio) {
+            return java.util.Optional.empty();
+        }
+        try {
+            JsonNode json = mapper.readTree(texto.substring(inicio, fin + 1));
+            if (!json.path("puedeAyudar").asBoolean(false)) {
+                return java.util.Optional.empty();
+            }
+            String r = json.path("respuesta").asText("").strip();
+            if (r.length() < 20) {
+                return java.util.Optional.empty();
+            }
+            return java.util.Optional.of(r.length() > 4000 ? r.substring(0, 4000) : r);
+        } catch (Exception e) {
+            return java.util.Optional.empty();
+        }
+    }
+
     /** "Correo: Problemas con correo corporativo (equipo: Equipo TI)" para el prompt. */
     static String describirCategoria(com.mesaayuda.entity.Category c) {
         StringBuilder s = new StringBuilder("- ").append(c.getNameCategory());

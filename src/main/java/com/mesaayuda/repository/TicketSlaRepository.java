@@ -34,4 +34,15 @@ public interface TicketSlaRepository extends JpaRepository<TicketSla, UUID> {
            "AND t.ticket.statusTicket.nameStatus NOT IN ('RESUELTO','CERRADO') " +
            "AND t.responseDueAt < :now AND t.responseCompletedAt IS NULL")
     List<TicketSla> findResponseBreached(@Param("now") OffsetDateTime now);
+
+    /**
+     * SLA de los tickets abiertos (sin resolver ni cerrar), con lo que pinta el
+     * panel de SLA en tiempo real cargado de una vez (V49).
+     */
+    @Query("SELECT t FROM TicketSla t JOIN FETCH t.ticket tk JOIN FETCH t.slaPolicy "
+            + "LEFT JOIN FETCH tk.statusTicket LEFT JOIN FETCH tk.priorityTicket LEFT JOIN FETCH tk.agentTicket "
+            + "LEFT JOIN FETCH tk.areaDestinoTicket "
+            + "WHERE tk.deletedTicket = false AND t.resolutionCompletedAt IS NULL "
+            + "AND (tk.statusTicket IS NULL OR tk.statusTicket.nameStatus NOT IN ('RESUELTO', 'CERRADO'))")
+    List<TicketSla> abiertosParaPanel();
 }

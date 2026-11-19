@@ -44,6 +44,10 @@ public class Answer {
     @Column(name = "edited_at_answer")
     private OffsetDateTime editedAtAnswer;
 
+    /** Escrito por MAPI (V49): se pinta con su icono y no cuenta como primera respuesta del SLA. */
+    @Column(name = "mapi_answer", nullable = false)
+    private Boolean mapiAnswer = false;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ticket_answer", nullable = false)
     private Ticket ticketAnswer;

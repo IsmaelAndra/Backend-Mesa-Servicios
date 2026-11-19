@@ -308,7 +308,12 @@ public class ProyectoChatService {
     public void marcarLeido(UUID proyectoId) {
         ProyectoService.AccesoChat a = proyectos.accesoChat(proyectoId);
         mensajes.marcarLeido(proyectoId, a.u().getIdUser());
+        // Las insignias de "sin leer" de sus otros dispositivos se ponen al día.
+        avisoEnVivo.avisar(List.of(a.u().getIdUser()), "leidos-proyecto", proyectoId);
     }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.mesaayuda.service.AvisoEnVivoService avisoEnVivo;
 
     /** Mensajes sin leer en cada proyecto que ve la persona (los que no aparecen, 0). */
     @Transactional(readOnly = true)

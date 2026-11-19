@@ -71,6 +71,13 @@ public class Ticket {
     @Column(name = "confidencial_ticket", nullable = false)
     private Boolean confidencialTicket = false;
 
+    /**
+     * Respuesta de MAPI al crearse (V49): null = no propuso nada; PROPUESTA =
+     * esperando al solicitante; RESUELTO = le sirvió; NECESITA_AGENTE = no.
+     */
+    @Column(name = "mapi_estado_ticket", length = 20)
+    private String mapiEstadoTicket;
+
     /** Confidencial abierto a todos los agentes del área que lo atiende. */
     @Column(name = "confidencial_area_ticket", nullable = false)
     private Boolean confidencialAreaTicket = false;

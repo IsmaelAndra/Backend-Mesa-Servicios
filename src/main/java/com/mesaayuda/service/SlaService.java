@@ -47,6 +47,26 @@ public class SlaService {
     @Autowired
     private com.mesaayuda.repository.NotificationRepository notificationRepository;
 
+    /** Horario laboral y feriados (V49). Null en pruebas unitarias antiguas: se cuenta 24 h. */
+    @Autowired(required = false)
+    private CalendarioLaboralService calendario;
+
+    /** ¿Esta política cuenta solo en horario laboral? */
+    public boolean usaHorarioLaboral(SlaPolicy policy) {
+        return calendario != null && policy != null && !Boolean.FALSE.equals(policy.getHorarioLaboralSlaPolicy());
+    }
+
+    /** Vencimiento: base + minutos (hábiles si la política usa horario laboral). */
+    public OffsetDateTime vencimiento(SlaPolicy policy, OffsetDateTime base, int minutos) {
+        return usaHorarioLaboral(policy) ? calendario.sumarPlazo(base, minutos) : base.plusMinutes(minutos);
+    }
+
+    /** Minutos que cuentan entre dos instantes para esta política. */
+    public long minutosQueCuentan(SlaPolicy policy, OffsetDateTime a, OffsetDateTime b) {
+        if (a == null || b == null) return 0;
+        return usaHorarioLaboral(policy) ? calendario.minutosHabilesEntre(a, b) : Math.max(0, Duration.between(a, b).toMinutes());
+    }
+
     /**
      * ¿Existe ya un aviso de este tipo para este seguimiento SLA?
      * <p>
@@ -167,8 +187,9 @@ public class SlaService {
     private void fijarPolitica(TicketSla ticketSla, Ticket ticket, SlaPolicy policy) {
         OffsetDateTime base = ticket.getCreatedAtTicket() != null ? ticket.getCreatedAtTicket() : OffsetDateTime.now();
         ticketSla.setSlaPolicy(policy);
-        ticketSla.setResponseDueAt(base.plusMinutes(policy.getResponseTimeMinutes()));
-        ticketSla.setResolutionDueAt(base.plusMinutes(policy.getResolutionTimeMinutes()));
+        // Con horario laboral el plazo solo corre en horas hábiles y no en feriados.
+        ticketSla.setResponseDueAt(vencimiento(policy, base, policy.getResponseTimeMinutes()));
+        ticketSla.setResolutionDueAt(vencimiento(policy, base, policy.getResolutionTimeMinutes()));
         OffsetDateTime ahora = OffsetDateTime.now();
         if (ticketSla.getResponseDueAt().isAfter(ahora)) {
             ticketSla.setResponseBreached(false);
@@ -222,8 +243,10 @@ public class SlaService {
         OffsetDateTime now = OffsetDateTime.now();
         ticketSlaRepository.findDueForResponseBetween(now, now.plusHours(12)).forEach(ts -> {
             if (ts.getResponseDueAt() == null) return;
-            long elapsed = Duration.between(ts.getCreatedAt(), now).toMinutes();
-            long total = Duration.between(ts.getCreatedAt(), ts.getResponseDueAt()).toMinutes();
+            // En horas hábiles si la política usa horario laboral: el 80 % de un
+            // plazo de 8 h hábiles no llega a media noche.
+            long elapsed = minutosQueCuentan(ts.getSlaPolicy(), ts.getCreatedAt(), now);
+            long total = minutosQueCuentan(ts.getSlaPolicy(), ts.getCreatedAt(), ts.getResponseDueAt());
             if (total <= 0) return;
             int pct = (int) Math.min(100, Math.round((elapsed * 100.0) / total));
             if (pct >= 80 && pct < 100 && !yaAvisado(ts, "SLA_WARNING")) {

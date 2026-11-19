@@ -60,6 +60,10 @@ public class AiConfig {
     @Column(name = "enabled_actions", nullable = false, length = 200)
     private String enabledActions = "SUMMARY,ANSWER";
 
+    /** MAPI responde primero: al crearse un ticket intenta resolverlo con el solicitante (V49). */
+    @Column(name = "responde_primero", nullable = false)
+    private Boolean respondePrimero = false;
+
     /**
      * Máximo de consultas a la IA por día (todas las acciones juntas). Pensado
      * para la capa gratuita de GroqCloud. Null o 0 = sin límite.

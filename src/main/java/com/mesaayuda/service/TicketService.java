@@ -53,6 +53,120 @@ import java.util.stream.Collectors;
 @Transactional
 public class TicketService {
 
+    /** "Ya lo leí" llega en vivo a los otros dispositivos de la misma persona. */
+    @org.springframework.beans.factory.annotation.Autowired
+    private AvisoEnVivoService avisoEnVivo;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.mesaayuda.repository.NotificationRepository notificacionesRepo;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.context.ApplicationEventPublisher eventosApp;
+
+    /** Un ticket se acaba de crear (lo escucha MAPI tras el commit). */
+    public record TicketCreadoEvento(UUID ticketId) {
+    }
+
+    // =========================================================== MAPI responde primero (V49)
+
+    /** Lo que MAPI necesita del ticket recién creado, leído sin sesión (segundo plano). */
+    public record DatosParaMapi(UUID id, String titulo, String descripcion, String categoria, boolean confidencial,
+                                String estado) {
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Optional<DatosParaMapi> datosParaMapi(UUID ticketId) {
+        return ticketRepository.findById(ticketId)
+                .filter(t -> !Boolean.TRUE.equals(t.getDeletedTicket()))
+                .map(t -> new DatosParaMapi(t.getIdTicket(), t.getTitleTicket(), t.getDescriptionTicket(),
+                        t.getCategoryTicket() == null ? null : t.getCategoryTicket().getNameCategory(),
+                        TicketAccessPolicy.esConfidencial(t),
+                        t.getStatusTicket() == null ? null : t.getStatusTicket().getNameStatus()));
+    }
+
+    /**
+     * Publica la respuesta de MAPI en el chat del ticket, firmada por el usuario
+     * de sistema MAPI. No cuenta como la primera respuesta del agente (no toca el
+     * SLA) y deja el ticket "esperando al solicitante" (mapi_estado PROPUESTA).
+     */
+    @Transactional
+    public void publicarRespuestaMapi(UUID ticketId, String html) {
+        Ticket ticket = ticketRepository.findById(ticketId).orElse(null);
+        if (ticket == null || ticket.getMapiEstadoTicket() != null) {
+            return;
+        }
+        String estado = ticket.getStatusTicket() == null ? "" : ticket.getStatusTicket().getNameStatus();
+        if ("RESUELTO".equals(estado) || "CERRADO".equals(estado)) {
+            return; // ya lo cerró alguien mientras MAPI pensaba
+        }
+        User mapi = userRepository.findById(com.mesaayuda.entity.IdsConfiguracion.MAPI_USUARIO).orElse(null);
+        if (mapi == null) {
+            log.warn("Falta el usuario de sistema MAPI (V49): no se publica su respuesta");
+            return;
+        }
+        Answer answer = new Answer();
+        answer.setMessageAnswer(html);
+        answer.setInternalAnswer(false);
+        answer.setTicketAnswer(ticket);
+        answer.setUserAnswer(mapi);
+        answer.setDeletedAnswer(false);
+        answer.setMapiAnswer(true);
+        answerRepository.save(answer);
+        ticket.setMapiEstadoTicket("PROPUESTA");
+        ticketRepository.save(ticket);
+        auditService.record(ticket, "MAPI_RESPUESTA", null, null, "MAPI propuso una solución al solicitante");
+        notificationService.notifyChatMessage(ticket, ticket.getUserTicket(), html, "MAPI");
+        publishSse("TICKET_ANSWERED", ticket, mapi.getIdUser(), "MAPI");
+    }
+
+    /** Estado de la propuesta de MAPI en este ticket (para la pantalla). */
+    @Transactional(readOnly = true)
+    public String estadoMapi(UUID ticketId) {
+        Ticket ticket = getTicketLegible(ticketId);
+        return ticket.getMapiEstadoTicket();
+    }
+
+    /**
+     * El solicitante responde a la propuesta de MAPI: le sirvió (el ticket queda
+     * RESUELTO) o necesita a un agente (sigue su curso y se avisa al agente).
+     */
+    @Transactional
+    public String responderPropuestaMapi(UUID ticketId, boolean resuelto) {
+        Ticket ticket = getTicket(ticketId);
+        User current = userService.getCurrentUser();
+        if (ticket.getUserTicket() == null || !ticket.getUserTicket().getIdUser().equals(current.getIdUser())) {
+            throw new AccessDeniedException("Solo quien abrió el ticket responde a la propuesta de MAPI");
+        }
+        if (!"PROPUESTA".equals(ticket.getMapiEstadoTicket())) {
+            throw new BadRequestException("Esta propuesta de MAPI ya se respondió");
+        }
+        if (resuelto) {
+            String anterior = ticket.getStatusTicket().getNameStatus();
+            ticket.setStatusTicket(statusByName("RESUELTO"));
+            ticket.setMapiEstadoTicket("RESUELTO");
+            slaService.markResolutionCompleted(ticket);
+            ticket = ticketRepository.save(ticket);
+            auditService.record(ticket, "STATUS_CHANGE", anterior, "RESUELTO", "Resuelto con la respuesta de MAPI");
+            if (ticket.getAgentTicket() != null) {
+                notificationService.notifyChatMessage(ticket, ticket.getAgentTicket(),
+                        "El solicitante resolvió el ticket con la respuesta de MAPI.", "MAPI");
+            }
+            publishSse("TICKET_STATUS_CHANGED", ticket, current.getIdUser(), current.getCorporateEmailUser());
+            workflowEventPublisher.ticketCambioEstado(ticket, anterior);
+        } else {
+            ticket.setMapiEstadoTicket("NECESITA_AGENTE");
+            ticket = ticketRepository.save(ticket);
+            auditService.record(ticket, "MAPI_NO_RESUELTO", null, null, "La respuesta de MAPI no le resolvió: sigue con un agente");
+            if (ticket.getAgentTicket() != null) {
+                notificationService.notifyChatMessage(ticket, ticket.getAgentTicket(),
+                        "La respuesta de MAPI no resolvió el problema: el solicitante necesita que lo atienda.", "MAPI");
+            }
+            publishSse("TICKET_UPDATED", ticket, current.getIdUser(), current.getCorporateEmailUser());
+        }
+        return ticket.getMapiEstadoTicket();
+    }
+
+
     private static final Logger log = LoggerFactory.getLogger(TicketService.class);
 
     @Autowired
@@ -227,6 +341,11 @@ public TicketResponse create(TicketRequest request) {
         // ejecutara ahora, el worker podria tomar la ejecucion antes de que
         // esta transaccion confirme y leeria un ticket que todavia no existe.
         workflowEventPublisher.ticketCreado(ticket);
+        // MAPI responde primero (si está activo): lo hace en segundo plano tras
+        // guardar el ticket, para no hacer esperar a quien lo abre.
+        if (eventosApp != null) {
+            eventosApp.publishEvent(new TicketCreadoEvento(ticket.getIdTicket()));
+        }
 
         log.info("Ticket #{} creado por {}", ticket.getIdTicket(), requester.getCorporateEmailUser());
         return ticketMapper.toResponse(ticket);
@@ -806,6 +925,10 @@ for (User admin : userRepository.findByRoleName(rol)) {
             return Set.of();
         }
         answerReadRepository.saveAll(nuevas);
+        // Los otros dispositivos de quien leyó (laptop, teléfono) actualizan sus avisos.
+        if (avisoEnVivo != null) {
+            avisoEnVivo.avisar(List.of(lector.getIdUser()), "leidos", ticketId);
+        }
 
         sseEventBroker.publishLectura(
                 ticketId,
@@ -871,6 +994,12 @@ for (User admin : userRepository.findByRoleName(rol)) {
                     .map(Answer::getIdAnswer)
                     .toList();
             sinLeerAlAbrir = marcarLeidas(ajenas, current, ticketId);
+        }
+        // Lo que ya vio en el ticket no sigue "sin leer" en la campana; y los
+        // otros dispositivos de la persona (laptop/teléfono) lo ven al momento.
+        if (page == 0 && notificacionesRepo != null
+                && notificacionesRepo.marcarLeidasDelTicket(current.getIdUser(), ticketId) > 0 && avisoEnVivo != null) {
+            avisoEnVivo.avisar(List.of(current.getIdUser()), "notificaciones", ticketId);
         }
         final Set<UUID> sinLeer = sinLeerAlAbrir;
 
@@ -968,7 +1097,8 @@ for (User admin : userRepository.findByRoleName(rol)) {
                 sesiones.getOrDefault(autorId, PresenceService.DESCONECTADO),
                 a.getEditedAtAnswer(),
                 sinLeerAlAbrir.contains(a.getIdAnswer()),
-                eliminado);
+                eliminado,
+                Boolean.TRUE.equals(a.getMapiAnswer()));
     }
 
     // ============================ EDITAR / ELIMINAR UNA RESPUESTA ============================
